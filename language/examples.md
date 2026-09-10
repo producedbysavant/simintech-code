@@ -28,7 +28,7 @@ const T = 0.5;    // постоянная времени
 var state: double;
 
 begin
-    state = state + (u - state) * hmax / T;
+    state = state + (u - state) * stepsize / T;
     y = state;
 end
 ```
@@ -109,7 +109,7 @@ var
 
 begin
     error = speed_ref - speed_meas;
-    integral = integral + error * hmax;
+    integral = integral + error * stepsize;
     torque_ref = Kp * error + Ki * integral;
 end
 ```
@@ -132,8 +132,8 @@ var
     state_speed: double;
 
 begin
-    state_current = state_current + (voltage - R*state_current - Ke*state_speed) * hmax / L;
-    state_speed = state_speed + (Kt*state_current - load_torque - B*state_speed) * hmax / J;
+    state_current = state_current + (voltage - R*state_current - Ke*state_speed) * stepsize / L;
+    state_speed = state_speed + (Kt*state_current - load_torque - B*state_speed) * stepsize / J;
     current = state_current;
     speed = state_speed;
 end
@@ -187,7 +187,7 @@ const omega = 2 * 3.14159 * 1.0; // 1 Гц
 var phase: double;
 
 begin
-    phase = phase + omega * hmax;
+    phase = phase + omega * stepsize;
     if phase > 2 * 3.14159 then
         phase = phase - 2 * 3.14159;
     sine = sin(phase);

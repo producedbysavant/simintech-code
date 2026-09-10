@@ -117,11 +117,11 @@ begin
 
     // И-составляющая (anti-windup: интегрируем только вне насыщения)
     if saturated = false then
-        integral = integral + error * hmax;
+        integral = integral + error * stepsize;
     iTerm = Ki * integral;
 
     // Д-составляющая
-    dTerm = Kd * (error - prevError) / hmax;
+    dTerm = Kd * (error - prevError) / stepsize;
 
     // Сумма
     uRaw = pTerm + iTerm + dTerm;
@@ -147,7 +147,7 @@ begin
 end;
 ```
 
-Шаг расчёта берётся из системной переменной `hmax`, текущее время — из `time`
+Шаг расчёта берётся из встроенной переменной `stepsize`, текущее время — из `time`
 (см. `language/syntax.md`). Функции `getStepSize()`/`getCurrentTime()` в языке
 отсутствуют.
 
@@ -199,8 +199,8 @@ end;
 
    begin
        error = SP - FB;
-       integral = integral + error * hmax;
-       OUT = Kp * error + Ki * integral + Kd * (error - prevError) / hmax;
+       integral = integral + error * stepsize;
+       OUT = Kp * error + Ki * integral + Kd * (error - prevError) / stepsize;
        prevError = error;
    end;
    ```

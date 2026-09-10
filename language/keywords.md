@@ -27,7 +27,7 @@ var
 
 // Присваивание
 counter = counter + 1;
-integral = integral + error * hmax;
+integral = integral + error * stepsize;
 ```
 
 ## `input` — Вход порта
@@ -62,8 +62,8 @@ y = u * Kp;
 ```simintech
 if phase = PHASE_RUN then
 begin
-    timer = timer + hmax;
-    result = result + input_val * hmax;
+    timer = timer + stepsize;
+    result = result + input_val * stepsize;
     if timer >= duration then
         phase = PHASE_DONE;
 end;
@@ -85,9 +85,10 @@ begin
 end;
 ```
 
-> Оператор `not` в языке не поддерживается — отрицание записывается сравнением
-> (`initialized = false`, `flag <> true`). Объявлять `initialized = false` вручную
-> не нужно: переменные из `var` обнуляются при старте расчёта.
+> Оператор `not` поддерживается — здесь запись `initialized = false` выбрана
+> сознательно, как утвердительная форма условия вместо `not initialized`
+> (см. раздел «О записи условий» в `syntax.md`). Объявлять `initialized = false`
+> вручную не нужно: переменные из `var` обнуляются при старте расчёта.
 
 ## Примеры
 
@@ -120,7 +121,7 @@ const
 var state: double;
 
 begin
-    state = state + u * hmax;
+    state = state + u * stepsize;
     if state > y_max then
         state = y_max
     else if state < -y_max then

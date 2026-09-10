@@ -81,7 +81,7 @@ S_d(s) = 1 / (1 + G(s))
 ## Реализация в SimInTech: прямой код
 
 Ниже регулятор и объект описаны внутри одного блока «Язык программирования».
-Синтаксис — канонический (см. `language/syntax.md`); шаг расчёта — `hmax`,
+Синтаксис — канонический (см. `language/syntax.md`); шаг расчёта — `stepsize`,
 время — `time`. Обратная связь замкнута через выход `processVariable`, поэтому
 на каждом шаге используется его значение с предыдущего шага.
 
@@ -127,11 +127,11 @@ begin
 
     // И-составляющая (anti-windup: интегрируем только вне насыщения)
     if saturated = false then
-        integral = integral + error * hmax;
+        integral = integral + error * stepsize;
     controlSignal = controlSignal + Ki * integral;
 
     // Д-составляющая
-    controlSignal = controlSignal + Kd * (error - prevError) / hmax;
+    controlSignal = controlSignal + Kd * (error - prevError) / stepsize;
 
     // Ограничение управляющего сигнала
     if controlSignal > 100.0 then
@@ -148,7 +148,7 @@ begin
         saturated = false;
 
     // Объект: явный Эйлер для 1/(10s+1)
-    plantState = plantState + (plantGain * controlSignal - plantState) / plantTc * hmax;
+    plantState = plantState + (plantGain * controlSignal - plantState) / plantTc * stepsize;
 
     // Выход (с возмущением) — он же сигнал обратной связи
     processVariable = plantState + disturbance;
@@ -207,4 +207,4 @@ end;
 - Шум измерения датчика передаётся в управляющий сигнал с коэффициентом усиления регулятора — фильтруйте сигнал датчика
 - При моделировании всегда включайте в контур датчик — его динамика влияет на устойчивость
 - Начинайте настройку с низких коэффициентов и постепенно увеличивайте — так вы не «уроните» систему
-- Слишком большой шаг `hmax` относительно постоянных времени контура делает явный Эйлер неустойчивым — уменьшайте шаг
+- Слишком большой шаг `stepsize` относительно постоянных времени контура делает явный Эйлер неустойчивым — уменьшайте шаг

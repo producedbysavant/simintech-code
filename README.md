@@ -47,14 +47,14 @@ var
 
 begin
     error = setpoint - measurement;
-    integral = integral + error * hmax;
-    control = Kp * error + Ki * integral + Kd * (error - prev_error) / hmax;
+    integral = integral + error * stepsize;
+    control = Kp * error + Ki * integral + Kd * (error - prev_error) / stepsize;
     prev_error = error;
 end;
 ```
 
 Обратите внимание на характерные черты языка: переменные объявляются с явным
-типом, шаг расчёта — системная переменная `hmax`, цикл записывается как
+типом, шаг расчёта — встроенная переменная `stepsize`, цикл записывается как
 `for (idx = 1, N) do`. Полный свод правил — в `language/syntax.md`.
 
 ## С чего начать
