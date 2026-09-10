@@ -10,35 +10,70 @@ SimInTech — мощный инструмент для инженеров и с�
 
 | Раздел | Описание |
 |--------|----------|
+| `language/` | Полный справочник встроенного языка программирования |
 | `blocks/` | Примеры для каждого типа блоков |
 | `patterns/` | Типовые схемы: ПИД, пространство состояний, обратная связь |
-| `language/` | Полный справочник внутреннего языка программирования |
 | `tutorials/` | Пошаговые руководства для начинающих |
+| `automation/` | Управление SimInTech извне: командная строка, макросы, COM, форматы файлов |
 
 ## Быстрый старт
 
-```c
-// Простейшая программа SimInTech
-input u;
-output y;
-y = u * 2.5;
+Простейшая программа SimInTech (блок «Язык программирования»):
+
+```simintech
+input u: double;
+output y: double;
+
+begin
+    y = u * 2.5;
+end;
 ```
 
-```c
-// ПИД-регулятор
-const Kp = 1.5, Ki = 0.8, Kd = 0.3;
-var error, integral, derivative;
-var prev_error = 0;
-init integral = 0;
-input setpoint, measurement;
-output control;
+ПИД-регулятор:
 
-error = setpoint - measurement;
-integral = integral + error * h;
-derivative = (error - prev_error) / h;
-control = Kp * error + Ki * integral + Kd * derivative;
-prev_error = error;
+```simintech
+input
+    setpoint: double,
+    measurement: double;
+output control: double;
+const
+    Kp = 1.5,
+    Ki = 0.8,
+    Kd = 0.3;
+var
+    error: double,
+    integral: double,
+    prev_error: double;
+
+begin
+    error = setpoint - measurement;
+    integral = integral + error * hmax;
+    control = Kp * error + Ki * integral + Kd * (error - prev_error) / hmax;
+    prev_error = error;
+end;
 ```
+
+Обратите внимание на характерные черты языка: переменные объявляются с явным
+типом, шаг расчёта — системная переменная `hmax`, цикл записывается как
+`for (idx = 1, N) do`. Полный свод правил — в `language/syntax.md`.
+
+## С чего начать
+
+- **Никогда не работали с SimInTech** — `tutorials/01-first-model.md`.
+- **Нужен конкретный блок** — `blocks/`.
+- **Нужен готовый контур управления** — `patterns/`.
+- **Пишете код в блоке** — `language/` (и обязательно `language/pitfalls.md`
+  перед кодогенерацией).
+- **Автоматизируете расчёт или правку схем** — `automation/`.
+
+## Участие
+
+Изменения принимаются только через pull request — прямой push в `main`
+запрещён правилами репозитория. Начните с issue: шаблоны открываются
+автоматически.
+
+Перед отправкой PR прочитайте `CONTRIBUTING.md` и сверьте примеры кода
+с `language/syntax.md` — это источник истины по синтаксису.
 
 ## Связанные проекты
 
