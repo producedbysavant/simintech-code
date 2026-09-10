@@ -25,10 +25,11 @@ end
 input u: double;
 output y: double;
 const T = 0.5;    // постоянная времени
-var y: double;
+var state: double;
 
 begin
-    y = y + (u - y) * dt / T;
+    state = state + (u - state) * hmax / T;
+    y = state;
 end
 ```
 
@@ -41,7 +42,7 @@ const
     amplitude = 5.0;
 
 begin
-    y = amplitude * sin(omega * T);
+    y = amplitude * sin(omega * time);
 end
 ```
 
@@ -69,21 +70,28 @@ input raw: double;
 output filtered: double;
 const N = 10;
 var
-    sum: double,
+    acc: double,
     idx: integer,
+    scan: integer,
     buffer[N]: array;
 
 begin
-    buffer[idx] = raw;
+    // Кольцевой буфер: idx — номер последней записанной ячейки.
+    // Переменные из var стартуют с нуля, поэтому первая запись идёт в buffer[1].
     idx = idx + 1;
     if idx > N then idx = 1;
+    buffer[idx] = raw;
 
-    sum = 0;
-    for (i = 1, N) do
-        sum = sum + buffer[i];
-    filtered = sum / N;
+    acc = 0;
+    for (scan = 1, N) do
+        acc = acc + buffer[scan];
+    filtered = acc / N;
 end
 ```
+
+> Накопитель назван `acc`, а не `sum`: `sum` — встроенная функция (см. `syntax.md`),
+> и одноимённая переменная перекрывает её при трансляции в C. По той же причине
+> счётчик цикла — `scan`, а не `i`: имена `i`, `j`, `c` занимает транслятор.
 
 ## 6. ПИ-регулятор скорости
 
@@ -101,7 +109,7 @@ var
 
 begin
     error = speed_ref - speed_meas;
-    integral = integral + error * dt;
+    integral = integral + error * hmax;
     torque_ref = Kp * error + Ki * integral;
 end
 ```
@@ -120,12 +128,14 @@ const
     Ke = 0.1, Kt = 0.1,  // постоянные ЭДС и момента
     J = 0.01, B = 0.001; // момент инерции, вязкое трение
 var
-    current: double,
-    speed: double;
+    state_current: double,
+    state_speed: double;
 
 begin
-    current = current + (voltage - R*current - Ke*speed) * dt / L;
-    speed = speed + (Kt*current - load_torque - B*speed) * dt / J;
+    state_current = state_current + (voltage - R*state_current - Ke*state_speed) * hmax / L;
+    state_speed = state_speed + (Kt*state_current - load_torque - B*state_speed) * hmax / J;
+    current = state_current;
+    speed = state_speed;
 end
 ```
 
@@ -159,7 +169,7 @@ const period = 0.001;        // период ШИМ
 var cycle_time: double;
 
 begin
-    cycle_time = mod(T, period);
+    cycle_time = mod(time, period);
     if cycle_time < duty_cycle * period then
         pwm = 1
     else
@@ -177,7 +187,7 @@ const omega = 2 * 3.14159 * 1.0; // 1 Гц
 var phase: double;
 
 begin
-    phase = phase + omega * dt;
+    phase = phase + omega * hmax;
     if phase > 2 * 3.14159 then
         phase = phase - 2 * 3.14159;
     sine = sin(phase);
@@ -192,12 +202,12 @@ output y: double;
 const N = 8;
 var
     idx: integer,
-    sum: double;
+    acc: double;
 
 begin
-    sum = 0;
+    acc = 0;
     for (idx = 1, N) do
-        sum = sum + sin(idx * T) / idx;
-    y = sum;
+        acc = acc + sin(idx * time) / idx;
+    y = acc;
 end
 ```

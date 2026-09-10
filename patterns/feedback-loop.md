@@ -57,13 +57,13 @@ S_d(s) = 1 / (1 + G(s))
 ## Пример схемы: стабилизация температуры
 
 Компоненты:
-1. **Константа** (value=100.0) — уставка температуры
-2. **Сумматор** (signs="+-") — формирование ошибки
+1. **Константа** (y0=100.0) — уставка температуры
+2. **Сумматор** (a=[1, -1]) — формирование ошибки
 3. **ПИД-регулятор** — закон управления
 4. **Передаточная функция** (num=[1.5], den=[10, 1]) — объект (печь): инерционное звено
 5. **Передаточная функция** (num=[1], den=[0.5, 1]) — датчик температуры
-6. **Ступенька** (A=10.0, t0=20.0) — возмущение (открытие дверцы)
-7. **Сумматор_2** (signs="++") — добавление возмущения к выходу объекта
+6. **Ступенька** (yk=10.0, t=20.0) — возмущение (открытие дверцы)
+7. **Сумматор_2** (a=[1, 1]) — добавление возмущения к выходу объекта
 8. **Временной график** — уставка, выход, возмущение
 
 Связи:
@@ -80,76 +80,81 @@ S_d(s) = 1 / (1 + G(s))
 
 ## Реализация в SimInTech: прямой код
 
+Ниже регулятор и объект описаны внутри одного блока «Язык программирования».
+Синтаксис — канонический (см. `language/syntax.md`); шаг расчёта — `hmax`,
+время — `time`. Обратная связь замкнута через выход `processVariable`, поэтому
+на каждом шаге используется его значение с предыдущего шага.
+
 ```simintech
-function FeedbackControlLoop
-  input:
-    double setpoint;
-  output:
-    double processVariable;
-  var:
-    // Объект: 1/(10s+1) в дискретной форме
-    double plantState = 0.0;
-    double plantTc = 10.0;
-    double plantGain = 1.5;
+input setpoint: double;
+output processVariable: double;
+
+const
+    // Объект: апериодическое звено 1/(10s+1)
+    plantTc = 10.0,
+    plantGain = 1.5,
 
     // Регулятор (ПИД)
-    double Kp = 2.5;
-    double Ki = 0.3;
-    double Kd = 0.05;
-    double integral = 0.0;
-    double prevError = 0.0;
+    Kp = 2.5,
+    Ki = 0.3,
+    Kd = 0.05,
 
-    // Возмущение
-    double disturbance = 0.0;
+    // Возмущение: ступенька в момент distTime
+    distTime = 20.0,
+    distAmp = 10.0;
 
-    double error;
-    double controlSignal;
-    double dt;
-    bool saturated = false;
+var
+    plantState: double,
+    integral: double,
+    prevError: double,
+    disturbance: double,
+    error: double,
+    controlSignal: double,
+    saturated: boolean;
 
-  init:
-    dt = getStepSize();
-
-  begin:
-    // Возмущение: ступенька в момент t=20
-    if getCurrentTime() >= 20.0 then
-      disturbance = 10.0;
-    end_if;
+begin
+    // Возмущение: ступенька в момент time = distTime
+    if time >= distTime then
+        disturbance = distAmp
+    else
+        disturbance = 0.0;
 
     // Ошибка регулирования
     error = setpoint - processVariable;
 
-    // ПИД-регулятор
+    // П-составляющая
     controlSignal = Kp * error;
 
-    // Интегральная составляющая (с анти-windup)
-    if not saturated then
-      integral = integral + error * dt;
-    end_if;
+    // И-составляющая (anti-windup: интегрируем только вне насыщения)
+    if saturated = false then
+        integral = integral + error * hmax;
     controlSignal = controlSignal + Ki * integral;
 
-    // Дифференциальная составляющая
-    controlSignal = controlSignal + Kd * (error - prevError) / dt;
+    // Д-составляющая
+    controlSignal = controlSignal + Kd * (error - prevError) / hmax;
 
     // Ограничение управляющего сигнала
     if controlSignal > 100.0 then
-      controlSignal = 100.0;
-      saturated = true;
-    elsif controlSignal < 0.0 then
-      controlSignal = 0.0;
-      saturated = true;
+    begin
+        controlSignal = 100.0;
+        saturated = true;
+    end
+    else if controlSignal < 0.0 then
+    begin
+        controlSignal = 0.0;
+        saturated = true;
+    end
     else
-      saturated = false;
-    end_if;
+        saturated = false;
 
-    // Объект: Euler integration of 1/(10s+1)
-    plantState = plantState + (plantGain * controlSignal - plantState) / plantTc * dt;
+    // Объект: явный Эйлер для 1/(10s+1)
+    plantState = plantState + (plantGain * controlSignal - plantState) / plantTc * hmax;
 
-    // Выход (с возмущением) — обратная связь через processVariable
+    // Выход (с возмущением) — он же сигнал обратной связи
     processVariable = plantState + disturbance;
 
     prevError = error;
-  end;
+end;
 ```
 
 ## Анализ устойчивости замкнутого контура
@@ -202,3 +207,4 @@ function FeedbackControlLoop
 - Шум измерения датчика передаётся в управляющий сигнал с коэффициентом усиления регулятора — фильтруйте сигнал датчика
 - При моделировании всегда включайте в контур датчик — его динамика влияет на устойчивость
 - Начинайте настройку с низких коэффициентов и постепенно увеличивайте — так вы не «уроните» систему
+- Слишком большой шаг `hmax` относительно постоянных времени контура делает явный Эйлер неустойчивым — уменьшайте шаг

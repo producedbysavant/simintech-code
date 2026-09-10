@@ -1,6 +1,7 @@
 # Туториал 3: Субмодели — создаём макроблоки
 
 Учимся создавать иерархические схемы с помощью субмоделей в SimInTech.
+Синтаксис кода внутри блоков — канонический, см. `language/syntax.md`.
 
 ## Что ты узнаешь
 
@@ -59,66 +60,77 @@ PID_Controller.OUT → Объект_управления
 
 ## Создание субмодели через код
 
-Ту же субмодель можно создать программно:
+Внутри субмодели можно поставить блок «Язык программирования» и описать
+регулятор текстом. Проект SimInTech хранится в файле `.prt` (бинарный); рядом
+существует XML-формат `.xprt`. Расширения `.prj` у проектов SimInTech нет.
 
 ```simintech
-// Файл: PID_sm.prj (содержимое субмодели)
+// Файл проекта: PID_sm.prt (код блока внутри субмодели PID_Controller)
 
-// Внешние порты
-function PID_Controller
-  input:
-    double SP;
-    double FB;
-  output:
-    double OUT;
-  var:
-    double Kp = 2.0;
-    double Ki = 0.5;
-    double Kd = 0.1;
-    double error;
-    double integral = 0.0;
-    double prevError = 0.0;
-    double pTerm, iTerm, dTerm;
-    double output;
-    double outMin = 0.0;
-    double outMax = 100.0;
-    bool saturated = false;
-    double dt;
+// Внешние порты субмодели
+input
+    SP: double,
+    FB: double;
+output OUT: double;
 
-  begin:
-    dt = getStepSize();
+const
+    Kp = 2.0,
+    Ki = 0.5,
+    Kd = 0.1,
+    outMin = 0.0,
+    outMax = 100.0;
+
+var
+    error: double,
+    integral: double,
+    prevError: double,
+    pTerm: double,
+    iTerm: double,
+    dTerm: double,
+    uRaw: double,
+    saturated: boolean;
+
+begin
     error = SP - FB;
 
-    // P
+    // П-составляющая
     pTerm = Kp * error;
 
-    // I (с анти-windup)
-    if not saturated then
-      integral = integral + error * dt;
-    end_if;
+    // И-составляющая (anti-windup: интегрируем только вне насыщения)
+    if saturated = false then
+        integral = integral + error * hmax;
     iTerm = Ki * integral;
 
-    // D
-    dTerm = Kd * (error - prevError) / dt;
+    // Д-составляющая
+    dTerm = Kd * (error - prevError) / hmax;
 
     // Сумма
-    output = pTerm + iTerm + dTerm;
+    uRaw = pTerm + iTerm + dTerm;
 
     // Ограничение
-    if output > outMax then
-      output = outMax;
-      saturated = true;
-    elsif output < outMin then
-      output = outMin;
-      saturated = true;
+    if uRaw > outMax then
+    begin
+        OUT = outMax;
+        saturated = true;
+    end
+    else if uRaw < outMin then
+    begin
+        OUT = outMin;
+        saturated = true;
+    end
     else
-      saturated = false;
-    end_if;
+    begin
+        OUT = uRaw;
+        saturated = false;
+    end;
 
-    OUT = output;
     prevError = error;
-  end;
+end;
 ```
+
+Шаг расчёта берётся из системной переменной `hmax`, текущее время — из `time`
+(см. `language/syntax.md`). Функции `getStepSize()`/`getCurrentTime()` в языке
+отсутствуют.
 
 ## Гнездование субмоделей
 
@@ -142,22 +154,41 @@ function PID_Controller
 
 Параметры субмодели настраиваются через диалог свойств (двойной клик по субмодели на верхнем уровне).
 
-Создай параметры:
-1. Открой субмодель
-2. Правый клик → «Параметры субмодели»
-3. Добавь:
-   - `Kp` (double, 2.0)
-   - `Ki` (double, 0.5)
-   - `Kd` (double, 0.1)
+Чтобы значение попало в код блока, есть два надёжных способа:
 
-Внутри субмодели используй `getParameter("Kp")`:
+1. **Константа внутри блока** — самый простой вариант для фиксированных коэффициентов:
+   ```simintech
+   const
+       Kp = 2.0,
+       Ki = 0.5,
+       Kd = 0.1;
+   ```
+2. **Входной порт субмодели** — если коэффициенты должны настраиваться с верхнего уровня:
+   ```simintech
+   input
+       SP: double,
+       FB: double,
+       Kp: double,
+       Ki: double,
+       Kd: double;
+   output OUT: double;
 
-```simintech
-var:
-  double Kp;
-init:
-  Kp = getParameter("Kp");
-```
+   var
+       error: double,
+       integral: double,
+       prevError: double;
+
+   begin
+       error = SP - FB;
+       integral = integral + error * hmax;
+       OUT = Kp * error + Ki * integral + Kd * (error - prevError) / hmax;
+       prevError = error;
+   end;
+   ```
+
+Функции `getParameter("...")` в справочнике языка нет — в ранних версиях этого
+туториала она упоминалась ошибочно. Настраивай коэффициенты константой блока
+или подавай их через порты.
 
 ## Преимущества иерархического подхода
 
@@ -180,7 +211,7 @@ init:
 1. Как создать субмодель? → Выделить блоки → правый клик → «Создать субмодель»
 2. Как попасть внутрь субмодели? → Двойной клик по блоку субмодели
 3. Как настроить порты? → Клик на порт → F2 → новое имя
-4. Как передать параметр в субмодель? → getParameter("имя")
+4. Как передать параметр в субмодель? → Входным портом субмодели или константой внутри блока
 5. Можно ли вложить субмодель в субмодель? → Да, без ограничений
 
 ## Типичные ошибки
@@ -189,6 +220,7 @@ init:
 - **Дублирование имён**: внутри субмодели и на верхнем уровне не должно быть блоков с одинаковыми именами
 - **Циклическая субмодель**: субмодель не должна ссылаться сама на себя (напрямую или через цепочку)
 - **Параметры не обновляются**: после изменения параметров субмодели перезапусти моделирование
+- **Чужой синтаксис в блоке**: `var:`, `input:`, `end_if`, `getParameter`, `getStepSize` не компилируются — используй канон из `language/syntax.md`
 
 ## Что дальше?
 
