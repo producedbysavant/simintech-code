@@ -27,7 +27,7 @@ var
 
 // Присваивание
 counter = counter + 1;
-integral = integral + error * dt;
+integral = integral + error * hmax;
 ```
 
 ## `input` — Вход порта
@@ -62,8 +62,8 @@ y = u * Kp;
 ```simintech
 if phase = PHASE_RUN then
 begin
-    timer = timer + dt;
-    result = result + input_val * dt;
+    timer = timer + hmax;
+    result = result + input_val * hmax;
     if timer >= duration then
         phase = PHASE_DONE;
 end;
@@ -76,7 +76,7 @@ end;
 ```simintech
 var initialized: boolean;
 
-if not initialized then
+if initialized = false then
 begin
     for (idx = 1, lengthofm(input_arr)) do
         static_arr[idx] = input_arr[idx];
@@ -85,7 +85,9 @@ begin
 end;
 ```
 
-Альтернативно: `if Nstep = 0 then ...`
+> Оператор `not` в языке не поддерживается — отрицание записывается сравнением
+> (`initialized = false`, `flag <> true`). Объявлять `initialized = false` вручную
+> не нужно: переменные из `var` обнуляются при старте расчёта.
 
 ## Примеры
 
@@ -118,7 +120,7 @@ const
 var y: double;
 
 begin
-    y = y + u * dt;
+    y = y + u * hmax;
     if y > y_max then
         y = y_max
     else if y < -y_max then
