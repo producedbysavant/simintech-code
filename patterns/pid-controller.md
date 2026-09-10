@@ -14,51 +14,75 @@ W(s) = Kp + Ki/s + Kd*s
 
 ### Вариант 1: Блок «Язык программирования»
 
-```c
-// ПИД-регулятор с защитой от интегрального насыщения
-const Kp = 1.5;     // пропорциональный коэффициент
-const Ki = 0.8;     // интегральный коэффициент
-const Kd = 0.3;     // дифференциальный коэффициент
-const u_max = 10.0; // максимальное управление
-const u_min = -10.0;// минимальное управление
+Канонический синтаксис (см. `language/syntax.md`). Шаг расчёта — системная
+переменная `hmax`. Коэффициенты и ограничения заданы константами блока:
 
-var error, p_term, i_term, d_term, u_raw;
-var prev_error = 0;
-init integral = 0;
+```simintech
+input
+    setpoint: double,
+    measurement: double;
+output control: double;
 
-input setpoint;     // задание (уставка)
-input measurement;  // измерение (с датчика)
-output control;     // управляющий сигнал
+const
+    Kp = 1.5,      // пропорциональный коэффициент
+    Ki = 0.8,      // интегральный коэффициент
+    Kd = 0.3,      // дифференциальный коэффициент
+    uMax = 10.0,   // максимальное управление
+    uMin = -10.0;  // минимальное управление
 
-// Вычисление ошибки
-error = setpoint - measurement;
+var
+    error: double,
+    prevError: double,
+    integral: double,
+    pTerm: double,
+    iTerm: double,
+    dTerm: double,
+    uRaw: double,
+    saturated: boolean;
 
-// П-составляющая
-p_term = Kp * error;
+begin
+    // Ошибка регулирования
+    error = setpoint - measurement;
 
-// И-составляющая (трапецеидальное интегрирование)
-integral = integral + (error + prev_error) * h / 2.0;
-i_term = Ki * integral;
+    // П-составляющая
+    pTerm = Kp * error;
 
-// Д-составляющая
-d_term = Kd * (error - prev_error) / h;
+    // И-составляющая (трапецеидальное интегрирование, anti-windup:
+    // интегрируем только тогда, когда регулятор не в насыщении)
+    if saturated = false then
+        integral = integral + (error + prevError) * hmax / 2.0;
+    iTerm = Ki * integral;
 
-// Суммарное управление
-u_raw = p_term + i_term + d_term;
+    // Д-составляющая
+    dTerm = Kd * (error - prevError) / hmax;
 
-// Ограничение управления + anti-windup
-if (u_raw > u_max) {
-    control = u_max;
-    integral = integral - (error + prev_error) * h / 2.0; // заморозка интеграла
-} else if (u_raw < u_min) {
-    control = u_min;
-    integral = integral - (error + prev_error) * h / 2.0;
-} else {
-    control = u_raw;
-}
+    // Суммарное управление
+    uRaw = pTerm + iTerm + dTerm;
 
-prev_error = error;
+    // Ограничение управления + признак насыщения
+    if uRaw > uMax then
+    begin
+        control = uMax;
+        saturated = true;
+    end
+    else if uRaw < uMin then
+    begin
+        control = uMin;
+        saturated = true;
+    end
+    else
+    begin
+        control = uRaw;
+        saturated = false;
+    end;
+
+    prevError = error;
+end;
 ```
+
+На первом шаге `prevError` равно нулю, поэтому Д-составляющая даёт «рывок» на
+скачке задания. Если это нежелательно, добавь фильтр низких частот на вход
+`measurement` либо задавай уставку плавно.
 
 ### Вариант 2: Схема из блоков
 
@@ -88,8 +112,9 @@ prev_error = error;
 
 1. **Интегральное насыщение (windup)** — интеграл растёт до бесконечности → anti-windup защита
 2. **Шум в D-составляющей** — усиление шума датчика → фильтр НЧ на входе D-ветви
-3. **Слишком большой шаг h** — интегрирование расходится → уменьшить шаг
-4. **Знак ошибки** — перепутан setpoint и measurement → проверить полярность
+3. **Слишком большой шаг интегрирования** — при большом `hmax` интегрирование расходится → уменьшить шаг моделирования
+4. **Знак ошибки** — перепутаны setpoint и measurement → проверить полярность
+5. **Д-составляющая при нулевом шаге** — деление на `hmax` требует неотрицательного шага; при фиксированном шаге `hmax` = `hmin` > 0 (см. `language/syntax.md`)
 
 ## Тестирование
 
