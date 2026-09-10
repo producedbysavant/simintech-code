@@ -117,13 +117,15 @@ input u: double;
 output y: double;
 const
     y_max = 100.0;
-var y: double;
+var state: double;
 
 begin
-    y = y + u * hmax;
-    if y > y_max then
-        y = y_max
-    else if y < -y_max then
-        y = -y_max;
+    state = state + u * hmax;
+    if state > y_max then
+        state = y_max
+    else if state < -y_max then
+        state = -y_max;
+
+    y = state;
 end
 ```

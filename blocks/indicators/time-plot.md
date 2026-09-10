@@ -21,9 +21,9 @@
 | timeRange | double | 10.0 | Диапазон отображения по времени, с |
 | yMin | double | -10.0 | Нижняя граница по оси Y |
 | yMax | double | 10.0 | Верхняя граница по оси Y |
-| autoScale | bool | true | Автомасштабирование |
+| autoScale | boolean | true | Автомасштабирование |
 | colors | string[] | — | Цвета линий для каждого сигнала |
-| grid | bool | true | Отображение сетки |
+| grid | boolean | true | Отображение сетки |
 
 ## Настройка отображения
 

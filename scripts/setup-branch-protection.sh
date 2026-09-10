@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 #
-# Настраивает защиту ветки main: прямой push запрещён, изменения проходят
-# только через pull request.
+# Настраивает защиту ветки main: изменения проходят только через pull request.
 #
 # Запуск:
-#   scripts/setup-branch-protection.sh
+#   ./scripts/setup-branch-protection.sh
 #
 # Токен берётся из переменной GH_TOKEN, а если она пуста — из конфигурации
 # gh CLI (~/.config/gh/hosts.yml). Нужны права администратора репозитория
@@ -20,7 +19,10 @@ REPO="${REPO:-producedbysavant/simintech-code-library}"
 BRANCH="${BRANCH:-main}"
 
 if [[ -z "${GH_TOKEN:-}" ]]; then
-    GH_TOKEN=$(awk '/oauth_token:/{t=$2} END{print t}' "$HOME/.config/gh/hosts.yml")
+    GH_CONFIG="${HOME}/.config/gh/hosts.yml"
+    if [[ -f "${GH_CONFIG}" ]]; then
+        GH_TOKEN=$(awk '/oauth_token:/{t=$2} END{print t}' "${GH_CONFIG}")
+    fi
 fi
 if [[ -z "${GH_TOKEN:-}" ]]; then
     echo "Не найден токен: задайте GH_TOKEN или авторизуйтесь в gh" >&2
@@ -28,8 +30,10 @@ if [[ -z "${GH_TOKEN:-}" ]]; then
 fi
 
 # required_approving_review_count: 1 — чужой PR требует ревью.
-# enforce_admins: false        — владелец может смержить свой PR без второго
-#                                ревьюера; иначе собственную правку не влить.
+# enforce_admins: false        — владелец может пушить и мёржить свой PR без
+#                                второго ревьюера; иначе собственную правку
+#                                не влить. Обратная сторона: защита тогда
+#                                не ограничивает самого администратора.
 read -r -d '' PAYLOAD <<'JSON' || true
 {
   "required_status_checks": null,
@@ -47,9 +51,30 @@ read -r -d '' PAYLOAD <<'JSON' || true
 }
 JSON
 
+BODY_FILE=$(mktemp)
+trap 'rm -f "${BODY_FILE}"' EXIT
+
 echo "Применяю защиту к ${REPO}@${BRANCH}..."
-curl -sS -o /dev/null -w "HTTP %{http_code}\n" -X PUT \
+HTTP_CODE=$(curl -sS -o "${BODY_FILE}" -w "%{http_code}" -X PUT \
     -H "Authorization: token ${GH_TOKEN}" \
     -H "Accept: application/vnd.github+json" \
     "https://api.github.com/repos/${REPO}/branches/${BRANCH}/protection" \
-    --data-binary "${PAYLOAD}"
+    --data-binary "${PAYLOAD}")
+
+if [[ "${HTTP_CODE}" != "200" ]]; then
+    echo "Не удалось применить защиту: HTTP ${HTTP_CODE}" >&2
+    cat "${BODY_FILE}" >&2
+    exit 1
+fi
+
+# Проверяем, что настройки действительно применились, а не просто вернулся 200.
+ACTUAL=$(curl -sS -H "Authorization: token ${GH_TOKEN}" \
+    "https://api.github.com/repos/${REPO}/branches/${BRANCH}/protection")
+
+if ! printf '%s' "${ACTUAL}" | grep -q '"required_approving_review_count": *1'; then
+    echo "Ответ получен, но требуемое число ревью не подтвердилось." >&2
+    echo "Проверьте настройки ветки вручную: ${REPO}@${BRANCH}" >&2
+    exit 1
+fi
+
+echo "Готово: защита применена и проверена."

@@ -25,10 +25,11 @@ end
 input u: double;
 output y: double;
 const T = 0.5;    // постоянная времени
-var y: double;
+var state: double;
 
 begin
-    y = y + (u - y) * hmax / T;
+    state = state + (u - state) * hmax / T;
+    y = state;
 end
 ```
 
@@ -127,12 +128,14 @@ const
     Ke = 0.1, Kt = 0.1,  // постоянные ЭДС и момента
     J = 0.01, B = 0.001; // момент инерции, вязкое трение
 var
-    current: double,
-    speed: double;
+    state_current: double,
+    state_speed: double;
 
 begin
-    current = current + (voltage - R*current - Ke*speed) * hmax / L;
-    speed = speed + (Kt*current - load_torque - B*speed) * hmax / J;
+    state_current = state_current + (voltage - R*state_current - Ke*state_speed) * hmax / L;
+    state_speed = state_speed + (Kt*state_current - load_torque - B*state_speed) * hmax / J;
+    current = state_current;
+    speed = state_speed;
 end
 ```
 
@@ -166,7 +169,7 @@ const period = 0.001;        // период ШИМ
 var cycle_time: double;
 
 begin
-    cycle_time = mod(T, period);
+    cycle_time = mod(time, period);
     if cycle_time < duty_cycle * period then
         pwm = 1
     else
@@ -199,12 +202,12 @@ output y: double;
 const N = 8;
 var
     idx: integer,
-    sum: double;
+    acc: double;
 
 begin
-    sum = 0;
+    acc = 0;
     for (idx = 1, N) do
-        sum = sum + sin(idx * time) / idx;
-    y = sum;
+        acc = acc + sin(idx * time) / idx;
+    y = acc;
 end
 ```

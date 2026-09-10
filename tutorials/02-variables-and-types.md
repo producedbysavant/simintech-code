@@ -68,14 +68,15 @@ var
     limitReached: boolean;
 
 begin
-    // Счётчик активных шагов
+    // Сумма и счётчик копятся на одних и тех же шагах — иначе «среднее»
+    // окажется суммой за все шаги, делённой на число активных.
     if digitalInput = true then
+    begin
         counter = counter + 1;
+        acc = acc + analogInput;
+    end;
 
-    // Накопление суммы
-    acc = acc + analogInput;
-
-    // Среднее значение (защита от деления на ноль)
+    // Среднее по активным шагам (защита от деления на ноль)
     if counter > 0 then
         average = acc / counter
     else
