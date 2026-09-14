@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "simintech-api"
+version = "0.2.0"
+description = "Python-библиотека для программного управления SimInTech через внешний COM API"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "EVS360" }]
+dependencies = [
+    # comtypes — только Windows: COM API SimInTech там и работает
+    "comtypes>=1.1.0; sys_platform == 'win32'",
+    # разбор XML-выгрузок SimInTech: защита от XXE и разворачивания сущностей
+    "defusedxml>=0.7",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
+[project.scripts]
+simintech-cli = "simintech_api.cli:main"
+simintech-generate-catalog = "simintech_api.catalog_tool:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["simintech_api"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: тесты, требующие реального COM-сервера SimInTech на Windows (deselect через -m 'not integration')",
+    "performance: бенчмарки производительности placer/router",
+]
