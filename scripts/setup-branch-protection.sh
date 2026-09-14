@@ -11,11 +11,11 @@
 #
 # Откат (снять защиту полностью):
 #   curl -X DELETE -H "Authorization: token $GH_TOKEN" \
-#     https://api.github.com/repos/producedbysavant/simintech-code-library/branches/main/protection
+#     https://api.github.com/repos/producedbysavant/simintech-code/branches/main/protection
 
 set -euo pipefail
 
-REPO="${REPO:-producedbysavant/simintech-code-library}"
+REPO="${REPO:-producedbysavant/simintech-code}"
 BRANCH="${BRANCH:-main}"
 
 if [[ -z "${GH_TOKEN:-}" ]]; then
