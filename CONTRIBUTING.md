@@ -1,4 +1,4 @@
-# Contributing to SimInTech Code Library
+# Contributing to SimInTech Code
 
 Спасибо за интерес к проекту! Мы строим первую открытую библиотеку кода для SimInTech, и каждый вклад ценен.
 
@@ -47,6 +47,30 @@
 «так не надо»** — в `language/pitfalls.md`, `tutorials/02` и `tutorials/03`.
 Это не рабочий код, и переписывать его не нужно. Не копируйте этот стиль
 в новых материалах.
+
+## Правки библиотеки (Python)
+
+В репозитории есть не только документация, но и Python-пакет
+`simintech_api/` — тот, что использует MCP-сервер `simintech-mcp`. К правкам
+кода требования строже, чем к тексту:
+
+```bash
+pip install -e ".[test]"
+python3.11 -m pytest tests/unit -q      # должны быть зелёными, 132 теста
+flake8 simintech_api/ --max-line-length=88 --extend-ignore=E203,W503
+```
+
+- **Unit-тесты идут без COM и без Windows** — на разборе XML и на
+  формировании команд. Правка без теста не принимается: если меняете
+  поведение, добавьте тест, который ловит именно это поведение.
+- **Интеграционные тесты** (`tests/integration`, маркер `integration`) требуют
+  Windows, зарегистрированного `mmain.exe` и реального SimInTech — в CI они не
+  автоматизируются, но перед PR по COM-части прогоните их вручную.
+- **`comtypes` объявлен с маркером `sys_platform == 'win32'`.** Не убирайте его:
+  без маркера установка на Linux ломается, а COM там всё равно недоступен.
+- **Прямые ссылки в `pyproject.toml`** (git-зависимости) требуют
+  `[tool.hatch.metadata] allow-direct-references = true` — hatchling запрещает
+  их по умолчанию.
 
 ## Как можно помочь
 
