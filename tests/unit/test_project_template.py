@@ -37,6 +37,10 @@ class FakeClient:
         self.calls.append(("set_layer_prop", project_id, layer_no, name, value))
         return self._layer_handle
 
+    def call(self, name, *args):
+        self.calls.append((name, *args))
+        return 0
+
 
 # ─── find_model_template ───────────────────────────────────────────
 
@@ -144,3 +148,29 @@ def test_set_calc_end_time_without_calc_layer_raises():
 
     with pytest.raises(ProjectError, match="расчётного слоя"):
         prj.set_calc_end_time(1.0)
+
+
+# ─── Видимость формы проекта ───────────────────────────────────────
+
+
+def test_show_form_sends_formshow():
+    """show_form() шлёт FormShow именно текущему проекту.
+
+    Без этого вызова в сохранённый файл уходит ``<visible>0</visible>`` —
+    состояние окна из сессии без формы. COM такой проект открывает и считает,
+    а GUI восстанавливает сохранённое состояние окна и окна модели не
+    показывает: выглядит как «проект не открылся». Проверено на SimInTech64
+    2026-09-15.
+    """
+    client = FakeClient(project_id=77)
+
+    Project(client, 77).show_form()
+
+    assert client.calls == [("FormShow", 77)]
+
+
+def test_show_form_returns_self():
+    """Метод возвращает проект — удобно для цепочки вызовов."""
+    prj = Project(FakeClient(), 42)
+
+    assert prj.show_form() is prj
