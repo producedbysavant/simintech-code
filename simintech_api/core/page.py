@@ -5,9 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from ..constants import (
-    DEFAULT_BLOCK_H,
-    DEFAULT_BLOCK_W,
     WIRE_TYPE_AUTOMATICS,
+    standard_block_size,
 )
 from ..exceptions import BlockError, UnsupportedBlockError
 
@@ -59,8 +58,11 @@ class Page:
         Args:
             class_name: имя класса блока (русское, регистрозависимо),
                 напр. "Константа", "Усилитель".
-            x, y: координаты центра блока.
-            width, height: размеры; по умолчанию — дефолтные.
+            x, y: координаты ЛЕВОГО ВЕРХНЕГО угла блока (не центра!):
+                `SetBlockPosition` принимает левый верхний угол.
+            width, height: размеры; по умолчанию — штатный размер класса
+                (`standard_block_size`), а для неизмеренных классов — тот,
+                что блок уже имеет.
             layer_no: номер слоя (0 — основной).
             parent_block: id родительского блока (для встраиваемых), 0 — нет.
         """
@@ -80,11 +82,16 @@ class Page:
             raise BlockError(f"CreateBlock не создал блок класса '{class_name}'")
         from .block import Block
         block = Block(self._project, block_id, class_name=class_name)
-        block.set_position(
-            x, y,
-            width=width if width is not None else DEFAULT_BLOCK_W,
-            height=height if height is not None else DEFAULT_BLOCK_H,
-        )
+        # Штатный размер класса вместо того, что даёт CreateBlock: он создаёт
+        # блок 60x40, а в моделях SimInTech для этих классов приняты 32x16 и
+        # 32x32 (см. constants.STANDARD_BLOCK_SIZES). Для неизмеренных классов
+        # размер не трогаем — set_position прочитает его у блока.
+        if width is None or height is None:
+            standard = standard_block_size(class_name)
+            if standard is not None:
+                width = standard[0] if width is None else width
+                height = standard[1] if height is None else height
+        block.set_position(x, y, width=width, height=height)
         return block
 
     def get_blocks(self) -> List["Block"]:
