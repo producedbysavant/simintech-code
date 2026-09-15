@@ -145,3 +145,51 @@ def test_get_in_port_count_stops_at_missing():
     client.ports = [0, 1]
 
     assert _block(client).get_in_port_count() == 2
+
+
+# ─── Размер блока ─────────────────────────────────────────────────
+
+def test_get_size_reads_width_and_height():
+    """Размер читается свойствами Width/Height (проверено на SimInTech64)."""
+    client = FakeClient({"Width": "60", "Height": "40"})
+
+    assert _block(client).get_size() == (60.0, 40.0)
+
+
+def test_get_size_falls_back_to_defaults():
+    """Свойств нет — размер берётся из констант, а не падает."""
+    client = FakeClient({})
+
+    assert _block(client).get_size() == (60.0, 40.0)
+
+
+def test_set_center_keeps_block_size():
+    """set_center перемещает блок, не подменяя его размер.
+
+    `SetBlockPosition` задаёт размер явно, поэтому в него возвращается
+    прочитанный у блока: размер задан правилами разработки SimInTech, и
+    блок нестандартного размера считается нарушением.
+    """
+    client = FakeClient({"Width": "120", "Height": "80"})
+
+    _block(client).set_center(300.0, 200.0)
+
+    assert ("SetBlockPosition", (1, 240.0, 160.0, 120.0, 80.0, 0.0)) in client.calls
+
+
+def test_set_position_keeps_size_when_not_given():
+    """set_position без размеров тоже сохраняет родной размер."""
+    client = FakeClient({"Width": "60", "Height": "40"})
+
+    _block(client).set_position(10.0, 20.0)
+
+    assert ("SetBlockPosition", (1, 10.0, 20.0, 60.0, 40.0, 0.0)) in client.calls
+
+
+def test_set_center_uses_explicit_size_when_given():
+    """Явно заданный размер применяется как есть."""
+    client = FakeClient({"Width": "60", "Height": "40"})
+
+    _block(client).set_center(100.0, 100.0, width=200.0, height=100.0)
+
+    assert ("SetBlockPosition", (1, 0.0, 50.0, 200.0, 100.0, 0.0)) in client.calls

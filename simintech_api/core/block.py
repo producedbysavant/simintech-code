@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Dict, List, Optional
 
+from ..constants import DEFAULT_BLOCK_H, DEFAULT_BLOCK_W
 from ..exceptions import PortError
 from ..utils.converters import value_to_prop_string
 
@@ -139,16 +140,46 @@ class Block:
         height: Optional[float] = None,
         angle: float = 0.0,
     ) -> "Block":
-        """Установить положение блока.
+        """Установить положение блока, сохранив его размер.
 
         x, y — координаты ЛЕВОГО ВЕРХНЕГО угла (не центр!) в системе
         SetBlockPosition (Left, Top, Width, Height, Angle).
         Для центрирования используйте set_center().
+
+        `SetBlockPosition` задаёт размер **явно**, поэтому незаданные
+        width/height берутся у самого блока (`get_size`), а не из констант:
+        иначе перемещение переписало бы родной размер блока. Размер блока —
+        часть правил разработки SimInTech, менять его нельзя.
         """
-        w = width if width is not None else 60.0
-        h = height if height is not None else 40.0
-        self.client.call("SetBlockPosition", self._id, x, y, w, h, angle)
+        if width is None or height is None:
+            current_w, current_h = self.get_size()
+            width = current_w if width is None else width
+            height = current_h if height is None else height
+        self.client.call("SetBlockPosition", self._id, x, y, width, height, angle)
         return self
+
+    def get_size(self) -> tuple[float, float]:
+        """Размер блока из самого SimInTech: `(ширина, высота)`.
+
+        Читается свойствами `Width`/`Height` (проверено на SimInTech64
+        2026-09-15: отдаются строкой, у `Константы`, `Интегратора`,
+        `Усилителя`, `Сумматора` и «В файл» равны 60x40). Отдельного
+        COM-метода для чтения положения/размера нет, а `SetBlockPosition`
+        требует их явно — поэтому при перемещении размер возвращается
+        прочитанным, чтобы не подменять стандартный своим.
+
+        Returns:
+            `(width, height)`; если свойства недоступны — значения из
+            `DEFAULT_BLOCK_W`/`DEFAULT_BLOCK_H`.
+        """
+        width = _as_str(self.client.call(
+            "GetBlockPropAsString", self._id, "Width"))
+        height = _as_str(self.client.call(
+            "GetBlockPropAsString", self._id, "Height"))
+        try:
+            return float(width), float(height)
+        except ValueError:
+            return float(DEFAULT_BLOCK_W), float(DEFAULT_BLOCK_H)
 
     def set_center(
         self,
@@ -158,9 +189,9 @@ class Block:
         width: Optional[float] = None,
         height: Optional[float] = None,
     ) -> "Block":
-        """Установить блок по центру (cx, cy) с заданными размерами."""
-        w = width if width is not None else 60.0
-        h = height if height is not None else 40.0
+        """Поставить блок центром в (cx, cy), сохранив его размер."""
+        w = width if width is not None else self.get_size()[0]
+        h = height if height is not None else self.get_size()[1]
         left = cx - w / 2.0
         top = cy - h / 2.0
         return self.set_position(left, top, width=w, height=h)

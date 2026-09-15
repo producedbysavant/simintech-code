@@ -174,3 +174,28 @@ def test_show_form_returns_self():
     prj = Project(FakeClient(), 42)
 
     assert prj.show_form() is prj
+
+
+# ─── Перерисовка редактора ─────────────────────────────────────────
+
+
+def test_repaint_sends_repaiteditor():
+    """repaint() шлёт RepaintEditor именно текущему проекту.
+
+    Вызывать между перемещением блоков и трассировкой линий: без перерисовки
+    SimInTech прокладывает провода по прежним прямоугольникам блоков и
+    оставляет в геометрии точки вроде (-160,-1056). Проверено на SimInTech64
+    2026-09-15.
+    """
+    client = FakeClient(project_id=77)
+
+    Project(client, 77).repaint()
+
+    assert client.calls == [("RepaintEditor", 77)]
+
+
+def test_repaint_returns_self():
+    """Метод возвращает проект — удобно для цепочки вызовов."""
+    prj = Project(FakeClient(), 42)
+
+    assert prj.repaint() is prj

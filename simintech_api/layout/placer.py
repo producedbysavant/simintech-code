@@ -115,6 +115,34 @@ class LayeredPlacer:
             for bid in remaining:
                 layer_of[bid] = len(layers) - 1
 
+        # 1a) Источник с единственным приёмником — вплотную к приёмнику.
+        # Иначе линия тянется через всю схему, а SimInTech ведёт её через
+        # середину между портами: длинная линия проходит сквозь промежуточные
+        # блоки (проверено на SimInTech64 2026-09-15). Переносить можно только
+        # источники с одним приёмником: у блока с несколькими приёмниками
+        # смещение вправо развернуло бы часть связей назад. Такой блок встаёт
+        # во «вспомогательный ряд» — ниже основного, иначе цепочка разъезжается
+        # по вертикали.
+        helpers: set = set()
+        for bid in block_ids:
+            if incoming[bid] or len(outgoing[bid]) != 1:
+                continue
+            (dst,) = tuple(outgoing[bid])
+            target = layer_of.get(dst, 0) - 1
+            if target <= layer_of[bid] or target >= len(layers):
+                continue
+            layers[layer_of[bid]].remove(bid)
+            layers[target].append(bid)
+            layer_of[bid] = target
+            helpers.add(bid)
+
+        # Опустевшие слои убираем — иначе схема начнётся с пропуска по X.
+        if any(not layer for layer in layers):
+            layers[:] = [layer for layer in layers if layer]
+            for index, layer in enumerate(layers):
+                for bid in layer:
+                    layer_of[bid] = index
+
         # 2) Упорядочивание внутри слоя (медианная эвристика)
         for li, layer in enumerate(layers):
             if li == 0:
@@ -131,20 +159,31 @@ class LayeredPlacer:
         result: Dict[int, Tuple[float, float]] = {}
         cx0, cy0 = origin
 
-        # Общая высота компоновки для вертикального центрирования
+        def height(items: List[int]) -> float:
+            return (sum(sizes.get(b, (60.0, 40.0))[1] for b in items)
+                    + self.block_gap * max(0, len(items) - 1))
+
+        # Высоту считаем по основному ряду: вспомогательные блоки стоят ниже и
+        # на выравнивание слоёв влиять не должны, иначе цепочка разъезжается.
+        main = {li: [b for b in layer if b not in helpers]
+                for li, layer in enumerate(layers)}
         max_layer_height = max(
-            (sum(sizes.get(b, (60.0, 40.0))[1] for b in layer)
-             + self.block_gap * max(0, len(layer) - 1))
-            for layer in layers
-        ) if layers else 0.0
+            (height(items) for items in main.values()), default=0.0)
 
         for li, layer in enumerate(layers):
             # Вертикальное центрирование слоя относительно самой высокой колонки
-            col_h = sum(sizes.get(b, (60.0, 40.0))[1] for b in layer)
-            col_h += self.block_gap * max(0, len(layer) - 1)
-            y_start = cy0 + (max_layer_height - col_h) / 2.0
+            y_start = cy0 + (max_layer_height - height(main[li])) / 2.0
             y = y_start
+            for bid in main[li]:
+                w, h = sizes.get(bid, (60.0, 40.0))
+                result[bid] = (cx0 + li * self.layer_gap, y + h / 2.0)
+                y += h + self.block_gap
+            # Вспомогательный ряд — под основным, с тем же шагом
+            y = y_start + height(main[li]) + (
+                self.block_gap if main[li] else 0.0)
             for bid in layer:
+                if bid not in helpers:
+                    continue
                 w, h = sizes.get(bid, (60.0, 40.0))
                 result[bid] = (cx0 + li * self.layer_gap, y + h / 2.0)
                 y += h + self.block_gap
