@@ -24,7 +24,11 @@ import time
 from simintech_api import COMClient, Project
 from simintech_api.constants import find_model_template
 
-OUT = os.path.join(tempfile.gettempdir(), "simintech_run_to_file.txt")
+#: Стандартный каталог результатов. Тот же подкаталог использует MCP-сервер
+#: (`DEFAULT_OUTPUT_SUBDIR` в simintech-mcp) — он читает `read_output_file`
+#: только оттуда, поэтому файл примера удаётся прочитать и через MCP.
+OUT_DIR = os.path.join(tempfile.gettempdir(), "simintech-output")
+OUT = os.path.join(OUT_DIR, "simintech_run_to_file.txt")
 
 #: Шаг записи в файл, с
 SAMPLE_STEP = 0.2
@@ -38,6 +42,7 @@ def main() -> int:
               "или SIMINTECH_PATH.")
         return 1
 
+    os.makedirs(OUT_DIR, exist_ok=True)
     if os.path.exists(OUT):
         os.remove(OUT)
 
