@@ -45,7 +45,8 @@ pip install -e ".[test]"        # библиотека + pytest
 from simintech_api import COMClient, Project
 
 client = COMClient().connect()          # Windows + mmain.exe /regserver
-project = Project.new(client)
+project = Project.from_template(client)  # проект с расчётным слоем
+project.set_calc_end_time(1.0)
 page = project.get_main_page()
 
 const = page.create_block("Константа", 100.0, 100.0)
@@ -59,10 +60,15 @@ const.connect(gain)
 project.save_xml(r"C:\Temp\model.xprt")
 ```
 
+Обратите внимание: проект создаётся **из шаблона**. `Project.new()` даёт пустой
+проект — в нём нет расчётного слоя и настроек расчёта, поэтому он не считает
+(модельное время не растёт, хотя вызовы возвращают успех). Полный пример с
+расчётом и выводом результата в файл — `examples/run_to_file.py`.
+
 Проверка:
 
 ```bash
-python3.11 -m pytest tests/unit -q     # 132 теста, без COM
+python3.11 -m pytest tests/unit -q     # 153 теста, без COM
 flake8 simintech_api/ --max-line-length=88 --extend-ignore=E203,W503
 ```
 

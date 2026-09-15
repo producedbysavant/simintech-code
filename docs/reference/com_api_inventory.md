@@ -38,13 +38,21 @@ IID: `{145848B3-2BE8-4497-9A6B-8A42DA658844}`
 | `ProjectRun` | `(__int64 ProjectId)` | ✅ | Запустить симуляцию (неблокирующий) |
 | `ProjectStop` | `(__int64 ProjectId)` | ✅ | Остановить симуляцию |
 | `ProjectPause` | `(__int64 ProjectId)` | ✅ | Поставить на паузу |
-| `ProjectStep` | `(__int64 ProjectId)` | ✅ | Один шаг (~0.01 ед. времени) |
-| `RunTo` | `(__int64 ProjectId, double TargetTime) → __int64` | ✅ | Запустить до target time (блокирующий) |
-| `WaitForTime` | `(__int64 ProjectId, double TargetTime) → __int64` | ➖ | Ожидать target time во время Run |
+| `ProjectStep` | `(__int64 ProjectId)` | ✅ | Один шаг (~0.001 ед. времени) |
+| `RunTo` | `(__int64 ProjectId, double TargetTime) → __int64` | ✅ | Запустить до target time. **Не блокирующий** — см. ниже |
+| `WaitForTime` | `(__int64 ProjectId, double TargetTime) → __int64` | ➖ | Ожидать target time во время Run. В этой сборке возвращает 0 немедленно |
 | `GetProjectTime` | `(__int64 ProjectId) → double` | ✅ | Текущее модельное время |
 
 **Порядок:** `ProjectStart` → `ProjectRun` (или `RunTo`, или `ProjectStep`) → `ProjectStop`
-**RunTo vs ProjectRun:** RunTo блокирует выполнение до target_time; ProjectRun неблокирующий - требует poll `GetProjectTime`.
+
+**`RunTo` не блокирует.** Проверено на SimInTech64 (2026-09-15): сразу после
+`RunTo(0.5)` модельное время 0.240 с, через мгновение — уже 0.5 с. Код возврата
+не означает достижения цели, а `WaitForTime` в этой сборке возвращает 0
+немедленно и фактически не ждёт. Достижение подтверждается **только** опросом
+`GetProjectTime` — так делает `Simulation.run_to` (библиотека) и `run` (MCP).
+
+**`ProjectStep` — около 0.001 ед. времени за шаг** (измерено на проекте из
+шаблона: 0.001, 0.002, … после пяти шагов).
 
 ---
 

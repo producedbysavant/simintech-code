@@ -50,6 +50,17 @@ def test_find_model_template_uses_env_file(monkeypatch, tmp_path):
     assert find_model_template() == str(tpl)
 
 
+def test_find_model_template_explicit_broken_path_is_authoritative(
+        monkeypatch, tmp_path):
+    """Явно заданный, но несуществующий шаблон не подменяется умолчанием.
+
+    Иначе опечатка в SIMINTECH_TEMPLATE молча привела бы к другому шаблону.
+    """
+    monkeypatch.setenv("SIMINTECH_TEMPLATE", str(tmp_path / "нет-такого.prt"))
+
+    assert find_model_template() is None
+
+
 def test_find_model_template_uses_root(monkeypatch, tmp_path):
     """SIMINTECH_PATH указывает корень установки."""
     monkeypatch.delenv("SIMINTECH_TEMPLATE", raising=False)

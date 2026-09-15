@@ -18,16 +18,14 @@
 
 import os
 import sys
-import tempfile
-import time
 
 from simintech_api import COMClient, Project
-from simintech_api.constants import find_model_template
+from simintech_api.constants import default_output_dir, find_model_template
 
-#: Стандартный каталог результатов. Тот же подкаталог использует MCP-сервер
-#: (`DEFAULT_OUTPUT_SUBDIR` в simintech-mcp) — он читает `read_output_file`
-#: только оттуда, поэтому файл примера удаётся прочитать и через MCP.
-OUT_DIR = os.path.join(tempfile.gettempdir(), "simintech-output")
+#: Стандартный каталог результатов (`constants.default_output_dir`). То же
+#: соглашение использует MCP-сервер: он читает `read_output_file` только
+#: оттуда, поэтому файл примера удаётся прочитать и через MCP.
+OUT_DIR = default_output_dir()
 OUT = os.path.join(OUT_DIR, "simintech_run_to_file.txt")
 
 #: Шаг записи в файл, с
@@ -71,14 +69,11 @@ def main() -> int:
 
     sim = project.simulation()
     sim.start()
-    sim.run_to(1.0)
-
-    # RunTo не блокирующий: дожидаемся выхода времени на отметку.
-    deadline = time.monotonic() + 10
-    while sim.get_time() < 0.999 and time.monotonic() < deadline:
-        time.sleep(0.05)
+    # run_to сам дожидается выхода времени на отметку (RunTo не блокирующий)
+    # и возвращает True только если время действительно дошло.
+    reached = sim.run_to(1.0)
     print("модельное время:", sim.get_time())
-    if sim.get_time() < 0.999:
+    if not reached:
         print("Расчёт не дошёл до 1.0 с. Частая причина — у блока не соединён "
               "вход: это молча останавливает расчёт всей модели.")
     sim.stop()

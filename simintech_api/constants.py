@@ -114,20 +114,32 @@ DEFAULT_MODEL_TEMPLATE_WSL = "/mnt/c/SimInTech64/bin/Template/" + MODEL_TEMPLATE
 def find_model_template() -> Optional[str]:
     """Найти шаблон пустой модели SimInTech.
 
-    Порядок поиска: ``SIMINTECH_TEMPLATE`` (полный путь к файлу) →
-    ``SIMINTECH_PATH`` (корень установки) → путь по умолчанию для текущей
-    платформы. Возвращается первый существующий файл, иначе ``None``.
+    Порядок поиска:
+
+    1. ``SIMINTECH_TEMPLATE`` — полный путь к файлу шаблона. Если переменная
+       задана, она **авторитетна**: при несуществующем файле возвращается
+       ``None``, а не откат на путь по умолчанию (иначе опечатка в настройке
+       молча подменялась бы другим шаблоном).
+    2. ``SIMINTECH_PATH`` — корень установки, ожидается
+       ``<корень>/bin/Template/<имя шаблона>``.
+    3. Пути по умолчанию: Windows (``C:\\SimInTech64\\...``) и WSL
+       (``/mnt/c/SimInTech64/...``). Оба перебираются независимо от платформы —
+       так один и тот же код находит установку и из Windows, и из WSL.
+
+    COM же работает **только на Windows** (см. `COMClient.connect`), поэтому
+    найденный из-под WSL путь годится лишь для справки — расчёт по нему не
+    пойдёт.
 
     Зачем шаблон: ``NewProject`` создаёт **пустой** проект — без моделирующего
     слоя и без настроек расчёта. Такой проект не считает: модельное время не
     растёт ни через `ProjectRun`, ни через `RunTo`, ни через `ProjectStep`,
     хотя все вызовы возвращают успех (проверено на SimInTech64, 2026-09-15).
     """
-    candidates: List[str] = []
-
     explicit = os.environ.get("SIMINTECH_TEMPLATE")
     if explicit:
-        candidates.append(explicit)
+        return explicit if os.path.isfile(explicit) else None
+
+    candidates: List[str] = []
 
     root = os.environ.get("SIMINTECH_PATH")
     if root:
@@ -140,3 +152,18 @@ def find_model_template() -> Optional[str]:
         if os.path.isfile(candidate):
             return candidate
     return None
+
+
+# ─── Каталог результатов ───────────────────────────────────────────
+
+#: Подкаталог стандартного каталога результатов внутри временного каталога.
+#: Соглашение общее для библиотеки и MCP-сервера (`simintech-mcp`): блок
+#: «В файл» должен писать внутрь него, иначе `read_output_file` не прочитает
+#: файл — сервер читает только этот каталог.
+DEFAULT_OUTPUT_SUBDIR = "simintech-output"
+
+
+def default_output_dir() -> str:
+    """Стандартный каталог результатов: ``<временный каталог>/simintech-output``."""
+    import tempfile
+    return os.path.join(tempfile.gettempdir(), DEFAULT_OUTPUT_SUBDIR)
