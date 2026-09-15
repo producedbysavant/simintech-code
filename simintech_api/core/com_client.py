@@ -185,9 +185,35 @@ class COMClient:
         return _as_int(project_id)
 
     def new_project(self) -> int:
-        """Создать новый проект, вернуть ProjectId."""
+        """Создать новый проект, вернуть ProjectId.
+
+        Проект получается **пустым**: без моделирующего слоя и настроек расчёта,
+        поэтому он не считает. Для работоспособной модели используйте
+        `open_template()` (см. `Project.from_template`).
+        """
         project_id = self.call("NewProject")
         return _as_int(project_id)
+
+    def open_template(self, template: str) -> int:
+        """Создать проект из шаблона SimInTech, вернуть ProjectId.
+
+        Шаблоны лежат в `<корень SimInTech>\\bin\\Template\\*.prt`; имя файла
+        обязательно должно быть полным путём — по короткому имени (без пути)
+        метод возвращает 0 и проект не создаётся.
+        """
+        return _as_int(self.call("OpenTemplate", template))
+
+    def set_layer_prop(self, project_id: int, layer_no: int,
+                       name: str, value: Any) -> int:
+        """Установить свойство расчётного слоя проекта, вернуть handle.
+
+        Свойства слоя — это настройки расчёта из секции «Основные параметры»:
+        `endtime`, `starttime`, `hmin`, `hmax`, `intmet` и т. п. Работает
+        только у проекта с настоящим расчётным слоем (шаблон, а не `NewProject`);
+        у пустого проекта возвращает 0 и ничего не меняет (проверено).
+        """
+        return _as_int(self.call("SetLayerProp", project_id, layer_no,
+                                 name, str(value)))
 
     def get_process_id(self) -> int:
         """Вернуть PID процесса mmain.exe."""

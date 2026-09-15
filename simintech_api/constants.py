@@ -5,7 +5,9 @@ mmain.hpp и docs/reference/com_api_inventory.md) — официально enum 
 задокументирован.
 """
 
+import os
 from enum import IntEnum
+from typing import List, Optional
 
 
 class DataType(IntEnum):
@@ -89,4 +91,79 @@ SUPPORTED_COM_BLOCK_CLASSES = {
     "Порт входа",
     "Задержка на шаг интегрирования",
     "RS-триггер с приоритетом по установке",
+    # Вывод результатов в текстовый файл: строки «<время> <значения...>»
+    "В файл",
 }
+
+# ─── Шаблон проекта ────────────────────────────────────────────────
+
+#: Имя шаблона «пустой модели» в поставке SimInTech (меню «Файл → Создать»).
+MODEL_TEMPLATE_NAME = "Схема модели общего вида.prt"
+
+#: Номер расчётного слоя («Автоматика», плагин `mbtylib.dll@layer`).
+#: Свойства слоя (в т.ч. `endtime`) меняются только у проекта с этим слоем.
+CALC_LAYER = 0
+
+#: Путь по умолчанию на Windows.
+DEFAULT_MODEL_TEMPLATE = "C:\\SimInTech64\\bin\\Template\\" + MODEL_TEMPLATE_NAME
+
+#: Путь по умолчанию из WSL (там же лежит установка).
+DEFAULT_MODEL_TEMPLATE_WSL = "/mnt/c/SimInTech64/bin/Template/" + MODEL_TEMPLATE_NAME
+
+
+def find_model_template() -> Optional[str]:
+    """Найти шаблон пустой модели SimInTech.
+
+    Порядок поиска:
+
+    1. ``SIMINTECH_TEMPLATE`` — полный путь к файлу шаблона. Если переменная
+       задана, она **авторитетна**: при несуществующем файле возвращается
+       ``None``, а не откат на путь по умолчанию (иначе опечатка в настройке
+       молча подменялась бы другим шаблоном).
+    2. ``SIMINTECH_PATH`` — корень установки, ожидается
+       ``<корень>/bin/Template/<имя шаблона>``.
+    3. Пути по умолчанию: Windows (``C:\\SimInTech64\\...``) и WSL
+       (``/mnt/c/SimInTech64/...``). Оба перебираются независимо от платформы —
+       так один и тот же код находит установку и из Windows, и из WSL.
+
+    COM же работает **только на Windows** (см. `COMClient.connect`), поэтому
+    найденный из-под WSL путь годится лишь для справки — расчёт по нему не
+    пойдёт.
+
+    Зачем шаблон: ``NewProject`` создаёт **пустой** проект — без моделирующего
+    слоя и без настроек расчёта. Такой проект не считает: модельное время не
+    растёт ни через `ProjectRun`, ни через `RunTo`, ни через `ProjectStep`,
+    хотя все вызовы возвращают успех (проверено на SimInTech64, 2026-09-15).
+    """
+    explicit = os.environ.get("SIMINTECH_TEMPLATE")
+    if explicit:
+        return explicit if os.path.isfile(explicit) else None
+
+    candidates: List[str] = []
+
+    root = os.environ.get("SIMINTECH_PATH")
+    if root:
+        candidates.append(os.path.join(root, "bin", "Template", MODEL_TEMPLATE_NAME))
+
+    candidates.append(DEFAULT_MODEL_TEMPLATE)
+    candidates.append(DEFAULT_MODEL_TEMPLATE_WSL)
+
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
+# ─── Каталог результатов ───────────────────────────────────────────
+
+#: Подкаталог стандартного каталога результатов внутри временного каталога.
+#: Соглашение общее для библиотеки и MCP-сервера (`simintech-mcp`): блок
+#: «В файл» должен писать внутрь него, иначе `read_output_file` не прочитает
+#: файл — сервер читает только этот каталог.
+DEFAULT_OUTPUT_SUBDIR = "simintech-output"
+
+
+def default_output_dir() -> str:
+    """Стандартный каталог результатов: ``<временный каталог>/simintech-output``."""
+    import tempfile
+    return os.path.join(tempfile.gettempdir(), DEFAULT_OUTPUT_SUBDIR)

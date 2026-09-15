@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, List
 
 from ..exceptions import ProjectError, SignalError
+from ..constants import CALC_LAYER, find_model_template
 from ..model import SignalInfo, TDataDescriptor
 
 if TYPE_CHECKING:
@@ -40,6 +41,51 @@ class Project:
         if project_id == 0:
             raise ProjectError(f"OpenProject не удалось открыть '{path}'")
         return cls(client, project_id)
+
+    @classmethod
+    def from_template(cls, client: "COMClient",
+                      template: "str | None" = None) -> "Project":
+        """Создать проект из шаблона пустой модели SimInTech.
+
+        Это рабочий способ «создать проект с нуля»: `Project.new()` даёт пустой
+        проект, в котором нет моделирующего слоя и настроек расчёта, поэтому
+        расчёт в нём не идёт (модельное время не растёт, хотя вызовы сообщают
+        об успехе). Шаблон из поставки — «Схема модели общего вида.prt» — даёт
+        полноценный проект с расчётным слоем «Автоматика» и настройками.
+
+        Args:
+            template: путь к шаблону; по умолчанию — из `find_model_template()`
+                (учитывает переменные окружения `SIMINTECH_TEMPLATE`,
+                `SIMINTECH_PATH`).
+        """
+        path = template or find_model_template()
+        if not path:
+            raise ProjectError(
+                "Не найден шаблон модели SimInTech. Укажите путь явно или "
+                "задайте SIMINTECH_TEMPLATE / SIMINTECH_PATH."
+            )
+        project_id = client.open_template(path)
+        if project_id == 0:
+            raise ProjectError(f"OpenTemplate не открыл шаблон '{path}'")
+        return cls(client, project_id)
+
+    def set_calc_end_time(self, seconds: float) -> "Project":
+        """Задать конечное время расчёта (`endtime` расчётного слоя).
+
+        Без этого проект считается до значения из шаблона (10 с). Требует
+        проекта с расчётным слоем — созданного из шаблона, а не через
+        `Project.new()`.
+        """
+        if seconds <= 0:
+            raise ValueError("Конечное время расчёта должно быть положительным")
+        handle = self._client.set_layer_prop(
+            self._id, CALC_LAYER, "endtime", float(seconds))
+        if not handle:
+            raise ProjectError(
+                "SetLayerProp не принял endtime: в проекте нет расчётного слоя. "
+                "Создайте проект через Project.from_template()."
+            )
+        return self
 
     # ─── Свойства ───────────────────────────────────────────────────
 

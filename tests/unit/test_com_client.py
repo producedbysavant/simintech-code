@@ -61,6 +61,14 @@ class FakeServer:
     def CloseProject(self, project_id):
         self.calls.append(("CloseProject", project_id))
 
+    def OpenTemplate(self, template):
+        self.calls.append(("OpenTemplate", template))
+        return self._project_id
+
+    def SetLayerProp(self, project_id, layer_no, name, value):
+        self.calls.append(("SetLayerProp", project_id, layer_no, name, value))
+        return 777
+
 
 def test_connect_initializes_com_for_current_thread(monkeypatch):
     """connect() инициализирует COM в текущем потоке.
@@ -276,3 +284,39 @@ def test_shutdown_kills_explicit_pids(monkeypatch):
     assert all(args and args[0] == "taskkill" for args in killed)
     assert ["taskkill", "/F", "/PID", "999"] in killed
     assert ["taskkill", "/F", "/PID", "888"] in killed
+
+
+def test_open_template_passes_path_and_returns_id(monkeypatch):
+    """open_template() — тонкая обёртка: путь уходит в COM как есть."""
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+    client.connect()
+
+    assert client.open_template(r"C:\TPL\Схема.prt") == 42
+    assert ("OpenTemplate", r"C:\TPL\Схема.prt") in fake.calls
+
+
+def test_set_layer_prop_stringifies_value(monkeypatch):
+    """Значение свойства слоя уходит строкой: COM ждёт BSTR.
+
+    Число без преобразования comtypes отверг бы, поэтому контракт «строка»
+    надо удерживать явно.
+    """
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+    client.connect()
+
+    handle = client.set_layer_prop(42, 0, "endtime", 2.5)
+
+    assert handle == 777
+    assert ("SetLayerProp", 42, 0, "endtime", "2.5") in fake.calls
+
+
+def test_set_layer_prop_reports_zero_when_layer_rejects(monkeypatch):
+    """Возврат 0 означает, что свойство не принято (нет расчётного слоя)."""
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+    client.connect()
+    monkeypatch.setattr(fake, "SetLayerProp", lambda *a: 0)
+
+    assert client.set_layer_prop(42, 0, "endtime", "1") == 0
