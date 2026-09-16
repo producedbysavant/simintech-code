@@ -5,8 +5,9 @@
 Имена сигналов блоков совпадают с именами блоков (Name) и могут быть
 извлечены из XML-представления проекта.
 
-Формат .xprt: кодировка Windows-1251, блок — <object><name>..</name>
-<class_name>..</class_name><visual_props><data><name>Name</name><value>..</value>
+Формат .xprt: кодировка UTF-8 с BOM (`catalog.decode_xprt`), блок —
+<object><name>..</name><class_name>..</class_name><visual_props><data><name>Name
+</name><value>..</value>
 """
 from __future__ import annotations
 
@@ -85,7 +86,7 @@ class XprtSignalReader:
     def _names_by_xml(self) -> List[str]:
         """Полноценный XML-парсинг (запасной путь)."""
         try:
-            # XML-имена в cp1251, но содержимое — в бэктиках
+            # Содержимое — в бэктиках; кодировку снял `decode_xprt` выше
             root = ET.fromstring(self._xml_text)
         except ET.ParseError:
             return []

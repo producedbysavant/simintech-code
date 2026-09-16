@@ -133,6 +133,9 @@ class FakeSim:
 
     def step(self):
         self.steps = getattr(self, "steps", 0) + 1
+        # Шаг двигает модельное время: без этого проверка «время сдвинулось»
+        # в `_cmd_step` была бы неотличима.
+        self.time += 0.001
         return self
 
     def stop(self):
@@ -157,6 +160,10 @@ def agent():
     a = SimInTechAgent(client=FakeClient(), auto_connect=False)
     # Подменяем Project фабрики фейками
     a._project = FakeProject()
+    # След фабрики — атрибут классовый, поэтому сбрасываем его здесь: без
+    # сброса проверка `used_factory == "from_template"` зависела бы от того,
+    # какие тесты успели выполниться раньше в том же процессе.
+    FakeProject.used_factory = None
     return a
 
 
@@ -175,15 +182,56 @@ def test_create_project_ok(agent):
     assert FakeProject.used_factory == "from_template"
 
 
-def test_run_reports_failure_when_time_did_not_move(agent):
-    """Достижение времени проверяется, а не предполагается.
+def test_run_reports_failure_when_target_not_reached(agent):
+    """Недостижение отметки — неудача, даже если время тронулось.
 
-    `run_to` возвращает успех и на пустом проекте, где модельное время стоит:
-    без проверки команда сообщала «расчёт выполнен».
+    `run_to` возвращает True, только если время **дошло** до цели. Проверять
+    вместо этого «время сдвинулось» мало: расчёт может пойти и встать на 3 с
+    при цели 10 с — тогда любой рост времени был бы выдан за достижение
+    запрошенного, то есть за ложный успех.
     """
-    agent._project.sim.run_to = lambda t: True          # время не двигает
+    def stalls(target):
+        agent._project.sim.time = 3.0        # тронулось, но до 10 не дошло
+        return False
+
+    agent._project.sim.run_to = stalls
 
     r = agent.execute("run for 10 seconds")
+
+    assert not r.ok
+    assert "не дошёл до 10" in r.message
+    assert "3.000" in r.message
+
+
+def test_run_reports_failure_when_time_did_not_move(agent):
+    """Совсем стоящий расчёт — тоже отказ, а не «выполнено»."""
+    agent._project.sim.run_to = lambda target: False
+
+    r = agent.execute("run for 10 seconds")
+
+    assert not r.ok
+    assert "не дошёл" in r.message
+
+
+def test_run_for_zero_is_success(agent):
+    """`run for 0 seconds` — не отказ: цель уже достигнута.
+
+    Проверка «время сдвинулось» отвергала такую команду, потому что двигаться
+    времени было некуда, — хотя делать было нечего и расчёт тут ни при чём.
+    """
+    r = agent.execute("run for 0 seconds")
+
+    assert r.ok
+
+
+def test_step_reports_stalled_time(agent):
+    """`step` — тот же класс, что `run`: шаги без продвижения не успех.
+
+    `ProjectStep` сообщает об успехе и на проекте, где расчёт стоит.
+    """
+    agent._project.sim.step = lambda: None      # время не двигает
+
+    r = agent.execute("step 5")
 
     assert not r.ok
     assert "не сдвинулось" in r.message

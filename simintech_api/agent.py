@@ -174,40 +174,56 @@ class SimInTechAgent:
         self._wires.append(wire)
         return CommandResult(True, f"Соединено: {source} -> {target} (wire={wire.id})")
 
-    def _cmd_run(self, seconds) -> CommandResult:
+    def _cmd_run(self, seconds: Optional[str]) -> CommandResult:
         if not self._project:
             return CommandResult(False, "Нет открытого проекта")
         sim = self._project.simulation()
         sim.start()
-        if seconds:
-            before = sim.get_time()
-            sim.run_to(float(seconds))
+        if seconds is not None:
+            target = float(seconds)
+            # `run_to` возвращает True, только если время **дошло** до отметки
+            # (опросом `GetProjectTime`, с ожиданием и детекцией простоя).
+            # Проверять вместо этого «время сдвинулось» нельзя: расчёт может
+            # пойти и встать, не дойдя до цели, — тогда любой рост времени был
+            # бы выдан за достижение запрошенного.
+            reached = sim.run_to(target)
             t = sim.get_time()
-            if t <= before:
-                # Достижение запрошенного времени не проверялось: команда
-                # сообщала «выполнен», даже когда расчёт не пошёл вовсе.
+            if not reached:
                 return CommandResult(
                     False,
-                    f"Модельное время не сдвинулось ({t:.3f} с) — расчёт не "
-                    f"пошёл. Пустой проект из `Project.new()` не считает: "
-                    f"берите проект из шаблона.",
+                    f"Расчёт не дошёл до {target} с: модельное время {t:.3f}. "
+                    f"Частые причины: не соединён вход какого-то блока — это "
+                    f"молча останавливает расчёт всей модели; цель дальше "
+                    f"`endtime` проекта; расчёт не идёт вовсе.",
                 )
             return CommandResult(
                 True,
-                f"Расчёт выполнен до {seconds} с (модельное время={t:.3f})",
+                f"Расчёт выполнен до {target} с (модельное время={t:.3f})",
             )
         sim.run()
         return CommandResult(True, "Расчёт запущен")
 
-    def _cmd_step(self, steps) -> CommandResult:
+    def _cmd_step(self, steps: Optional[str]) -> CommandResult:
         if not self._project:
             return CommandResult(False, "Нет открытого проекта")
         sim = self._project.simulation()
         sim.start()
         n = int(steps) if steps else 1
+        before = sim.get_time()
         for _ in range(n):
             sim.step()
-        return CommandResult(True, f"Выполнено шагов: {n}")
+        t = sim.get_time()
+        if t <= before:
+            # `ProjectStep` сообщает об успехе и на проекте, где расчёт стоит:
+            # шаги, которых не было, — не успех, как и недостигнутая отметка
+            # в `run`.
+            return CommandResult(
+                False,
+                f"Модельное время не сдвинулось после {n} шагов ({t:.3f} с) — "
+                f"расчёт не идёт. Проверьте, соединены ли входы блоков.",
+            )
+        return CommandResult(
+            True, f"Выполнено шагов: {n} (время: {before:.3f} → {t:.3f})")
 
     def _cmd_stop(self) -> CommandResult:
         if not self._project:
