@@ -160,6 +160,18 @@ class Project:
         """Сохранить проект в бинарный формат (.prt)."""
         self._client.call("SaveProjectBinary", self._id, path)
 
+    def export_db_to_xml(self, path: str) -> None:
+        """Выгрузить базу сигналов проекта в XML.
+
+        COM-путь выгрузки базы: не нужны ни командная строка, ни макрос
+        `dbexporttoxml` — база отдаётся одним вызовом. Файл пишет сам
+        SimInTech; читает его `simintech_api.sdb.SignalDatabase.from_xml`.
+
+        Проверено на поставке: проект с базой отдаёт файл, который наш разбор
+        читает целиком (5 категорий, 99 групп, 5805 сигналов).
+        """
+        self._client.call("ExportDBToXML", self._id, path)
+
     # ─── Страницы ───────────────────────────────────────────────────
 
     def get_main_page(self) -> "Page":
