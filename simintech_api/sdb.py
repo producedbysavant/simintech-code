@@ -53,11 +53,30 @@ class CategoryInfo:
     groups: list[GroupInfo] = field(default_factory=list)
 
 
-def _strip_backticks(text: Optional[str]) -> str:
-    """Удалить обратные кавычки из строки."""
+def _strip_quotes(text: Optional[str]) -> str:
+    """Убрать кавычки по краям значения из XML базы сигналов.
+
+    Кавычки двух конвенций: одни выгрузки оборачивают значения в бэктики,
+    другие — в одинарные кавычки; и то и другое встречается в поставке.
+    Внутренние кавычки не трогаются. Раньше снимались только бэктики, и файл с
+    одинарными кавычками не разбирался вовсе: ``int('0')`` падал.
+    """
     if text is None:
         return ""
-    return text.strip().strip("`")
+    return text.strip().strip("`'").strip()
+
+
+def _as_int(text: str, default: int = 0) -> int:
+    """Целое из значения поля; нечисловое даёт `default`, а не исключение.
+
+    Поля ``type`` и ``mode`` — служебные: непонятное значение в них не повод
+    ронять разбор всего файла, но и молчать о нём нельзя, поэтому вызывающий
+    видит `default` и может отличить его от разобранного значения.
+    """
+    try:
+        return int(text)
+    except (TypeError, ValueError):
+        return default
 
 
 class SignalDatabase:
@@ -92,9 +111,9 @@ class SignalDatabase:
             database = root
 
         def ft(elem, tag, default=""):
-            """findtext с удалением обратных кавычек."""
+            """findtext с удалением кавычек обеих конвенций."""
             val = elem.findtext(tag, default)
-            return _strip_backticks(val) if val else default
+            return _strip_quotes(val) if val else default
 
         for cat_elem in database.findall("category"):
             cat_name = ft(cat_elem, "name")
@@ -115,8 +134,8 @@ class SignalDatabase:
                             caption=ft(signal_elem, "caption"),
                             category=cat_name,
                             group=group_name,
-                            data_type=int(ft(signal_elem, "type", "0") or "0"),
-                            mode=int(ft(signal_elem, "mode", "0") or "0"),
+                            data_type=_as_int(ft(signal_elem, "type", "0") or "0"),
+                            mode=_as_int(ft(signal_elem, "mode", "0") or "0"),
                             value=ft(signal_elem, "value"),
                             fconstant=ft(signal_elem, "fconstant", "0") or "0",
                             full_name=f"{group_name}_{sig_name}",
