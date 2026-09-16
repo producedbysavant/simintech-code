@@ -424,6 +424,9 @@ def merge_catalogs(catalogs: Iterable[BlockCatalog]) -> BlockCatalog:
     """
     classes: Dict[str, Dict[str, str]] = {}
     readonly: Dict[str, List[str]] = {}
+    # `Dict` инвариантен по значению: `dict[str, list[str]]` не подходит там,
+    # где объявлен `Dict[str, Iterable[str]]`, поэтому тип задаётся явно.
+    readonly_map: Dict[str, Iterable[str]] = {}
     requested: List[str] = []
     failed: List[str] = []
     source = "generated"
@@ -442,9 +445,10 @@ def merge_catalogs(catalogs: Iterable[BlockCatalog]) -> BlockCatalog:
         if isinstance(missed, list):
             failed.extend(str(name) for name in missed)
         source = str(catalog.meta.get("source") or source)
+    readonly_map.update(readonly)
     return BlockCatalog(
         classes=classes,
-        readonly=readonly,
+        readonly=readonly_map,
         meta={
             "source": source,
             "requested": sorted(set(requested)),
