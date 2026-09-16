@@ -7,6 +7,8 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
+import pytest  # noqa: E402
+
 from simintech_api.catalog import (  # noqa: E402
     BlockCatalog,
     clean_value,
@@ -189,7 +191,8 @@ def test_decode_xprt_handles_utf8_bom():
     Чтение как cp1251 превращает русские имена классов в мусор — молча, без
     ошибки. Именно на этом ломалась генерация каталога.
     """
-    text = "<?xml version=\"1.0\" encoding=\"utf-8\"?><class_name>`Усилитель`</class_name>"
+    text = ('<?xml version="1.0" encoding="utf-8"?>'
+            "<class_name>`Усилитель`</class_name>")
     raw = text.encode("utf-8-sig")
 
     assert decode_xprt(raw) == text
@@ -202,6 +205,22 @@ def test_decode_xprt_falls_back_to_cp1251():
     raw = haystack.encode("cp1251") + b"\xff\xfe\xfd"
 
     assert "выдуманный" in decode_xprt(raw)
+
+
+def test_decode_xprt_refuses_corrupted_bom_file():
+    """BOM обязывает: испорченный байт — ошибка, а не mojibake.
+
+    Запасной cp1251 декодирует любые байты, поэтому порча файла с BOM раньше
+    проходила молча: «Усилитель» превращался в «РЈСЃРёР»РёС‚РµР»СЊ», и отличить
+    такой мусор от настоящих имён было нельзя — а каталог, собранный из него,
+    выглядел пустым, но исправным.
+    """
+    raw = ('<?xml version="1.0" encoding="utf-8"?>'
+           "<class_name>`Усилитель`</class_name>").encode("utf-8-sig")
+    broken = raw[:-1] + b"\xff"
+
+    with pytest.raises(UnicodeDecodeError):
+        decode_xprt(broken)
 
 
 # ─── BlockCatalog ─────────────────────────────────────────────────
@@ -263,7 +282,8 @@ def test_generate_catalog_pipeline(tmp_path, monkeypatch):
     from simintech_api.catalog import generate_catalog
 
     source_xprt = tmp_path / "source.xprt"
-    source_xprt.write_text(XPRT_BACKTICK, encoding="cp1251")
+    # Как настоящий SaveProjectXML: UTF-8 с BOM (в фикстуре объявлено utf-8).
+    source_xprt.write_text(XPRT_BACKTICK, encoding="utf-8-sig")
 
     created = []
 
@@ -287,7 +307,8 @@ def test_generate_catalog_pipeline(tmp_path, monkeypatch):
 
         def save_xml(self, path):
             pathlib.Path(path).write_text(
-                source_xprt.read_text(encoding="cp1251"), encoding="cp1251")
+                source_xprt.read_text(encoding="utf-8-sig"),
+                encoding="utf-8-sig")
 
         def close(self):
             pass
@@ -313,7 +334,8 @@ def test_generate_catalog_records_failures(tmp_path, monkeypatch):
     from simintech_api.catalog import generate_catalog
 
     source_xprt = tmp_path / "source.xprt"
-    source_xprt.write_text(XPRT_BACKTICK, encoding="cp1251")
+    # Как настоящий SaveProjectXML: UTF-8 с BOM (в фикстуре объявлено utf-8).
+    source_xprt.write_text(XPRT_BACKTICK, encoding="utf-8-sig")
 
     class FakeBlock:
         def set_name(self, name):
@@ -333,7 +355,8 @@ def test_generate_catalog_records_failures(tmp_path, monkeypatch):
 
         def save_xml(self, path):
             pathlib.Path(path).write_text(
-                source_xprt.read_text(encoding="cp1251"), encoding="cp1251")
+                source_xprt.read_text(encoding="utf-8-sig"),
+                encoding="utf-8-sig")
 
         def close(self):
             pass

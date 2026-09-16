@@ -4,7 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "simintech-api"
-version = "0.2.0"
+# Версия берётся из `simintech_api/__init__.py`: пока она была прописана в двух
+# местах, они разошлись (в `__init__.py` осталось 0.1.0 против 0.2.0 здесь), и
+# `simintech_api.__version__` врал.
+dynamic = ["version"]
 description = "Python-библиотека для программного управления SimInTech через внешний COM API"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -27,9 +30,18 @@ simintech-generate-catalog = "simintech_api.catalog_tool:main"
 [tool.hatch.build.targets.wheel]
 packages = ["simintech_api"]
 
+[tool.hatch.version]
+path = "simintech_api/__init__.py"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Маркеры объявлены, но не исключались: `pytest` по умолчанию тянул и
+# интеграционные тесты (им нужен COM на Windows), и бенчмарки — а те меряют
+# стенные часы (`< 2.0s`) и на первом же прогоне в CI дали бы флак. Теперь
+# обычный прогон — только модульные тесты; остальное запускается явно:
+# `pytest -m integration` или `pytest -m performance`.
+addopts = "-m 'not performance and not integration'"
 markers = [
-    "integration: тесты, требующие реального COM-сервера SimInTech на Windows (deselect через -m 'not integration')",
-    "performance: бенчмарки производительности placer/router",
+    "integration: тесты, требующие реального COM-сервера SimInTech на Windows",
+    "performance: бенчмарки производительности placer/router (меряют стенные часы)",
 ]

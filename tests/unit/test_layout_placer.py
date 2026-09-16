@@ -4,9 +4,6 @@ import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-import pytest
-
-from simintech_api.exceptions import LayoutError
 from simintech_api.layout import LayeredPlacer
 
 
@@ -105,5 +102,8 @@ def test_pure_cycle_places():
     placer = LayeredPlacer()
     pos = placer.place(['A', 'B'], [('A', 'B'), ('B', 'A')])
     assert set(pos.keys()) == {'A', 'B'}
-    # Корень ('A' и 'B' имеют по 1 входу — берётся первый) на слое 0
-    assert pos['A'][0] == pos['B'][0] or pos['A'][0] < pos['B'][0] or pos['B'][0] < pos['A'][0]
+    # Цикл разрывается: корень ('A' — первый по списку) встаёт на слой 0, 'B' —
+    # на следующий. Прежняя проверка (`A == B or A < B or B < A`) истинна при
+    # любых числах, то есть не падала бы ни при каком размещении.
+    assert pos['A'][0] == 0.0
+    assert pos['B'][0] > pos['A'][0]

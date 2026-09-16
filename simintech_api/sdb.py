@@ -302,7 +302,9 @@ def export_db_via_macro(
     Returns:
         Путь к созданному XML-файлу
     """
-    from .cli_adapter import CLIAdapter
+    # CLIAdapter живёт в `cli_runner`: модуля `cli_adapter` в пакете нет, и
+    # импорт из него не давал импортировать эту функцию вообще.
+    from .cli_runner import CLIAdapter
 
     cli = CLIAdapter(mmain_path=mmain_path)
 

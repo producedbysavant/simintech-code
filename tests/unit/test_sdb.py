@@ -8,7 +8,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 import pytest  # noqa: E402
 
-from simintech_api.sdb import SignalDatabase  # noqa: E402
+from simintech_api.sdb import (  # noqa: E402
+    SignalDatabase,
+    export_db_via_macro,
+)
 
 # Реальный формат выгрузки: значения обёрнуты в бэктики
 SDB_XML = textwrap.dedent("""\
@@ -131,3 +134,54 @@ def test_normal_document_still_parses(tmp_path):
     db = SignalDatabase.from_xml(_write(tmp_path))
 
     assert db.is_loaded is True
+
+
+# ─── Экспорт БД через макрос ──────────────────────────────────────
+
+
+class _FakeCLIResult:
+    def __init__(self, success: bool, message: str = "ок"):
+        self.success = success
+        self.message = message
+
+
+def _install_fake_cli(monkeypatch, success: bool, calls: dict):
+    """Подменить CLIAdapter в `cli_runner` — оттуда его берёт экспорт."""
+    import simintech_api.cli_runner as cli_runner
+
+    class FakeCLIAdapter:
+        def __init__(self, mmain_path=None):
+            calls["mmain_path"] = mmain_path
+
+        def run_macro(self, macro):
+            calls["macro"] = macro
+            return _FakeCLIResult(success, "ошибка макроса")
+
+    monkeypatch.setattr(cli_runner, "CLIAdapter", FakeCLIAdapter)
+
+
+def test_export_db_via_macro_uses_cli_runner(monkeypatch, tmp_path):
+    """Экспорт идёт через `CLIAdapter` из `cli_runner`.
+
+    Импорт был из `cli_adapter` — модуля с таким именем в пакете нет, поэтому
+    функция не импортировалась вообще. Импорт стоит **внутри** функции, так что
+    и `import simintech_api.sdb` проходил: поймать это мог только вызов.
+    """
+    calls: dict = {}
+    _install_fake_cli(monkeypatch, True, calls)
+    out = tmp_path / "db.xml"
+
+    result = export_db_via_macro("model.prt", str(out))
+
+    assert result == str(out)
+    assert "dbexporttoxml" in calls["macro"]
+    assert "model.prt" in calls["macro"]
+
+
+def test_export_db_via_macro_reports_failure(monkeypatch, tmp_path):
+    """Неудача макроса — исключение, а не путь к файлу, которого нет."""
+    calls: dict = {}
+    _install_fake_cli(monkeypatch, False, calls)
+
+    with pytest.raises(RuntimeError):
+        export_db_via_macro("model.prt", str(tmp_path / "db.xml"))

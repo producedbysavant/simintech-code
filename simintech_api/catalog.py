@@ -272,21 +272,40 @@ def parse_xprt_readonly(xml_text: str) -> Dict[str, List[str]]:
 
 # ─── Генерация из реального SimInTech ─────────────────────────────
 
+#: BOM UTF-8 — им SimInTech помечает свои экспорты.
+_UTF8_BOM = b"\xef\xbb\xbf"
+
+
 def decode_xprt(raw: bytes) -> str:
     """Декодировать байты .xprt в текст.
 
-    SimInTech (проверено на 2026-09-10, SimInTech64) пишет `.xprt` в
-    **UTF-8 с BOM**, а не в cp1251. Чтение как cp1251 превращает русские имена
-    классов в мусор — молча, без ошибки, потому что cp1251 декодирует любые
-    байты. Поэтому сначала пробуем UTF-8, а cp1251 оставляем запасным
-    вариантом для старых версий.
+    SimInTech пишет `.xprt` в **UTF-8 с BOM** (проверено на настоящих
+    экспортах: BOM `EF BB BF` и объявление `encoding="utf-8"` в самом XML), а не
+    в cp1251. Чтение как cp1251 превращает русские имена классов в мусор —
+    молча, без ошибки, потому что cp1251 декодирует любые байты.
+
+    BOM решает: если он есть — декодируем **строго** UTF-8 и не прячем порчу
+    файла за запасной кодировкой. Иначе один испорченный байт давал бы mojibake
+    (`Усилитель` → `РЈСЃРёР»РёС‚РµР»СЊ`) вместо ошибки — то есть ровно тот
+    молчаливый дефект, ради которого кодировка и выбирается по содержимому.
+    cp1251 остаётся запасным для файлов **без** BOM — так писали старые версии.
     """
-    for encoding in ("utf-8-sig", "cp1251"):
-        try:
-            return raw.decode(encoding)
-        except UnicodeDecodeError:
-            continue
-    return raw.decode("utf-8", errors="replace")
+    if raw.startswith(_UTF8_BOM):
+        return raw.decode("utf-8-sig")
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+    try:
+        return raw.decode("cp1251")
+    except UnicodeDecodeError as exc:                       # pragma: no cover
+        # cp1251 не бросает ни на одном байте, поэтому сюда попасть нельзя.
+        # Ветка — явный отказ вместо тихой подстановки U+FFFD: иначе о неудаче
+        # декодирования никто не узнал бы.
+        raise SimInTechError(
+            f"Не удалось определить кодировку .xprt: файл не UTF-8 и не cp1251 "
+            f"({exc})"
+        ) from exc
 
 
 def export_xprt_text(project, suffix: str = ".xprt") -> str:

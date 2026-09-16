@@ -2,7 +2,6 @@
 
 import os
 import sys
-import types
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
@@ -80,6 +79,11 @@ class FakePage:
 
 
 class FakeProject:
+    #: Какая фабрика вызвана. Нужна, чтобы тест различал `new` и `from_template`:
+    #: первый даёт проект, в котором расчёт не идёт, и проверка «создан» без
+    #: этого прошла бы при любой из них.
+    used_factory = None
+
     def __init__(self, pid=1):
         self.id = pid
         self.page = FakePage(50)
@@ -87,6 +91,12 @@ class FakeProject:
 
     @classmethod
     def new(cls, client):
+        cls.used_factory = "new"
+        return cls(1)
+
+    @classmethod
+    def from_template(cls, client, template=None):
+        cls.used_factory = "from_template"
         return cls(1)
 
     def get_main_page(self):
@@ -103,6 +113,11 @@ class FakeProject:
 
 
 class FakeSim:
+    def __init__(self):
+        #: Модельное время: `get_time` возвращает именно его, а `run_to` двигает.
+        #: Без этого проверка «время сдвинулось» была бы неотличима.
+        self.time = 0.0
+
     def start(self):
         self.started = True
         return self
@@ -113,10 +128,14 @@ class FakeSim:
 
     def run_to(self, t):
         self.ran_to = t
+        self.time = float(t)
         return True
 
     def step(self):
         self.steps = getattr(self, "steps", 0) + 1
+        # Шаг двигает модельное время: без этого проверка «время сдвинулось»
+        # в `_cmd_step` была бы неотличима.
+        self.time += 0.001
         return self
 
     def stop(self):
@@ -124,7 +143,7 @@ class FakeSim:
         return self
 
     def get_time(self):
-        return 10.0
+        return self.time
 
 
 class FakeClient:
@@ -141,6 +160,10 @@ def agent():
     a = SimInTechAgent(client=FakeClient(), auto_connect=False)
     # Подменяем Project фабрики фейками
     a._project = FakeProject()
+    # След фабрики — атрибут классовый, поэтому сбрасываем его здесь: без
+    # сброса проверка `used_factory == "from_template"` зависела бы от того,
+    # какие тесты успели выполниться раньше в том же процессе.
+    FakeProject.used_factory = None
     return a
 
 
@@ -155,6 +178,63 @@ def test_create_project_ok(agent):
         ag.Project = orig
     assert r.ok
     assert "MyModel" in r.message
+    # Именно шаблон: `Project.new` дал бы проект, в котором расчёт не идёт.
+    assert FakeProject.used_factory == "from_template"
+
+
+def test_run_reports_failure_when_target_not_reached(agent):
+    """Недостижение отметки — неудача, даже если время тронулось.
+
+    `run_to` возвращает True, только если время **дошло** до цели. Проверять
+    вместо этого «время сдвинулось» мало: расчёт может пойти и встать на 3 с
+    при цели 10 с — тогда любой рост времени был бы выдан за достижение
+    запрошенного, то есть за ложный успех.
+    """
+    def stalls(target):
+        agent._project.sim.time = 3.0        # тронулось, но до 10 не дошло
+        return False
+
+    agent._project.sim.run_to = stalls
+
+    r = agent.execute("run for 10 seconds")
+
+    assert not r.ok
+    assert "не дошёл до 10" in r.message
+    assert "3.000" in r.message
+
+
+def test_run_reports_failure_when_time_did_not_move(agent):
+    """Совсем стоящий расчёт — тоже отказ, а не «выполнено»."""
+    agent._project.sim.run_to = lambda target: False
+
+    r = agent.execute("run for 10 seconds")
+
+    assert not r.ok
+    assert "не дошёл" in r.message
+
+
+def test_run_for_zero_is_success(agent):
+    """`run for 0 seconds` — не отказ: цель уже достигнута.
+
+    Проверка «время сдвинулось» отвергала такую команду, потому что двигаться
+    времени было некуда, — хотя делать было нечего и расчёт тут ни при чём.
+    """
+    r = agent.execute("run for 0 seconds")
+
+    assert r.ok
+
+
+def test_step_reports_stalled_time(agent):
+    """`step` — тот же класс, что `run`: шаги без продвижения не успех.
+
+    `ProjectStep` сообщает об успехе и на проекте, где расчёт стоит.
+    """
+    agent._project.sim.step = lambda: None      # время не двигает
+
+    r = agent.execute("step 5")
+
+    assert not r.ok
+    assert "не сдвинулось" in r.message
 
 
 def test_add_block(agent):

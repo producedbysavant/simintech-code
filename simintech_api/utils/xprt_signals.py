@@ -5,8 +5,9 @@
 Имена сигналов блоков совпадают с именами блоков (Name) и могут быть
 извлечены из XML-представления проекта.
 
-Формат .xprt: кодировка Windows-1251, блок — <object><name>..</name>
-<class_name>..</class_name><visual_props><data><name>Name</name><value>..</value>
+Формат .xprt: кодировка UTF-8 с BOM (`catalog.decode_xprt`), блок —
+<object><name>..</name><class_name>..</class_name><visual_props><data><name>Name
+</name><value>..</value>
 """
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ import defusedxml.ElementTree as ET
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List
 
+from ..catalog import decode_xprt
 from ..exceptions import ProjectError
 
 if TYPE_CHECKING:
@@ -84,7 +86,7 @@ class XprtSignalReader:
     def _names_by_xml(self) -> List[str]:
         """Полноценный XML-парсинг (запасной путь)."""
         try:
-            # XML-имена в cp1251, но содержимое — в бэктиках
+            # Содержимое — в бэктиках; кодировку снял `decode_xprt` выше
             root = ET.fromstring(self._xml_text)
         except ET.ParseError:
             return []
@@ -112,8 +114,11 @@ def extract_signal_names_from_project(project: "Project",
                                       temp_suffix: str = ".xprt") -> List[str]:
     """Экспортировать проект в .xprt и извлечь имена сигналов.
 
-    Использует временный файл (SaveProjectXML), читает его в cp1251 и
-    парсит имена блоков — кандидатов в сигналы.
+    Использует временный файл (SaveProjectXML) и разбирает имена блоков —
+    кандидатов в сигналы. Кодировка определяется по содержимому
+    (`catalog.decode_xprt`): SimInTech пишет `.xprt` в UTF-8 с BOM, а чтение
+    как cp1251 превращает русские имена в мусор **молча**, без ошибки —
+    cp1251 декодирует любые байты.
     """
     tmp = Path(tempfile.gettempdir()) / f"siminapi_signals_{project.id}{temp_suffix}"
     try:
@@ -121,7 +126,7 @@ def extract_signal_names_from_project(project: "Project",
     except Exception as exc:
         raise ProjectError(f"Не удалось экспортировать проект в XML: {exc}") from exc
     try:
-        text = tmp.read_text(encoding="cp1251", errors="replace")
+        text = decode_xprt(tmp.read_bytes())
     finally:
         try:
             tmp.unlink()

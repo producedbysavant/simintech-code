@@ -86,8 +86,12 @@ def main() -> None:
     for name in candidates:
         try:
             desc = client.call("FindSignalData", name, prj_id)
-            data_id = getattr(desc, "DataId", None) if not isinstance(desc, (tuple, list)) else (desc[0] if desc else 0)
-            dt = getattr(desc, "DataType", None) if not isinstance(desc, (tuple, list)) else (desc[1] if len(desc) > 1 else None)
+            if isinstance(desc, (tuple, list)):
+                data_id = desc[0] if desc else 0
+                dt = desc[1] if len(desc) > 1 else None
+            else:
+                data_id = getattr(desc, "DataId", None)
+                dt = getattr(desc, "DataType", None)
             print(f"  '{name}': DataId={data_id!r}, DataType={dt!r}")
         except Exception as exc:
             print(f"  '{name}': ERROR {exc}")

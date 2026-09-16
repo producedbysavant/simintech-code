@@ -20,9 +20,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 pip install -e ".[test]"        # библиотека + pytest (comtypes — маркер win32)
-python3.11 -m pytest tests/unit -q                         # 153 теста, без COM
+python3.11 -m pytest tests/unit -q                         # 171 тест, без COM
+python3.11 -m pytest -q                                    # то же: интеграция и бенчмарки отсеяны (addopts)
 python3.11 -m pytest tests/integration -m integration -q   # Windows + реальный COM
-flake8 simintech_api/ --max-line-length=88 --extend-ignore=E203,W503
+python3.11 -m pytest -m performance -q                     # бенчмарки (меряют стенные часы)
+flake8                                                     # настройки — в .flake8
 simintech-cli                   # консольный вход в библиотеку
 simintech-generate-catalog      # перегенерация data/block_catalog.json (нужен COM)
 ```
