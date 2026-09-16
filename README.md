@@ -68,8 +68,8 @@ project.save_xml(r"C:\Temp\model.xprt")
 Проверка:
 
 ```bash
-python3.11 -m pytest tests/unit -q     # 153 теста, без COM
-flake8 simintech_api/ --max-line-length=88 --extend-ignore=E203,W503
+python3.11 -m pytest tests/unit -q     # 171 тест, без COM
+flake8                                 # настройки — в .flake8
 ```
 
 Интеграционные тесты (Windows, реальный COM):

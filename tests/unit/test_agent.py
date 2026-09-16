@@ -2,7 +2,6 @@
 
 import os
 import sys
-import types
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
@@ -80,6 +79,11 @@ class FakePage:
 
 
 class FakeProject:
+    #: Какая фабрика вызвана. Нужна, чтобы тест различал `new` и `from_template`:
+    #: первый даёт проект, в котором расчёт не идёт, и проверка «создан» без
+    #: этого прошла бы при любой из них.
+    used_factory = None
+
     def __init__(self, pid=1):
         self.id = pid
         self.page = FakePage(50)
@@ -87,6 +91,12 @@ class FakeProject:
 
     @classmethod
     def new(cls, client):
+        cls.used_factory = "new"
+        return cls(1)
+
+    @classmethod
+    def from_template(cls, client, template=None):
+        cls.used_factory = "from_template"
         return cls(1)
 
     def get_main_page(self):
@@ -103,6 +113,11 @@ class FakeProject:
 
 
 class FakeSim:
+    def __init__(self):
+        #: Модельное время: `get_time` возвращает именно его, а `run_to` двигает.
+        #: Без этого проверка «время сдвинулось» была бы неотличима.
+        self.time = 0.0
+
     def start(self):
         self.started = True
         return self
@@ -113,6 +128,7 @@ class FakeSim:
 
     def run_to(self, t):
         self.ran_to = t
+        self.time = float(t)
         return True
 
     def step(self):
@@ -124,7 +140,7 @@ class FakeSim:
         return self
 
     def get_time(self):
-        return 10.0
+        return self.time
 
 
 class FakeClient:
@@ -155,6 +171,22 @@ def test_create_project_ok(agent):
         ag.Project = orig
     assert r.ok
     assert "MyModel" in r.message
+    # Именно шаблон: `Project.new` дал бы проект, в котором расчёт не идёт.
+    assert FakeProject.used_factory == "from_template"
+
+
+def test_run_reports_failure_when_time_did_not_move(agent):
+    """Достижение времени проверяется, а не предполагается.
+
+    `run_to` возвращает успех и на пустом проекте, где модельное время стоит:
+    без проверки команда сообщала «расчёт выполнен».
+    """
+    agent._project.sim.run_to = lambda t: True          # время не двигает
+
+    r = agent.execute("run for 10 seconds")
+
+    assert not r.ok
+    assert "не сдвинулось" in r.message
 
 
 def test_add_block(agent):

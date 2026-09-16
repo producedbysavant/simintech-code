@@ -7,8 +7,6 @@
     python examples/model1_amplifier.py
 """
 
-import csv
-import math
 import os
 import sys
 

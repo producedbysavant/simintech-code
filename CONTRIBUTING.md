@@ -56,8 +56,8 @@
 
 ```bash
 pip install -e ".[test]"
-python3.11 -m pytest tests/unit -q      # должны быть зелёными, 132 теста
-flake8 simintech_api/ --max-line-length=88 --extend-ignore=E203,W503
+python3.11 -m pytest tests/unit -q      # должны быть зелёными, 171 тест
+flake8
 ```
 
 - **Unit-тесты идут без COM и без Windows** — на разборе XML и на

@@ -235,8 +235,6 @@ def test_typed_read_write_via_signal(monkeypatch):
 
 def test_owned_pid_records_client_pid(monkeypatch):
     """_owned_pid запоминает PID процесса, к которому подключился клиент."""
-    from simintech_api.core import com_client as cc
-
     fake = FakeServer()
     client = _make_client(monkeypatch, fake)
     client.connect()
@@ -246,7 +244,6 @@ def test_owned_pid_records_client_pid(monkeypatch):
 
 def test_shutdown_no_kill_by_default(monkeypatch):
     """shutdown() по умолчанию НЕ завершает процессы (только disconnect)."""
-    from simintech_api.core import com_client as cc
     from simintech_api.utils import processes as proc
 
     fake = FakeServer()
@@ -265,7 +262,6 @@ def test_shutdown_no_kill_by_default(monkeypatch):
 
 def test_shutdown_kills_explicit_pids(monkeypatch):
     """shutdown(kill_pids=...) завершает ТОЛЬКО переданные PID'ы."""
-    from simintech_api.core import com_client as cc
     from simintech_api.utils import processes as proc
 
     fake = FakeServer()

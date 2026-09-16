@@ -19,14 +19,17 @@ def dump(client, prj_id, label):
     print(f"\n--- {label} ---")
     try:
         list_raw = client.call("GetProjectSignalList", prj_id)
-        print(f"  GetProjectSignalList -> {list_raw!r} (type={type(list_raw).__name__})")
+        print(f"  GetProjectSignalList -> {list_raw!r} "
+              f"(type={type(list_raw).__name__})")
         list_id = _i64(list_raw)
         count_raw = client.call("GetListCount", list_id)
-        print(f"  GetListCount({list_id}) -> {count_raw!r} (type={type(count_raw).__name__})")
+        print(f"  GetListCount({list_id}) -> {count_raw!r} "
+              f"(type={type(count_raw).__name__})")
         count = _i64(count_raw)
         for i in range(min(count, 5)):
             info = client.call("GetDataInfoFromList", list_id, i)
-            print(f"  GetDataInfoFromList[{i}] -> {info!r} (type={type(info).__name__})")
+            print(f"  GetDataInfoFromList[{i}] -> {info!r} "
+                  f"(type={type(info).__name__})")
     except Exception as exc:
         print(f"  ОШИБКА: {type(exc).__name__}: {exc}")
 

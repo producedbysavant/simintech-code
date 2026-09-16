@@ -111,7 +111,11 @@ class SimInTechAgent:
     # ─── Команды ────────────────────────────────────────────────────
 
     def _cmd_new_project(self, name: str) -> CommandResult:
-        self._project = Project.new(self.client)
+        # Не `Project.new`: он даёт пустой проект без моделирующего слоя и
+        # настроек расчёта, поэтому расчёт в нём не идёт — модельное время
+        # стоит, хотя вызовы сообщают об успехе. Шаблон из поставки даёт
+        # проект с расчётным слоем «Автоматика».
+        self._project = Project.from_template(self.client)
         self._blocks.clear()
         self._wires.clear()
         return CommandResult(True, f"Проект '{name}' создан (id={self._project.id})")
@@ -176,8 +180,18 @@ class SimInTechAgent:
         sim = self._project.simulation()
         sim.start()
         if seconds:
+            before = sim.get_time()
             sim.run_to(float(seconds))
             t = sim.get_time()
+            if t <= before:
+                # Достижение запрошенного времени не проверялось: команда
+                # сообщала «выполнен», даже когда расчёт не пошёл вовсе.
+                return CommandResult(
+                    False,
+                    f"Модельное время не сдвинулось ({t:.3f} с) — расчёт не "
+                    f"пошёл. Пустой проект из `Project.new()` не считает: "
+                    f"берите проект из шаблона.",
+                )
             return CommandResult(
                 True,
                 f"Расчёт выполнен до {seconds} с (модельное время={t:.3f})",

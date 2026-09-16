@@ -189,7 +189,8 @@ def test_decode_xprt_handles_utf8_bom():
     Чтение как cp1251 превращает русские имена классов в мусор — молча, без
     ошибки. Именно на этом ломалась генерация каталога.
     """
-    text = "<?xml version=\"1.0\" encoding=\"utf-8\"?><class_name>`Усилитель`</class_name>"
+    text = ('<?xml version="1.0" encoding="utf-8"?>'
+            "<class_name>`Усилитель`</class_name>")
     raw = text.encode("utf-8-sig")
 
     assert decode_xprt(raw) == text

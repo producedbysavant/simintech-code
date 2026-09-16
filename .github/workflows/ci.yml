@@ -1,0 +1,29 @@
+name: CI
+
+# Проверяется только то, что не требует COM: он доступен лишь на Windows с
+# зарегистрированным `mmain.exe /regserver`. Интеграционные тесты и бенчмарки
+# исключены настройками pytest (`addopts`), поэтому `pytest` здесь — это
+# модульные тесты; запускать остальное нужно явно (`pytest -m integration`).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Установка
+        run: pip install -e ".[test]" flake8
+
+      - name: Стиль
+        run: flake8
+
+      - name: Тесты
+        run: pytest -q
