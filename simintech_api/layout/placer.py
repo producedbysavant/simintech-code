@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from ..constants import BLOCK_GAP, LAYER_GAP
 
@@ -58,8 +58,8 @@ class LayeredPlacer:
         idx = {bid: i for i, bid in enumerate(block_ids)}
 
         # Строим граф: для каждого блока множество источников (от кого зависит)
-        incoming: Dict[int, set] = {bid: set() for bid in block_ids}
-        outgoing: Dict[int, set] = {bid: set() for bid in block_ids}
+        incoming: Dict[int, Set[int]] = {bid: set() for bid in block_ids}
+        outgoing: Dict[int, Set[int]] = {bid: set() for bid in block_ids}
         for src, dst in connections:
             if src in idx and dst in idx:
                 incoming[dst].add(src)
@@ -68,7 +68,7 @@ class LayeredPlacer:
         # 1) Ранжирование (слои по X)
         layers: List[List[int]] = []          # layer -> [block_id]
         layer_of: Dict[int, int] = {}
-        placed: set = set()
+        placed: Set[int] = set()
 
         # Первый слой — блоки без входов. Если таких нет (чистый цикл /
         # обратная связь без внешнего источника), назначаем корнем блок
@@ -123,7 +123,7 @@ class LayeredPlacer:
         # смещение вправо развернуло бы часть связей назад. Такой блок встаёт
         # во «вспомогательный ряд» — ниже основного, иначе цепочка разъезжается
         # по вертикали.
-        helpers: set = set()
+        helpers: Set[int] = set()
         for bid in block_ids:
             if incoming[bid] or len(outgoing[bid]) != 1:
                 continue
@@ -192,7 +192,7 @@ class LayeredPlacer:
         return result
 
 
-def _median(values: List[float]) -> float:
+def _median(values: Sequence[float]) -> float:
     if not values:
         return 0.0
     s = sorted(values)

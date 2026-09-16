@@ -101,11 +101,11 @@ class XprtSignalReader:
         return result
 
 
-def _get_child_text(parent, tag: str) -> str:
+def _get_child_text(parent: "ET.Element", tag: str) -> str:
     node = parent.find(tag)
     if node is None or node.text is None:
         return ""
-    return node.text.strip().strip("`")
+    return str(node.text).strip().strip("`")
 
 
 # ─── Удобная функция для Project ───────────────────────────────────

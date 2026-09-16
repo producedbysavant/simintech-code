@@ -7,7 +7,7 @@ mmain.hpp и docs/reference/com_api_inventory.md) — официально enum 
 
 import os
 from enum import IntEnum
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 
 class DataType(IntEnum):
@@ -88,8 +88,9 @@ STANDARD_BLOCK_SIZES = {
 SUM_OPER_INPUT_HEIGHT = 16.0
 
 
-def standard_block_size(class_name: str,
-                        in_ports: Optional[int] = None):
+def standard_block_size(
+        class_name: str,
+        in_ports: Optional[int] = None) -> Optional[Tuple[float, float]]:
     """Штатный размер блока или None, если класс не измерен.
 
     Args:

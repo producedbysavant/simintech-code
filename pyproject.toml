@@ -45,3 +45,33 @@ markers = [
     "integration: тесты, требующие реального COM-сервера SimInTech на Windows",
     "performance: бенчмарки производительности placer/router (меряют стенные часы)",
 ]
+
+[tool.mypy]
+python_version = "3.11"
+# Гейт **точечный**: проверяются не все модули пакета, а только те, что не
+# трогают COM и уже полностью аннотированы. `comtypes` поставляется без
+# заглушек, и `--strict` по всему пакету утонул бы в шуме COM-слоя — гейт
+# выглядел бы строгим, ничего не проверяя там, где типовые ошибки и живут.
+# Список растёт по мере аннотирования модулей, а не кампанией сразу.
+strict = true
+files = [
+    "simintech_api/catalog.py",
+    "simintech_api/catalog_tool.py",
+    "simintech_api/constants.py",
+    "simintech_api/exceptions.py",
+    "simintech_api/layout/grid.py",
+    "simintech_api/layout/placer.py",
+    "simintech_api/layout/router.py",
+    "simintech_api/utils/xprt_signals.py",
+]
+# Находки в импортируемых модулях не показывать: пока гейт покрывает не весь
+# пакет, иначе ошибки COM-слоя всплывали бы на каждом прогоне и их пришлось бы
+# глушить, а не чинить.
+follow_imports = "silent"
+
+[[tool.mypy.overrides]]
+# Сторонние библиотеки без заглушек — перечислены поимённо, а не общим
+# `ignore_missing_imports`: общий флаг молча выключил бы проверку и для своих
+# модулей, и гейт перестал бы что-либо значить.
+module = ["comtypes", "comtypes.*", "defusedxml", "defusedxml.*"]
+ignore_missing_imports = true

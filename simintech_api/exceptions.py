@@ -1,5 +1,7 @@
 """Исключения библиотеки simintech_api."""
 
+from typing import Optional
+
 
 class SimInTechError(Exception):
     """Базовое исключение библиотеки."""
@@ -18,7 +20,8 @@ class ComCallError(SimInTechError):
         message: текст ошибки.
     """
 
-    def __init__(self, method: str, hr: int = None, message: str = ""):
+    def __init__(self, method: str, hr: Optional[int] = None,
+                 message: str = ""):
         self.method = method
         self.hr = hr
         self.message = message
