@@ -325,7 +325,8 @@ def export_xprt_text(project: "Project", suffix: str = ".xprt") -> str:
 
 def generate_catalog(client: "COMClient",
                      classes: Optional[Iterable[str]] = None,
-                     keep_project: bool = False) -> BlockCatalog:
+                     keep_project: bool = False,
+                     dump_path: Optional[Path] = None) -> BlockCatalog:
     """Построить каталог по реальному SimInTech (только Windows).
 
     Создаёт по одному блоку каждого класса в новом проекте, экспортирует
@@ -351,6 +352,10 @@ def generate_catalog(client: "COMClient",
             except Exception:
                 failed.append(class_name)
         xml_text = export_xprt_text(project)
+        if dump_path is not None:
+            # Снятие выгрузки — долгая часть и единственная, которой нужен
+            # Windows; сохранив её, каталог можно пересобрать где угодно.
+            dump_path.write_text(xml_text, encoding="utf-8")
     finally:
         if not keep_project:
             try:
@@ -358,11 +363,43 @@ def generate_catalog(client: "COMClient",
             except Exception:
                 pass
 
-    wanted = set(targets)
+    return build_catalog_from_xprt(xml_text, targets=targets, failed=failed)
+
+
+#: Значение параметра по умолчанию в каталоге — справочное: нужны имена, а не
+#: значения. У антенных решёток значение — матрица в сотни чисел, и тащить её
+#: в файл нечего.
+MAX_DEFAULT_LEN = 120
+
+
+def _short_default(value: str) -> str:
+    """Значение по умолчанию для каталога: длинные не сохраняются."""
+    return value if len(value) <= MAX_DEFAULT_LEN else ""
+
+
+def build_catalog_from_xprt(
+        xml_text: str,
+        targets: Optional[Iterable[str]] = None,
+        failed: Optional[Iterable[str]] = None) -> BlockCatalog:
+    """Собрать каталог из готовой выгрузки `.xprt` — **без COM**.
+
+    Отделено от `generate_catalog`: снять выгрузку проекта с блоками всех
+    классов долго и можно только на Windows, а разобрать её — где угодно,
+    включая Linux. Благодаря этому каталог пересобирается из сохранённого
+    файла и проверяется тестами без SimInTech.
+
+    Args:
+        xml_text: текст `.xprt`.
+        targets: какие классы оставить; None — все найденные в выгрузке.
+        failed: классы, которые среда создать не смогла (попадают в `meta`).
+    """
     parsed = parse_xprt_block_props(xml_text)
     readonly = parse_xprt_readonly(xml_text)
-    # Оставляем только запрошенные классы — в XML попадает и оформление
-    classes_map = {k: v for k, v in parsed.items() if k in wanted}
+    # В XML попадает и оформление, поэтому оставляем только запрошенные классы.
+    wanted = set(parsed) if targets is None else set(targets)
+    classes_map = {k: {name: _short_default(value)
+                       for name, value in params.items()}
+                   for k, params in parsed.items() if k in wanted}
     readonly_map: Dict[str, Iterable[str]] = {
         k: v for k, v in readonly.items() if k in wanted}
     return BlockCatalog(
@@ -370,7 +407,47 @@ def generate_catalog(client: "COMClient",
         readonly=readonly_map,
         meta={
             "source": "generated",
-            "requested": targets,
+            "requested": sorted(wanted),
+            "failed": list(failed or ()),
+        },
+    )
+
+
+def merge_catalogs(catalogs: Iterable[BlockCatalog]) -> BlockCatalog:
+    """Слить каталоги в один: классы и их параметры объединяются.
+
+    За один прогон охватить всё не выходит, и это свойство среды, а не
+    недоделка: библиотечные записи берутся из индекса `.csl`, а базовый слой
+    («Константа», «Ступенька», «Производная», ...) в индексе не значится — он
+    подключается слоем `.lf` и известен только самому движку. Уже найденные
+    параметры при слиянии не теряются: классы объединяются по имени.
+    """
+    classes: Dict[str, Dict[str, str]] = {}
+    readonly: Dict[str, List[str]] = {}
+    requested: List[str] = []
+    failed: List[str] = []
+    source = "generated"
+    for catalog in catalogs:
+        for class_name in catalog.classes():
+            classes.setdefault(class_name, {}).update(
+                catalog.defaults_for(class_name))
+            found = readonly.setdefault(class_name, [])
+            for prop in catalog.readonly_for(class_name):
+                if prop not in found:
+                    found.append(prop)
+        asked = catalog.meta.get("requested")
+        if isinstance(asked, list):
+            requested.extend(str(name) for name in asked)
+        missed = catalog.meta.get("failed")
+        if isinstance(missed, list):
+            failed.extend(str(name) for name in missed)
+        source = str(catalog.meta.get("source") or source)
+    return BlockCatalog(
+        classes=classes,
+        readonly=readonly,
+        meta={
+            "source": source,
+            "requested": sorted(set(requested)),
             "failed": failed,
         },
     )

@@ -7,6 +7,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from simintech_api.csl_library import (  # noqa: E402
     LibraryRecord,
+    class_names,
+    libraries_in_profile,
     load_library,
     missing_paramsets,
     parse_csl_index,
@@ -138,6 +140,45 @@ def test_resolve_paramset_refuses_escape(tmp_path):
 
 def test_resolve_paramset_without_paramset(tmp_path):
     assert resolve_paramset(tmp_path, LibraryRecord("Блок")) is None
+
+
+def test_libraries_in_profile_reads_lowercased_names(tmp_path):
+    """Профиль решает, какие библиотеки загружены; регистр не важен."""
+    profile = tmp_path / "base.xml"
+    profile.write_text(
+        "<profile><libs><lib>CommonLib.xcsl</lib><lib>LIB_Mech.csl</lib></libs>"
+        "</profile>", encoding="utf-8")
+
+    assert libraries_in_profile(profile) == ["commonlib.xcsl", "lib_mech.csl"]
+
+
+def test_class_names_skips_libraries_outside_profile(tmp_path):
+    """Записи библиотек вне профиля в список не попадают.
+
+    Файл на диске ещё не значит загруженную библиотеку: движок такие записи
+    создать не может, и брать их в справочник — ошибка.
+    """
+    (tmp_path / "Loaded.csl").write_bytes(_csl("Блок A", "a.ps"))
+    (tmp_path / "Skipped.csl").write_bytes(_csl("Блок B", "b.ps"))
+
+    names = class_names(tmp_path, libraries=["loaded.csl"])
+
+    assert names == ["Блок A"]
+
+
+def test_class_names_without_filter_returns_all(tmp_path):
+    (tmp_path / "Loaded.csl").write_bytes(_csl("Блок A", "a.ps"))
+    (tmp_path / "Skipped.csl").write_bytes(_csl("Блок B", "b.ps"))
+
+    assert sorted(class_names(tmp_path)) == ["Блок A", "Блок B"]
+
+
+def test_class_names_deduplicates(tmp_path):
+    """Одна запись в двух библиотеках попадает в список один раз."""
+    (tmp_path / "A.csl").write_bytes(_csl("Общий", "a.ps"))
+    (tmp_path / "B.csl").write_bytes(_csl("Общий", "b.ps"))
+
+    assert class_names(tmp_path) == ["Общий"]
 
 
 def test_missing_paramsets_lists_records_without_files(tmp_path):

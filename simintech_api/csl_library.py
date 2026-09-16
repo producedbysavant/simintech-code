@@ -46,6 +46,9 @@ _STRING_RE = re.compile(r"[ -~Ѐ-ӿ\\/\.\(\)@$_+-]{2,}")
 #: внутренний сдвиг на байт, поэтому «в лоб» от нуля даёт меньше пар.
 _OFFSETS = (0, 1)
 
+#: Имена файлов библиотек в описании профиля (`bin/profiles/<профиль>/base.xml`).
+_LIBRARY_FILE_RE = re.compile(r"[A-Za-z0-9_]+\.(?:csl|xcsl)")
+
 
 @dataclass(frozen=True)
 class LibraryRecord:
@@ -154,6 +157,42 @@ def resolve_paramset(paramset_dir: Path, record: LibraryRecord) -> Optional[Path
     if root != candidate and root not in candidate.parents:
         return None
     return candidate if candidate.is_file() else None
+
+
+def libraries_in_profile(profile_xml: Path) -> List[str]:
+    """Имена библиотек, которые загружает профиль, — в нижнем регистре.
+
+    Профиль (`bin/profiles/<имя>/base.xml`) решает, какие библиотеки вообще
+    доступны: файл на диске ещё не значит загруженную библиотеку. На поставке
+    SimInTech64 шесть `.csl` лежат, но профилем не подхвачены (`AC.csl`,
+    `LIB_FC.csl`, `PHS_LPM.csl`, `SPT.csl`, `visionLib.csl`,
+    `MatchPortsPlugin.xcsl`) — записи из них создать нельзя, и в справочник
+    они попадать не должны.
+    """
+    text = profile_xml.read_text(encoding="utf-8", errors="replace")
+    return sorted({name.lower() for name in _LIBRARY_FILE_RE.findall(text)})
+
+
+def class_names(bin_dir: Path,
+                libraries: Optional[Iterable[str]] = None) -> List[str]:
+    """Имена записей блоков, уникальные и в порядке появления.
+
+    Args:
+        bin_dir: каталог поставки с `.csl`.
+        libraries: имена файлов библиотек (в нижнем регистре); None — все,
+            что есть на диске. Обычно список берут из `libraries_in_profile`.
+    """
+    allowed = None if libraries is None else {name.lower() for name in libraries}
+    names: List[str] = []
+    seen = set()
+    for library in load_libraries(bin_dir):
+        if allowed is not None and library.name.lower() not in allowed:
+            continue
+        for record in library.records:
+            if record.name not in seen:
+                seen.add(record.name)
+                names.append(record.name)
+    return names
 
 
 def missing_paramsets(paramset_dir: Path,

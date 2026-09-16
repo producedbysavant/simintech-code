@@ -11,6 +11,8 @@ import pytest  # noqa: E402
 
 from simintech_api.catalog import (  # noqa: E402
     BlockCatalog,
+    merge_catalogs,
+    build_catalog_from_xprt,
     clean_value,
     decode_xprt,
     load_default_catalog,
@@ -412,9 +414,14 @@ def test_default_catalog_is_generated_not_handwritten():
     catalog = load_default_catalog(reload=True)
 
     assert catalog.meta.get("source") == "generated"
-    # «failed» — список классов, которые CreateBlock не создал. Сейчас пуст:
-    # не создаваемые классы перенесены в UNSUPPORTED_COM_BLOCK_CLASSES.
-    assert catalog.meta.get("failed") == []
+    # «failed» — записи, которые CreateBlock не создал. Список целей берётся из
+    # индекса библиотек `.csl`, а он содержит и устаревшие записи, которые
+    # среда отвергает (например, с пропавшим файлом набора параметров), поэтому
+    # пустым он быть не обязан. Проверяем не пустоту, а согласованность:
+    # отвергнутая запись не должна оказаться в каталоге.
+    failed = catalog.meta.get("failed") or []
+    assert isinstance(failed, list)
+    assert not (set(failed) & set(catalog.classes()))
 
 
 def test_default_catalog_records_computed_params():
@@ -424,3 +431,82 @@ def test_default_catalog_records_computed_params():
     assert catalog.is_readonly("Усилитель", "formula_visible") is True
     assert catalog.is_readonly("Усилитель", "a") is False
     assert "formula_visible" in catalog.readonly_for("Усилитель")
+
+
+# ─── Сборка каталога из выгрузки (без COM) ────────────────────────
+
+def test_build_catalog_from_xprt_keeps_all_classes():
+    """Без списка целей в каталог попадают все классы выгрузки."""
+    catalog = build_catalog_from_xprt(XPRT_BACKTICK)
+
+    assert set(catalog.classes()) == {"Сумматор", "Усилитель"}
+    assert "a" in catalog.props_for("Усилитель")
+
+
+def test_build_catalog_from_xprt_filters_targets():
+    """Со списком целей остаются только запрошенные классы.
+
+    В выгрузку попадает и оформление, поэтому «всё подряд» каталогом быть не
+    может: проверка имён должна знать про блоки, а не про линии и подписи.
+    """
+    catalog = build_catalog_from_xprt(XPRT_BACKTICK, targets=["Усилитель"])
+
+    assert set(catalog.classes()) == {"Усилитель"}
+
+
+def test_build_catalog_from_xprt_carries_readonly():
+    catalog = build_catalog_from_xprt(XPRT_WITH_COMPUTED)
+
+    assert catalog.readonly_for("Усилитель") == ["formula_visible"]
+    assert catalog.is_readonly("Усилитель", "formula_visible") is True
+    assert catalog.is_readonly("Усилитель", "a") is False
+
+
+def test_build_catalog_from_xprt_remembers_failed():
+    catalog = build_catalog_from_xprt(XPRT_PLAIN, failed=["НетТакогоКласса"])
+
+    assert catalog.meta["failed"] == ["НетТакогоКласса"]
+
+
+def test_build_catalog_from_xprt_drops_huge_defaults():
+    """Огромные значения по умолчанию в каталог не тянем.
+
+    У антенных решёток значение — матрица в сотни чисел; каталогу нужны имена
+    параметров, а не их значения.
+    """
+    long_value = "[" + ", ".join("1111" for _ in range(50)) + "]"
+    xml = ("<project><object><class_name>`Класс`</class_name><custom_props>"
+           f"<data><name>`big`</name><value>`{long_value}`</value></data>"
+           "<data><name>`small`</name><value>`1`</value></data>"
+           "</custom_props></object></project>")
+
+    props = build_catalog_from_xprt(xml).defaults_for("Класс")
+
+    assert props["big"] == ""
+    assert props["small"] == "1"
+
+
+def test_merge_catalogs_unions_classes():
+    """Слияние объединяет классы: за один прогон охватить всё не выходит."""
+    first = BlockCatalog(classes={"А": {"p": "1"}}, readonly={"А": ["r"]},
+                         meta={"source": "generated", "requested": ["А"],
+                               "failed": []})
+    second = BlockCatalog(classes={"Б": {"q": "2"}},
+                          meta={"source": "generated", "requested": ["Б"],
+                                "failed": ["В"]})
+
+    merged = merge_catalogs([first, second])
+
+    assert set(merged.classes()) == {"А", "Б"}
+    assert merged.readonly_for("А") == ["r"]
+    assert merged.meta["failed"] == ["В"]
+
+
+def test_merge_catalogs_keeps_params_of_same_class():
+    """Параметры класса, найденного в обеих выгрузках, не теряются."""
+    first = BlockCatalog(classes={"А": {"p": "1"}})
+    second = BlockCatalog(classes={"А": {"q": "2"}})
+
+    merged = merge_catalogs([first, second])
+
+    assert merged.defaults_for("А") == {"p": "1", "q": "2"}
