@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 import heapq
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from ..constants import GRID_SIZE, PORT_STUB
 from ..exceptions import LayoutError
@@ -106,7 +106,7 @@ class AStarRouter:
         """
         # Исключаем старт/цель из препятствий: порт всегда на блоке,
         # и линия должна иметь возможность выйти из него.
-        blocked_cache = {}
+        blocked_cache: Dict[Tuple[int, int], bool] = {}
 
         def is_blocked(gx: int, gy: int) -> bool:
             key = (gx, gy)
@@ -121,10 +121,10 @@ class AStarRouter:
 
         open_set: List[Tuple[float, int, int, Tuple[int, int]]] = []
         heapq.heappush(open_set, (0.0, start[0], start[1], start))
-        came_from: dict = {start: None}
-        g_score: dict = {start: 0.0}
+        came_from: Dict[Tuple[int, int], Optional[Tuple[int, int]]] = {start: None}
+        g_score: Dict[Tuple[int, int], float] = {start: 0.0}
         # Направление прихода для штрафа за повороты
-        came_dir: dict = {start: None}
+        came_dir: Dict[Tuple[int, int], Optional[Tuple[int, int]]] = {start: None}
 
         def h(a: Tuple[int, int], b: Tuple[int, int]) -> float:
             return abs(a[0] - b[0]) + abs(a[1] - b[1])
@@ -172,11 +172,15 @@ def _straight_free(grid: ObstacleGrid, a: Tuple[int, int],
     return False
 
 
-def _reconstruct(came_from: dict, end: Tuple[int, int]) -> List[Tuple[int, int]]:
+def _reconstruct(came_from: Dict[Tuple[int, int], Optional[Tuple[int, int]]],
+                 end: Tuple[int, int]) -> List[Tuple[int, int]]:
     path = [end]
     node = end
-    while came_from.get(node) is not None:
-        node = came_from[node]
+    while True:
+        prev = came_from.get(node)
+        if prev is None:
+            break
+        node = prev
         path.append(node)
     path.reverse()
     return path

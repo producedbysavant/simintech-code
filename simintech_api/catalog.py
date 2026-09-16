@@ -30,13 +30,15 @@ import json
 import re
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Iterable, List, Optional
+from typing import (TYPE_CHECKING, Dict, Iterable, Iterator, List, Optional,
+                    Tuple)
 
 from .constants import SUPPORTED_COM_BLOCK_CLASSES
 from .exceptions import SimInTechError
 
 if TYPE_CHECKING:
     from .core.com_client import COMClient
+    from .core.project import Project
 
 # ─── Расположение каталога ────────────────────────────────────────
 
@@ -65,7 +67,7 @@ class BlockCatalog:
                  meta: Optional[Dict[str, object]] = None,
                  readonly: Optional[Dict[str, Iterable[str]]] = None):
         self._classes: Dict[str, Dict[str, str]] = dict(classes or {})
-        self._common: tuple = tuple(common)
+        self._common: Tuple[str, ...] = tuple(common)
         self._readonly: Dict[str, List[str]] = {
             cls: list(props) for cls, props in (readonly or {}).items()
         }
@@ -187,7 +189,7 @@ def clean_value(text: Optional[str]) -> str:
     return text.strip().strip("`").strip()
 
 
-def _iter_custom_props(obj: str):
+def _iter_custom_props(obj: str) -> Iterator[Tuple[str, str, Optional[int]]]:
     """Пройти по параметрам расчёта блока (секция ``<custom_props>``).
 
     Возвращает ``(имя, значение, mode)`` для каждой записи.
@@ -308,7 +310,7 @@ def decode_xprt(raw: bytes) -> str:
         ) from exc
 
 
-def export_xprt_text(project, suffix: str = ".xprt") -> str:
+def export_xprt_text(project: "Project", suffix: str = ".xprt") -> str:
     """Экспортировать проект в XML и вернуть текст."""
     tmp = Path(tempfile.gettempdir()) / f"siminapi_catalog_{project.id}{suffix}"
     try:
@@ -361,7 +363,8 @@ def generate_catalog(client: "COMClient",
     readonly = parse_xprt_readonly(xml_text)
     # Оставляем только запрошенные классы — в XML попадает и оформление
     classes_map = {k: v for k, v in parsed.items() if k in wanted}
-    readonly_map = {k: v for k, v in readonly.items() if k in wanted}
+    readonly_map: Dict[str, Iterable[str]] = {
+        k: v for k, v in readonly.items() if k in wanted}
     return BlockCatalog(
         classes=classes_map,
         readonly=readonly_map,

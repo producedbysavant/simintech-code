@@ -17,7 +17,8 @@ if TYPE_CHECKING:
 class Project:
     """Проект SimInTech (обёртка над ProjectId).
 
-    Создаётся через Project.new() или Project.open(), не напрямую.
+    Создаётся через Project.from_template(), Project.open() или Project.new() —
+    не напрямую. Расчёт идёт только в проекте из шаблона (`from_template`).
     """
 
     def __init__(self, client: "COMClient", project_id: int):
@@ -28,7 +29,15 @@ class Project:
 
     @classmethod
     def new(cls, client: "COMClient") -> "Project":
-        """Создать новый (пустой) проект."""
+        """Создать новый **пустой** проект.
+
+        В проекте нет моделирующего слоя и настроек расчёта, поэтому расчёт в
+        нём не идёт: модельное время не растёт, хотя вызовы сообщают об успехе.
+        Предупреждение стоит здесь, а не только у `from_template()`: тот, кто
+        вызывает `new()`, читает docstring `new()`, а не соседнего метода.
+
+        Для проекта, в котором можно считать, используйте `from_template()`.
+        """
         project_id = client.new_project()
         if project_id == 0:
             raise ProjectError("NewProject вернул нулевой ProjectId")
