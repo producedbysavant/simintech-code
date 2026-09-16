@@ -193,3 +193,36 @@ def test_set_center_uses_explicit_size_when_given():
     _block(client).set_center(100.0, 100.0, width=200.0, height=100.0)
 
     assert ("SetBlockPosition", (1, 0.0, 50.0, 200.0, 100.0, 0.0)) in client.calls
+
+
+# ─── Графические свойства ──────────────────────────────────────────
+
+def test_set_graph_prop_uses_graph_setter():
+    """Класс и цвет линии меняются только графическим сеттером.
+
+    `SetBlockProp("ClassName", …)` проходит без ошибки, но значение не
+    меняется — проверено на SimInTech64 2026-09-16. Поэтому для графических
+    свойств метод шлёт `SetGraphBlockProp`.
+    """
+    client = FakeClient({})
+
+    _block(client).set_graph_prop("ClassName", "КА - Связь блоков состояний")
+
+    assert ("SetGraphBlockProp",
+            (1, "ClassName", "КА - Связь блоков состояний")) in client.calls
+
+
+def test_set_graph_prop_stringifies_value():
+    """Числовые значения уходят строкой — этого требует COM."""
+    client = FakeClient({})
+
+    _block(client).set_graph_prop("Color", 9740548)
+
+    assert ("SetGraphBlockProp", (1, "Color", "9740548")) in client.calls
+
+
+def test_set_graph_prop_returns_self():
+    """Метод возвращает блок — удобно для цепочки вызовов."""
+    block = _block(FakeClient({}))
+
+    assert block.set_graph_prop("Color", 1) is block

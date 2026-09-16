@@ -158,6 +158,22 @@ class Block:
         self.client.call("SetBlockPosition", self._id, x, y, width, height, angle)
         return self
 
+    def set_graph_prop(self, name: str, value) -> "Block":
+        """Задать графическое свойство блока (`SetGraphBlockProp`).
+
+        Часть свойств обычный `SetBlockProp` **молча игнорирует** — например
+        класс и цвет линии: `SetBlockProp("ClassName", …)` проходит без
+        ошибки, а значение не меняется. Для них нужен отдельный метод
+        `SetGraphBlockProp`. Проверено на SimInTech64 (2026-09-16): так линия
+        превращается из `Математическая` в `КА - Связь блоков состояний`.
+
+        Args:
+            name: имя свойства (`ClassName`, `Color`, ...).
+            value: значение; приводится к строке, как того требует COM.
+        """
+        self.client.call("SetGraphBlockProp", self._id, name, str(value))
+        return self
+
     def get_size(self) -> tuple[float, float]:
         """Размер блока из самого SimInTech: `(ширина, высота)`.
 
