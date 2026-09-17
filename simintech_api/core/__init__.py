@@ -6,6 +6,7 @@ from .page import Page
 from .block import Block
 from .port import Port
 from .wire import Wire
+from .pack import Pack
 from .signal import Signal
 from .simulation import Simulation
 
@@ -18,4 +19,5 @@ __all__ = [
     "Wire",
     "Signal",
     "Simulation",
+    "Pack",
 ]
