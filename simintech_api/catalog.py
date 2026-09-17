@@ -31,7 +31,7 @@ import re
 import tempfile
 from pathlib import Path
 from typing import (TYPE_CHECKING, Dict, Iterable, Iterator, List, Optional,
-                    Tuple)
+                    Tuple, TypedDict)
 
 from .constants import SUPPORTED_COM_BLOCK_CLASSES
 from .exceptions import SimInTechError
@@ -217,8 +217,17 @@ def _iter_custom_props(obj: str) -> Iterator[Tuple[str, str, Optional[int]]]:
     custom_match = _CUSTOM_RE.search(obj)
     if not custom_match:
         return
-    for data in (m.group("body")
-                 for m in _DATA_RE.finditer(custom_match.group(1))):
+    yield from _iter_data(custom_match.group(1))
+
+
+def _iter_data(body: str) -> Iterator[Tuple[str, str, Optional[int]]]:
+    """Пройти по записям ``<data>`` внутри секции параметров.
+
+    Один разбор на две секции: у блока это ``<custom_props>``, у расчётного
+    слоя — ``<parameters>``. Записи устроены одинаково (``<name>``,
+    ``<value>``, ``<mode>``), и второй копии разбора здесь быть не должно.
+    """
+    for data in (m.group("body") for m in _DATA_RE.finditer(body)):
         name_match = _NAME_RE.search(data)
         if not name_match:
             continue
@@ -230,6 +239,27 @@ def _iter_custom_props(obj: str) -> Iterator[Tuple[str, str, Optional[int]]]:
         mode_match = _MODE_RE.search(data)
         mode = int(mode_match.group(1)) if mode_match else None
         yield prop, value, mode
+
+
+def parse_xprt_layer_params(xml_text: str) -> Dict[str, str]:
+    """Настройки расчётного слоя из XML-проекта (.xprt).
+
+    Секция ``<parameters>`` слоя: ``starttime``, ``endtime``, ``hmin``,
+    ``hmax``, ``intmet`` и другие имена метода расчёта. Читаются **из
+    выгрузки**, а не через COM: метода чтения свойств слоя в интерфейсе нет —
+    есть только запись (``SetLayerProp``), и это единственный способ узнать,
+    какие имена в проекте вообще есть.
+
+    Возвращается **первая** секция ``<parameters>`` документа: она принадлежит
+    слою и идёт до объектов; параметры блоков лежат в ``<custom_props>``.
+    """
+    match = re.search(r"<parameters>(.*?)</parameters>", xml_text, re.S)
+    if match is None:
+        return {}
+    result: Dict[str, str] = {}
+    for prop, value, _ in _iter_data(match.group(1)):
+        result[prop] = value
+    return result
 
 
 def parse_xprt_block_props(xml_text: str) -> Dict[str, Dict[str, str]]:
@@ -412,7 +442,12 @@ def build_catalog_from_xprt(
     parsed = parse_xprt_block_props(xml_text)
     readonly = parse_xprt_readonly(xml_text)
     # В XML попадает и оформление, поэтому оставляем только запрошенные классы.
-    wanted = set(parsed) if targets is None else set(targets)
+    # Имена из индекса библиотек приходят с хвостовыми пробелами («Миландр -
+    # MILS - Инициализация МКИО »), а разбор выгрузки их обрезает — поэтому
+    # сверка идёт по обрезанным именам. Без этого классы с пробелом в записи
+    # молча выпадали бы из каталога, хотя среда их создаёт.
+    wanted = {clean_value(name) for name in targets} if targets is not None \
+        else set(parsed)
     classes_map = {k: {name: _short_default(value)
                        for name, value in params.items()}
                    for k, params in parsed.items() if k in wanted}
@@ -424,7 +459,7 @@ def build_catalog_from_xprt(
         meta={
             "source": "generated",
             "requested": sorted(wanted),
-            "failed": list(failed or ()),
+            "failed": sorted(clean_value(name) for name in (failed or ())),
         },
     )
 
@@ -462,13 +497,19 @@ def merge_catalogs(catalogs: Iterable[BlockCatalog]) -> BlockCatalog:
             failed.extend(str(name) for name in missed)
         source = str(catalog.meta.get("source") or source)
     readonly_map.update(readonly)
+    # Класс, который в итоге попал в каталог, создать удалось — значит в списке
+    # провалов он числиться не может. Это не косметика: провал, оставшийся
+    # после того, как класс найден (например, при досборке через `--merge`),
+    # искажает и счётчики покрытия, и вывод «среда не умеет создавать».
+    still_failed = sorted({clean_value(name) for name in failed}
+                          - set(classes))
     return BlockCatalog(
         classes=classes,
         readonly=readonly_map,
         meta={
             "source": source,
             "requested": sorted(set(requested)),
-            "failed": failed,
+            "failed": still_failed,
         },
     )
 
@@ -484,3 +525,73 @@ def load_default_catalog(reload: bool = False) -> BlockCatalog:
     if _default_cache is None or reload:
         _default_cache = BlockCatalog.load()
     return _default_cache
+
+
+# ─── Покрытие: доля классов, для которых имена проверяются ─────────
+
+
+class CoverageReport(TypedDict):
+    """Отчёт о покрытии каталога (см. :func:`catalog_coverage`)."""
+    libraries_total: int
+    records_total: int
+    records_without_paramset: int
+    libraries_in_profile: Optional[int]
+    classes_in_profile: int
+    catalog_classes: int
+    checked_classes: int
+    fraction: float
+    not_in_catalog: List[str]
+    beyond_profile: List[str]
+
+
+def catalog_coverage(catalog: BlockCatalog, bin_dir: Path,
+                     profile: Optional[Path] = None) -> CoverageReport:
+    """Измерить, для какой доли классов имена параметров вообще проверяются.
+
+    Защита от опечатки в имени параметра работает только там, где класс есть
+    в каталоге: иначе `_check_params` уходит в ветку «класса нет» и пропускает
+    запись (`SetBlockProp` неизвестное имя не отвергает). Поэтому «сколько
+    классов под проверкой» — не отчётная цифра, а свойство защиты, и его нужно
+    уметь измерять, а не оценивать.
+
+    Знаменатель — классы, которые грузит профиль: файл библиотеки на диске ещё
+    не значит загруженную библиотеку, а класс из незагруженной библиотеки
+    пользователь на схему не поставит.
+
+    Args:
+        catalog: проверяемый каталог.
+        bin_dir: каталог поставки с библиотеками `.csl`.
+        profile: `base.xml` профиля; без него берутся все библиотеки на диске.
+
+    Returns:
+        Числа и два списка имён: `not_in_catalog` (классы профиля без проверки)
+        и `beyond_profile` (классы каталога вне профиля — например, из
+        `SUPPORTED_COM_BLOCK_CLASSES`; они проверяются, но в знаменатель не
+        входят).
+    """
+    from .csl_library import (PARAMSET_DIR, class_names, libraries_in_profile,
+                              load_libraries, missing_paramsets)
+
+    libraries = load_libraries(bin_dir)
+    in_profile = libraries_in_profile(profile) if profile else None
+    # Имена записей приходят из индекса `.csl` как есть, а в каталоге лежат
+    # обрезанные (см. `build_catalog_from_xprt`). Сверять их без нормализации
+    # нельзя: класс с хвостовым пробелом в записи («Миландр - MILS - …МКИО »)
+    # выглядел бы непроверяемым, хотя в каталоге он есть.
+    names = {clean_value(name) for name in class_names(bin_dir, in_profile)}
+    catalog_classes = set(catalog.classes())
+    checked = names & catalog_classes
+
+    return {
+        "libraries_total": len(libraries),
+        "records_total": sum(len(lib.records) for lib in libraries),
+        "records_without_paramset": len(
+            missing_paramsets(bin_dir / PARAMSET_DIR, libraries)),
+        "libraries_in_profile": None if in_profile is None else len(in_profile),
+        "classes_in_profile": len(names),
+        "catalog_classes": len(catalog_classes),
+        "checked_classes": len(checked),
+        "fraction": round(len(checked) / len(names), 4) if names else 0.0,
+        "not_in_catalog": sorted(names - catalog_classes),
+        "beyond_profile": sorted(catalog_classes - names),
+    }

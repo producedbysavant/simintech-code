@@ -11,12 +11,14 @@ import pytest  # noqa: E402
 
 from simintech_api.catalog import (  # noqa: E402
     BlockCatalog,
+    catalog_coverage,
     merge_catalogs,
     build_catalog_from_xprt,
     clean_value,
     decode_xprt,
     load_default_catalog,
     parse_xprt_block_props,
+    parse_xprt_layer_params,
     parse_xprt_readonly,
 )
 
@@ -527,6 +529,28 @@ def test_build_catalog_from_xprt_filters_targets():
     assert set(catalog.classes()) == {"Усилитель"}
 
 
+def test_build_catalog_from_xprt_normalizes_target_names():
+    """Имя записи с хвостовым пробелом не теряет класс.
+
+    В индексе `.csl` встречаются записи с пробелом в конце («Миландр - MILS -
+    Инициazation МКИО »), а разбор выгрузки имя обрезает. Пока цели сверялись
+    как есть, такие классы молча выпадали из каталога — среда их создаёт, а
+    проверки имён у них нет. На живом SimInTech64 так терялось 14 классов.
+    """
+    catalog = build_catalog_from_xprt(XPRT_BACKTICK,
+                                      targets=["Усилитель ", " Сумматор"])
+
+    assert set(catalog.classes()) == {"Усилитель", "Сумматор"}
+    assert catalog.meta["requested"] == ["Сумматор", "Усилитель"]
+
+
+def test_build_catalog_from_xprt_normalizes_failed_names():
+    """Провалы записываются так же нормализованно — иначе счётчики расходятся."""
+    catalog = build_catalog_from_xprt(XPRT_PLAIN, failed=["Класс "])
+
+    assert catalog.meta["failed"] == ["Класс"]
+
+
 def test_build_catalog_from_xprt_carries_readonly():
     catalog = build_catalog_from_xprt(XPRT_WITH_COMPUTED)
 
@@ -583,3 +607,114 @@ def test_merge_catalogs_keeps_params_of_same_class():
     merged = merge_catalogs([first, second])
 
     assert merged.defaults_for("А") == {"p": "1", "q": "2"}
+
+
+# ─── Настройки расчётного слоя ────────────────────────────────────
+
+XPRT_WITH_LAYER_PARAMS = """<?xml version="1.0" encoding="utf-8"?>
+<project>
+  <groups><pluginname>`mbtylib.dll`</pluginname></groups>
+  <parameters>
+    <data><name>`hmin`</name><value>`0.001`</value></data>
+    <data><name>`hmax`</name><value>`0.1`</value></data>
+    <data><name>`endtime`</name><value>`10`</value></data>
+  </parameters>
+  <object>
+    <name>`k_0`</name>
+    <class_name>`Константа`</class_name>
+    <custom_props>
+      <data><name>`a`</name><mode>`1`</mode><value>`2`</value></data>
+    </custom_props>
+  </object>
+</project>
+"""
+
+
+def test_layer_params_are_read_from_export():
+    """Настройки расчёта берутся из секции слоя, а не из свойств блоков."""
+    assert parse_xprt_layer_params(XPRT_WITH_LAYER_PARAMS) == {
+        "hmin": "0.001", "hmax": "0.1", "endtime": "10"}
+
+
+def test_layer_params_of_project_without_layer_are_empty():
+    """У проекта без расчётного слоя настроек нет — пусто, а не ошибка.
+
+    Так выглядит проект, созданный `NewProject`: считать в нём нечему, и
+    «настройки по умолчанию» тут были бы выдумкой.
+    """
+    assert parse_xprt_layer_params(XPRT_BACKTICK) == {}
+
+
+# ─── Покрытие: доля классов под проверкой имён ────────────────────
+
+def _csl(*strings: str) -> bytes:
+    """Синтетический `.csl`: строки UTF-16LE вперемешку с двоичным мусором."""
+    pad = b"\x01\x02\x03\x04\x00\x00\x00\x00"
+    out = bytearray(pad)
+    for s in strings:
+        out += pad
+        out += s.encode("utf-16-le")
+    return bytes(out)
+
+
+def _distribution(tmp_path, libraries=("Loaded.csl",), with_profile=True):
+    """Поставка в миниатюре: библиотеки, наборы параметров и профиль."""
+    for name in libraries:
+        (tmp_path / name).write_bytes(
+            _csl(f"Блок {name[0]}", f"{name[0].lower()}.ps"))
+    ps_dir = tmp_path / "ParamSet_mvtu"
+    ps_dir.mkdir(exist_ok=True)
+    for name in libraries:
+        (ps_dir / f"{name[0].lower()}.ps").write_bytes(b"\x00" * 8)
+    if not with_profile:
+        return None
+    profile = tmp_path / "base.xml"
+    profile.write_text(
+        "<profile>" + "".join(f"<lib>{n}</lib>" for n in libraries)
+        + "</profile>", encoding="utf-8")
+    return profile
+
+
+def test_coverage_counts_classes_with_checked_names(tmp_path):
+    """Покрытие — доля классов профиля, для которых имена есть в каталоге.
+
+    Это свойство защиты, а не отчётная цифра: для класса вне каталога
+    `_check_params` уходит в ветку «класса нет» и пропускает запись.
+    """
+    profile = _distribution(tmp_path, libraries=("Loaded.csl", "Skipped.csl"))
+    catalog = BlockCatalog(classes={"Блок L": {"a": "1"}, "Вне профиля": {}})
+
+    report = catalog_coverage(catalog, tmp_path, profile)
+
+    assert report["classes_in_profile"] == 2
+    assert report["checked_classes"] == 1
+    assert report["fraction"] == 0.5
+    assert report["not_in_catalog"] == ["Блок S"]
+    assert report["beyond_profile"] == ["Вне профиля"]
+    assert report["libraries_in_profile"] == 2
+
+
+def test_coverage_without_profile_counts_every_library(tmp_path):
+    """Без профиля знаменатель — все библиотеки на диске (их и грузит среда).
+
+    Числа берутся из индекса, а не из каталога: иначе доля была бы всегда
+    100% — каталог сравнивался бы сам с собой.
+    """
+    _distribution(tmp_path, with_profile=False)
+    catalog = BlockCatalog(classes={"Блок L": {"a": "1"}})
+
+    report = catalog_coverage(catalog, tmp_path, None)
+
+    assert report["libraries_in_profile"] is None
+    assert report["classes_in_profile"] == 1
+    assert report["checked_classes"] == 1
+    assert report["fraction"] == 1.0
+    assert report["records_without_paramset"] == 0
+
+
+def test_coverage_of_empty_distribution_is_zero_not_error(tmp_path):
+    """Пустая поставка даёт 0.0, а не деление на ноль."""
+    report = catalog_coverage(BlockCatalog(classes={"А": {}}), tmp_path, None)
+
+    assert report["classes_in_profile"] == 0
+    assert report["fraction"] == 0.0

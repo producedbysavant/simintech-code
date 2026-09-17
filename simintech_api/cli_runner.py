@@ -227,6 +227,82 @@ class CLIAdapter:
             timeout=timeout,
         )
 
+    # ─── Точки рестарта из командной строки ────────────────────────
+
+    def save_restart(self, project_path: str, restart_path: str,
+                     timeout: int = 300) -> CLIResult:
+        """Открыть проект и сохранить точку рестарта (`/saverestart`).
+
+        Порядок опций справка не задаёт. Берётся тот же, что у `/saveas`:
+        файл проекта, затем опция с путём, затем закрытие. Поведение на живом
+        SimInTech не проверено — справка не описывает ни формат файла
+        рестарта, ни совместимость с обычным прогоном.
+        """
+        _check_arg(restart_path, "restart_path")
+        return self.run_sync(
+            project_path,
+            f"/saverestart {restart_path}",
+            "/close",
+            "/exit",
+            timeout=timeout,
+        )
+
+    def load_restart(self, project_path: str, restart_path: str,
+                     timeout: int = 300) -> CLIResult:
+        """Открыть проект с готовой точкой рестарта (`/loadrestart`).
+
+        Смысл — продолжить расчёт с сохранённого состояния, не пересобирая
+        модель. На живом SimInTech не проверено.
+        """
+        _check_arg(restart_path, "restart_path")
+        return self.run_sync(
+            project_path,
+            f"/loadrestart {restart_path}",
+            "/close",
+            "/exit",
+            timeout=timeout,
+        )
+
+    # ─── Кодогенерация ─────────────────────────────────────────────
+
+    def generate_code(self, project_path: str,
+                      output_dir: Optional[str] = None,
+                      timeout: int = 600) -> CLIResult:
+        """Сгенерировать программу для проекта (`/gencode`, `/cgsetoutdir`).
+
+        Аргументов у `/gencode` и группы `/cg*` справка не описывает вовсе —
+        известны только имена опций (проверено по шести страницам раздела
+        «Командная строка»). Поэтому собирается минимальный набор: каталог
+        вывода, если он задан, и сам запуск генерации; порядок взят из порядка
+        строк таблицы справки (`cgsetoutdir` идёт до `cggenerate`).
+
+        Требуется лицензия на кодогенерацию: без неё среда сообщит об отказе,
+        и это отказ среды, а не ошибка вызова.
+
+        Args:
+            project_path: файл проекта.
+            output_dir: куда положить сгенерированный код (`/cgsetoutdir`).
+            timeout: больше обычного: сборка конфигурации долгая.
+        """
+        args = [project_path]
+        if output_dir is not None:
+            _check_arg(output_dir, "output_dir")
+            args.append(f"/cgsetoutdir {output_dir}")
+        args.extend(["/gencode", "/close", "/exit"])
+        return self.run_sync(*args, timeout=timeout)
+
+    def project_macro(self, macro_path: str, timeout: int = 300) -> CLIResult:
+        """Запустить макрос в контексте проекта (`/projmacros`).
+
+        Отличие от `/macros` справкой не объяснено: у `/projmacros` в описании
+        явно сказано про путь к файлу, у `/macros` — нет, хотя путь принимают
+        оба. Отдельный метод заведён, чтобы разницу можно было проверить
+        опытом, а не догадкой.
+        """
+        macro_abs = str(Path(macro_path).absolute())
+        _check_arg(macro_abs, "macro_path")
+        return self.run_sync(f"/projmacros {macro_abs}", timeout=timeout)
+
     # ─── Работа с макросами ────────────────────────────────────────
 
     def run_macro_file(self, macro_path: str, timeout: int = 300) -> CLIResult:

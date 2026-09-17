@@ -130,9 +130,25 @@ end;
 
 ## Встроенные функции
 
-`sin cos tan asin acos atan exp ln log10 sqrt abs sign pow mod`
-`min max sum mean size round floor ceil`
+`sin cos exp ln sqrt abs sign mod`
+`min max sum mean round floor ceil trunc`
 `lengthofm` — длина массива; `length` — длина строки
+
+**Имена тригонометрии здесь не те, что в C.** Тангенса, арксинуса,
+арккосинуса и арктангенса под привычными именами нет: в справке они
+называются `tg`, `ctg`, `arccos`, `atan2`. Прежняя редакция этого раздела
+объявляла встроенными `tan asin acos atan log10 pow size` — по реестру функций
+справки (907 функций) таких имён в языке нет вовсе, включая `size`.
+
+**Осторожно с двумя именами: в справке они с кириллической буквой.**
+Страницы `arсsin` и `arсtg` записаны с кириллической «с» (`U+0441`) вместо
+латинской `c` — проверено по байтам заголовка страницы, это дефект справки.
+Имя, скопированное оттуда, в скрипт не встанет, а набранное латиницей не
+найдётся точным поиском; поэтому `find_function` терпим к таким двойникам и
+возвращает запись, в поле `name` которой видно настоящее написание.
+
+Реестр — `simintech_api/data/language_functions.json`, поиск по имени:
+`simintech_api.language.find_function`.
 
 Файловые операции: `createfile`, `fileexists`, `seek`, `filesize`, `writelnutf8`.
 Строковые: `strcopy`, `pos`, `lowercase`, `floattostr`.

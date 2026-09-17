@@ -39,11 +39,14 @@ testpaths = ["tests"]
 # интеграционные тесты (им нужен COM на Windows), и бенчмарки — а те меряют
 # стенные часы (`< 2.0s`) и на первом же прогоне в CI дали бы флак. Теперь
 # обычный прогон — только модульные тесты; остальное запускается явно:
-# `pytest -m integration` или `pytest -m performance`.
-addopts = "-m 'not performance and not integration'"
+# `pytest -m integration`, `pytest -m performance` или `pytest -m distribution`.
+addopts = "-m 'not performance and not integration and not distribution'"
 markers = [
     "integration: тесты, требующие реального COM-сервера SimInTech на Windows",
     "performance: бенчмарки производительности placer/router (меряют стенные часы)",
+    # Долгие проверки по установленной поставке: обход дерева Demo по 9p
+    # медленный, а самого SimInTech64 на CI нет.
+    "distribution: сплошные проверки по поставке SimInTech (нужен SimInTech64)",
 ]
 
 [tool.mypy]
@@ -59,10 +62,14 @@ files = [
     "simintech_api/catalog_tool.py",
     "simintech_api/constants.py",
     "simintech_api/csl_library.py",
+    "simintech_api/dbconf.py",
     "simintech_api/exceptions.py",
+    "simintech_api/language.py",
     "simintech_api/layout/grid.py",
     "simintech_api/layout/placer.py",
     "simintech_api/layout/router.py",
+    "simintech_api/pak.py",
+    "simintech_api/tbl.py",
     "simintech_api/utils/xprt_signals.py",
 ]
 # Находки в импортируемых модулях не показывать: пока гейт покрывает не весь
