@@ -9,6 +9,7 @@ from ..constants import (
     standard_block_size,
 )
 from ..exceptions import BlockError, UnsupportedBlockError
+from .com_client import _out_values
 
 if TYPE_CHECKING:
     from .project import Project
@@ -39,6 +40,27 @@ class Page:
     def activate(self) -> None:
         """Сделать страницу текущей (SetCurrentPage)."""
         self._project.client.call("SetCurrentPage", self._project.id, self._id)
+
+    def parent(self) -> Optional["Page"]:
+        """Родительская страница (COM `PageUp`); `None`, если её нет.
+
+        Нужна, чтобы вернуться из страницы субмодели (`Project.submodel_page`)
+        на страницу, которой она принадлежит. Нулевая страница трактуется как
+        отсутствие родителя — так выглядит главная страница; **предположение**,
+        на живом SimInTech не проверено, как и то, что `PageUp` возвращает
+        именно родителя в этом смысле.
+
+        Raises:
+            ComCallError: метод не вернул [out]-значение (пустой результат или
+                `None`) — это признак другой сигнатуры, а не отсутствия
+                родителя.
+        """
+        values = _out_values(
+            self._project.client.call("PageUp", self._id), "PageUp")
+        page_id = _as_i64(values[0])
+        if not page_id:
+            return None
+        return Page(self._project, page_id)
 
     # ─── Блоки ──────────────────────────────────────────────────────
 

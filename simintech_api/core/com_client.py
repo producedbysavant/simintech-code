@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import sys
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 from ..exceptions import ComConnectionError, ComCallError
 from ..model import TDataDescriptor
@@ -237,6 +237,69 @@ class COMClient:
         """Вернуть PID процесса mmain.exe."""
         return _as_int(self.call("GetProcessID"))
 
+    # ─── Перечисление открытых проектов ─────────────────────────────
+    #
+    # Группа адресуется номером или именем файла проекта, а не объектом:
+    # она и нужна затем, чтобы получить ProjectId, когда объекта ещё нет.
+    # Поэтому методы живут на клиенте, а не на `Project`.
+    #
+    # Ни один из них не проверен на живом SimInTech: по RIDL каждый отдаёт
+    # единственный [out]-параметр, и значение берётся из кортежа-результата
+    # (`_out_values`). Если в сборке сигнатура другая, обёртка откажет с
+    # понятным сообщением, а не разберёт результат наугад.
+
+    def get_project_count(self) -> int:
+        """Сколько проектов открыто (COM `GetProjectCount`).
+
+        На живом SimInTech не проверено. Ноль означает, что открытых проектов
+        нет, а не ошибку.
+        """
+        return _as_int(_out_values(
+            self.call("GetProjectCount"), "GetProjectCount")[0])
+
+    def get_project_id_by_number(self, number: int) -> int:
+        """Идентификатор проекта по его номеру среди открытых.
+
+        COM `GetProjectIdByNumber`; нумерация, судя по `Pack`, с нуля.
+        Возвращает 0, если проекта с таким номером нет. Нумерация и поведение
+        на живом SimInTech не подтверждены.
+        """
+        return _as_int(_out_values(
+            self.call("GetProjectIdByNumber", int(number)),
+            "GetProjectIdByNumber")[0])
+
+    def get_project_id_by_file_name(self, file_name: str) -> int:
+        """Идентификатор проекта по имени файла (COM `GetProjectIdByFileName`).
+
+        Возвращает 0, если проект с таким именем не открыт. Как именно
+        сопоставляется имя (полный путь, только имя файла, регистр) — на живом
+        SimInTech не подтверждено.
+        """
+        return _as_int(_out_values(
+            self.call("GetProjectIdByFileName", file_name),
+            "GetProjectIdByFileName")[0])
+
+    def get_active_project(self) -> int:
+        """Идентификатор активного проекта (COM `GetActiveProject`).
+
+        Возвращает 0, если активного проекта нет. Что делает проект активным
+        (последний открытый, последняя активированная страница) — на живом
+        SimInTech не подтверждено.
+        """
+        return _as_int(_out_values(
+            self.call("GetActiveProject"), "GetActiveProject")[0])
+
+    def get_opened_file_name(self, project_id: int) -> str:
+        """Путь к файлу, из которого открыт проект (`GetOpenedFileName`).
+
+        Пустая строка означает, что проект не связан с файлом (например,
+        создан через `NewProject`) — это предположение: и оно, и то, полный
+        это путь или короткое имя, на живом SimInTech не подтверждены.
+        """
+        return _as_str(_out_values(
+            self.call("GetOpenedFileName", int(project_id)),
+            "GetOpenedFileName")[0])
+
     def find_signal(self, name: str, project_id: int) -> Any:
         """Найти сигнал по имени в проекте; вернуть дескриптор.
 
@@ -286,6 +349,50 @@ def _as_int(value: Any) -> int:
     if hasattr(value, "value"):
         return int(value.value)
     return int(value)
+
+
+def _as_str(value: Any) -> str:
+    """Привести результат COM-вызова к str (BSTR, VARIANT или None)."""
+    if value is None:
+        return ""
+    if hasattr(value, "value"):
+        return str(value.value)
+    return str(value)
+
+
+def _out_values(result: Any, method: str, count: int = 1) -> List[Any]:
+    """Разобрать результат COM-вызова на [out]-значения.
+
+    comtypes отдаёт [out]-параметры одним кортежем в порядке объявления (для
+    одного параметра — кортежем из одного элемента). Разбирать результат
+    «наугад» нельзя: у метода, которого в этой сборке нет или у которого
+    другая сигнатура, результат будет `None` или пустым, и `TypeError` из
+    распаковки ничего не объясняет. Поэтому такой результат превращается в
+    `ComCallError` с именем метода — иначе неверная сигнатура выглядела бы
+    как ошибка в коде вызывающего.
+
+    Args:
+        result: то, что вернул `COMClient.call`.
+        method: имя COM-метода — попадает в сообщение об отказе.
+        count: сколько [out]-значений ожидается по RIDL.
+
+    Raises:
+        ComCallError: результат пуст (`None`) или значений не столько, сколько
+            объявлено.
+    """
+    if result is None:
+        raise ComCallError(method, message=(
+            f"метод не вернул [out]-значений (получено None), а по RIDL "
+            f"ожидалось {count}. Проверьте сигнатуру метода в этой сборке "
+            f"SimInTech."))
+    # Значение без кортежа — это [out, retval]: comtypes отдаёт его напрямую,
+    # и отличить его от одиночного [out] по результату нельзя.
+    values = list(result) if isinstance(result, (tuple, list)) else [result]
+    if len(values) != count:
+        raise ComCallError(method, message=(
+            f"метод вернул {len(values)} значений вместо {count} ожидаемых "
+            f"по RIDL. Проверьте сигнатуру метода в этой сборке SimInTech."))
+    return values
 
 
 def _to_descriptor(value: Any) -> Any:
