@@ -46,6 +46,34 @@ SDB_XML = textwrap.dedent("""\
 """)
 
 
+# Та же структура, но значения в одинарных кавычках: так выглядят поставляемые
+# каталоги оборудования. Раньше такой файл не разбирался вовсе — `int('0')`
+# получал строку вместе с кавычками и падал.
+SDB_XML_SINGLE_QUOTES = textwrap.dedent("""\
+    <?xml version="1.0" encoding="utf-8"?>
+    <root>
+      <database>
+        <category>
+          <name>'Оборудование'</name>
+          <nametemplate>'%s'</nametemplate>
+          <group>
+            <name>'Насос'</name>
+            <signals>
+              <data>
+                <name>'wn'</name>
+                <caption>'Номинальная скорость'</caption>
+                <type>'0'</type>
+                <mode>'1'</mode>
+                <value>'3000'</value>
+              </data>
+            </signals>
+          </group>
+        </category>
+      </database>
+    </root>
+""")
+
+
 def _write(tmp_path):
     path = tmp_path / "signals.xml"
     path.write_text(SDB_XML, encoding="utf-8")
@@ -81,6 +109,35 @@ def test_signals_are_indexed_by_composite_key(tmp_path):
 
     assert info is not None
     assert info["name"] == "Kp"
+
+
+def test_single_quotes_are_stripped(tmp_path):
+    """Файл с одинарными кавычками разбирается, а не падает на `int('0')`.
+
+    Такая конвенция есть в поставляемых каталогах оборудования; раньше разбор
+    останавливался на первом же сигнале, и вместо базы получалось исключение.
+    """
+    path = tmp_path / "signals.xml"
+    path.write_text(SDB_XML_SINGLE_QUOTES, encoding="utf-8")
+
+    info = SignalDatabase.from_xml(path).get_signal_info("Насос_wn")
+
+    assert info is not None
+    assert info["name"] == "wn"
+    assert info["caption"] == "Номинальная скорость"
+    assert info["type"] == 0
+
+
+def test_non_numeric_type_does_not_break_parsing(tmp_path):
+    """Мусор в служебном поле не роняет разбор целого файла."""
+    path = tmp_path / "signals.xml"
+    path.write_text(SDB_XML.replace("<type>`0`</type>", "<type>`n/a`</type>"),
+                    encoding="utf-8")
+
+    info = SignalDatabase.from_xml(path).get_signal_info("Регулятор_Kp")
+
+    assert info is not None
+    assert info["type"] == 0
 
 
 # ─── Защита от XXE ────────────────────────────────────────────────

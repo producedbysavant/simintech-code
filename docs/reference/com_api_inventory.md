@@ -496,7 +496,7 @@ COM-сервером: для безоконного сохранения выз�
 | `SetProjectModified` | `(__int64 ProjectId, long AModified)` | ✅ | Флаг модификации |
 | `SetParentPrjHandle` | `(__int64 ProjectId, __int64 Handle)` | ✅ | Parent handle |
 | `SetPrjPosByPrjId` | `(__int64 SrcPrjId, __int64 DestPrjId)` | ✅ | Позиция проекта |
-| `SetRealTimeDelay` | `(__int64 ProjectId, long Flag, double Scale)` | ❌ | Не реализован в этой версии SimInTech |
+| `SetRealTimeDelay` | — | ❌ | Метода нет в интерфейсе вовсе: в `mmain.ridl` отсутствует. Есть только `SetProjectRealTimeDelay` (проект) и `SetRealTimeDelayPack` (пакет) |
 | `WaitForAllLoading` | `()` | ✅ | Ждать загрузки всех ресурсов |
 | `ProcessAllMessages` | `()` | ✅ | Обработка сообщений Windows |
 

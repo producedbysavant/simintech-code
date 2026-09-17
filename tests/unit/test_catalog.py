@@ -119,6 +119,34 @@ XPRT_WITH_COMPUTED = """<project>
 </project>
 """
 
+# Старая конвенция кавычек: значения обёрнуты в одинарные кавычки, а не в
+# бэктики. Встречается и в поставляемых образцах, и в файлах 2022 года.
+XPRT_SINGLE_QUOTES = """<project>
+  <object>
+    <name>'Gain1'</name>
+    <class_name>'Усилитель'</class_name>
+    <custom_props>
+      <data><name>'a'</name><mode>'1'</mode><value>'2.5'</value></data>
+      <data><name>'formula_visible'</name><mode>'0'</mode><value>'0'</value></data>
+    </custom_props>
+  </object>
+</project>
+"""
+
+# Старый формат нумерует элементы контейнера: <object_0>, <data_1>, ... Раньше
+# такие файлы разбирались в ноль классов — молча, неотличимо от пустой модели.
+XPRT_NUMBERED = """<project>
+  <object_0>
+    <name>'Gain1'</name>
+    <class_name>'Усилитель'</class_name>
+    <custom_props>
+      <data_0><name>'a'</name><mode>'1'</mode><value>'3'</value></data_0>
+      <data_1><name>'formula_visible'</name><mode>'0'</mode><value>'0'</value></data_1>
+    </custom_props>
+  </object_0>
+</project>
+"""
+
 
 # ─── Разбор .xprt ─────────────────────────────────────────────────
 
@@ -177,6 +205,51 @@ def test_parse_readonly_marks_computed_params():
 
     assert readonly["Усилитель"] == ["formula_visible"]
     assert "a" not in readonly["Усилитель"]
+
+
+def test_clean_value_strips_single_quotes():
+    """Одинарные кавычки снимаются так же, как бэктики."""
+    assert clean_value("'2.5'") == "2.5"
+    assert clean_value("  'abc'  ") == "abc"
+
+
+def test_clean_value_keeps_inner_apostrophe():
+    """Внутренний апостроф не трогается — снимаются только края."""
+    assert clean_value("`don't`") == "don't"
+    assert clean_value("'don't'") == "don't"
+
+
+def test_parse_single_quote_format():
+    """Файл с одинарными кавычками разбирается без кавычек в именах.
+
+    Раньше снимались только бэктики, и имя выходило как ``'a'`` — то есть
+    каталог, собранный из такого файла, отвергал правильное имя параметра.
+    """
+    parsed = parse_xprt_block_props(XPRT_SINGLE_QUOTES)
+
+    assert set(parsed) == {"Усилитель"}
+    assert parsed["Усилитель"] == {"a": "2.5", "formula_visible": "0"}
+
+
+def test_parse_numbered_elements():
+    """Старый формат с <object_0>/<data_0> разбирается, а не даёт ноль классов."""
+    parsed = parse_xprt_block_props(XPRT_NUMBERED)
+
+    assert set(parsed) == {"Усилитель"}
+    assert parsed["Усилитель"]["a"] == "3"
+
+
+def test_computed_param_in_single_quotes_is_marked():
+    """`mode` в одинарных кавычках распознаётся как вычисляемый.
+
+    Иначе вычисляемые параметры попали бы в каталог задаваемыми, а запись в них
+    COM принимает и молча игнорирует — отказ без ошибки.
+    """
+    assert parse_xprt_readonly(XPRT_SINGLE_QUOTES)["Усилитель"] == ["formula_visible"]
+
+
+def test_computed_param_in_numbered_format_is_marked():
+    assert parse_xprt_readonly(XPRT_NUMBERED)["Усилитель"] == ["formula_visible"]
 
 
 def test_parse_empty_text():

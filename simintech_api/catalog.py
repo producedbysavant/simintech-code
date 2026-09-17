@@ -159,14 +159,21 @@ class BlockCatalog:
 
 # ─── Разбор .xprt ─────────────────────────────────────────────────
 
-# Значения в .xprt обёрнуты в бэктики: <name>`Значение`</name>
-_OBJECT_RE = re.compile(r"<object>(.*?)</object>", re.S | re.I)
+# Элементы в .xprt двух видов: `<object>` в современных выгрузках и
+# `<object_0>`, `<object_1>`, ... (с номером) в старых, где нумеруется всё
+# содержимое контейнера. Обе формы встречаются в поставке, поэтому обе и
+# принимаются; то же для `<data>` и `<data_N>`.
+_OBJECT_RE = re.compile(
+    r"<(?P<tag>object(?:_\d+)?)>(?P<body>.*?)</(?P=tag)>", re.S | re.I)
 _CLASS_RE = re.compile(r"<class_name>(.*?)</class_name>", re.S | re.I)
 _CUSTOM_RE = re.compile(r"<custom_props>(.*?)</custom_props>", re.S | re.I)
-_DATA_RE = re.compile(r"<data>(.*?)</data>", re.S | re.I)
-_NAME_RE = re.compile(r"<name>\s*`?([^`<]*)`?\s*</name>", re.I)
-_VALUE_RE = re.compile(r"<value>\s*`?([^`<]*)`?\s*</value>", re.I)
-_MODE_RE = re.compile(r"<mode>\s*`?(\d+)`?\s*</mode>", re.I)
+_DATA_RE = re.compile(
+    r"<(?P<tag>data(?:_\d+)?)>(?P<body>.*?)</(?P=tag)>", re.S | re.I)
+# Кавычки вокруг значений — тоже двух конвенций: бэктики в новых выгрузках,
+# одинарные кавычки в старых. Принимаются обе; внутренние кавычки не трогаются.
+_NAME_RE = re.compile(r"<name>\s*[`']?([^`<]*)[`']?\s*</name>", re.I)
+_VALUE_RE = re.compile(r"<value>\s*[`']?([^`<]*)[`']?\s*</value>", re.I)
+_MODE_RE = re.compile(r"<mode>\s*[`']?(\d+)[`']?\s*</mode>", re.I)
 
 # Режим параметра (mode) в <custom_props>: 1 — задаваемый, 0 — вычисляемый.
 MODE_EDITABLE = 1
@@ -183,10 +190,18 @@ NON_BLOCK_CLASSES = {
 
 
 def clean_value(text: Optional[str]) -> str:
-    """Убрать бэктики и пробелы по краям значения из .xprt."""
+    """Убрать кавычки и пробелы по краям значения из .xprt.
+
+    Кавычки двух конвенций: новые выгрузки оборачивают значения в бэктики,
+    старые — в одинарные кавычки, и то и другое есть в одной поставке. Снимаются
+    только края, поэтому апостроф внутри значения («`don’t`») сохраняется.
+
+    Раньше снимались только бэктики, и на старом файле параметр ``SortType``
+    превращался в ``'SortType'`` — с кавычками внутри имени.
+    """
     if not text:
         return ""
-    return text.strip().strip("`").strip()
+    return text.strip().strip("`'").strip()
 
 
 def _iter_custom_props(obj: str) -> Iterator[Tuple[str, str, Optional[int]]]:
@@ -202,7 +217,8 @@ def _iter_custom_props(obj: str) -> Iterator[Tuple[str, str, Optional[int]]]:
     custom_match = _CUSTOM_RE.search(obj)
     if not custom_match:
         return
-    for data in _DATA_RE.findall(custom_match.group(1)):
+    for data in (m.group("body")
+                 for m in _DATA_RE.finditer(custom_match.group(1))):
         name_match = _NAME_RE.search(data)
         if not name_match:
             continue
@@ -228,7 +244,7 @@ def parse_xprt_block_props(xml_text: str) -> Dict[str, Dict[str, str]]:
     """
     result: Dict[str, Dict[str, str]] = {}
 
-    for obj in _OBJECT_RE.findall(xml_text):
+    for obj in (m.group("body") for m in _OBJECT_RE.finditer(xml_text)):
         cls_match = _CLASS_RE.search(obj)
         if not cls_match:
             continue
@@ -254,7 +270,7 @@ def parse_xprt_readonly(xml_text: str) -> Dict[str, List[str]]:
     """
     result: Dict[str, List[str]] = {}
 
-    for obj in _OBJECT_RE.findall(xml_text):
+    for obj in (m.group("body") for m in _OBJECT_RE.finditer(xml_text)):
         cls_match = _CLASS_RE.search(obj)
         if not cls_match:
             continue
