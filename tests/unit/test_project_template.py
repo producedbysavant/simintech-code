@@ -199,3 +199,17 @@ def test_repaint_returns_self():
     prj = Project(FakeClient(), 42)
 
     assert prj.repaint() is prj
+
+
+def test_export_db_to_xml_calls_com_method():
+    """Выгрузка базы идёт через `ExportDBToXML` и адресует текущий проект.
+
+    Это единственный COM-путь выгрузки: он не требует ни командной строки, ни
+    макроса `dbexporttoxml`, которым база выгружалась раньше.
+    """
+    client = FakeClient()
+    project = Project(client, client._project_id)
+
+    project.export_db_to_xml("C:/tmp/signals.xml")
+
+    assert ("ExportDBToXML", client._project_id, "C:/tmp/signals.xml") in client.calls
