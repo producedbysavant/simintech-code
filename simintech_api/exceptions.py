@@ -63,3 +63,7 @@ class SimulationError(SimInTechError):
 
 class LayoutError(SimInTechError):
     """Ошибка алгоритмов размещения/трассировки (нет пути, конфликт)."""
+
+
+class PackError(SimInTechError):
+    """Ошибка при работе с пакетом проектов (`.pak`)."""

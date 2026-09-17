@@ -20,12 +20,14 @@ from .core.port import Port
 from .core.wire import Wire
 from .core.signal import Signal
 from .core.simulation import Simulation
+from .core.pack import Pack
 from .constants import DataType, PortSide
 from .exceptions import (
     BlockError,
     ComCallError,
     ComConnectionError,
     PageError,
+    PackError,
     PortError,
     ProjectError,
     SignalError,
@@ -44,6 +46,7 @@ __all__ = [
     "Wire",
     "Signal",
     "Simulation",
+    "Pack",
     "DataType",
     "PortSide",
     "SimInTechError",
@@ -51,6 +54,7 @@ __all__ = [
     "ComCallError",
     "ProjectError",
     "PageError",
+    "PackError",
     "BlockError",
     "UnsupportedBlockError",
     "PortError",

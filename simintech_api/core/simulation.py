@@ -5,6 +5,8 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
+from ..exceptions import PackError
+
 if TYPE_CHECKING:
     from .com_client import COMClient
 
@@ -19,7 +21,7 @@ class Simulation:
 
     Args:
         client: COM-клиент.
-        project_id: id проекта (или пакета для Pack-методов).
+        project_id: id проекта.
     """
 
     def __init__(self, client: "COMClient", project_id: int):
@@ -110,43 +112,42 @@ class Simulation:
         return _as_int(self._client.call("GetProjectStateFlag", self._id))
 
     # ─── Пакет ──────────────────────────────────────────────────────
+    #
+    # Операции пакета адресуются идентификатором **пакета**, а не проекта, и
+    # живут в классе `Pack` (открывается через `COMClient.open_pack`). Здесь
+    # раньше передавался идентификатор проекта — обращение шло не туда, и
+    # вызывающий получал молчаливое «ничего не произошло». Тихая неверная
+    # операция хуже отсутствующей, поэтому теперь это отказ.
+
+    def _pack_moved(self, method: str) -> PackError:
+        return PackError(
+            f"{method} адресуется идентификатором пакета, а Simulation привязан "
+            f"к проекту (id={self._id}). Откройте пакет через "
+            f"`COMClient.open_pack` и работайте с классом `Pack`.")
 
     def pack_start(self) -> "Simulation":
-        """Инициализировать пакет."""
-        self._client.call("PackStart", self._id)
-        return self
+        """Инициализировать пакет. **Здесь недоступно:** см. `Pack.start`."""
+        raise self._pack_moved("pack_start")
 
     def pack_run(self) -> "Simulation":
-        """Запустить расчёт пакета."""
-        self._client.call("PackRun", self._id)
-        return self
+        """Запустить расчёт пакета. **Здесь недоступно:** см. `Pack.run`."""
+        raise self._pack_moved("pack_run")
 
     def pack_step(self) -> "Simulation":
-        """Шаг расчёта пакета."""
-        self._client.call("PackStep", self._id)
-        return self
+        """Шаг расчёта пакета. **Здесь недоступно:** см. `Pack.step`."""
+        raise self._pack_moved("pack_step")
 
     def pack_pause(self) -> "Simulation":
-        """Пауза пакета."""
-        self._client.call("PackPause", self._id)
-        return self
+        """Пауза пакета. **Здесь недоступно:** см. `Pack.pause`."""
+        raise self._pack_moved("pack_pause")
 
     def pack_stop(self) -> "Simulation":
-        """Остановить пакет."""
-        self._client.call("PackStop", self._id)
-        return self
+        """Остановить пакет. **Здесь недоступно:** см. `Pack.stop`."""
+        raise self._pack_moved("pack_stop")
 
     def run_to_pack(self, target_time: float) -> bool:
-        """Расчёт пакета до заданного времени.
-
-        Возвращается результат `WaitForTimePack` как есть. Опросом подтвердить
-        достижение нельзя: модельное время **пакета** отдельным методом не
-        читается (для проектов это `GetProjectTime`, см. `run_to`). Поведение
-        на реальном SimInTech не проверялось — не опирайтесь на этот `bool`.
-        """
-        self._client.call("RunToPack", self._id, float(target_time))
-        wait = self._client.call("WaitForTimePack", self._id, float(target_time))
-        return _as_int(wait) != 0
+        """Расчёт пакета до отметки. **Здесь недоступно:** см. `Pack.run_to`."""
+        raise self._pack_moved("run_to_pack")
 
     # ─── Реальное время ─────────────────────────────────────────────
 

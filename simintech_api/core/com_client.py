@@ -203,6 +203,24 @@ class COMClient:
         """
         return _as_int(self.call("OpenTemplate", template))
 
+    def open_pack(self, path: str) -> int:
+        """Открыть пакет проектов (`.pak`), вернуть PackId.
+
+        Пакет — несколько связанных проектов с общим модельным временем:
+        оно равно минимуму времён проектов, а обмен идёт через общую базу
+        сигналов. Состав дают `Pack.project_ids()`. Возвращает 0, если пакет
+        открыть не удалось.
+        """
+        return _as_int(self.call("OpenPack", path))
+
+    def close_pack(self, pack_id: int) -> None:
+        """Закрыть пакет."""
+        self.call("ClosePack", pack_id)
+
+    def get_pack_count(self) -> int:
+        """Сколько пакетов открыто."""
+        return _as_int(self.call("GetPackCount"))
+
     def set_layer_prop(self, project_id: int, layer_no: int,
                        name: str, value: Any) -> int:
         """Установить свойство расчётного слоя проекта, вернуть handle.
