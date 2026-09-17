@@ -17,6 +17,23 @@ if TYPE_CHECKING:
     from .port import Port
     from .wire import Wire
 
+#: Имя класса линии связи в этой сборке (свойство `ClassName`). Разные вызовы
+#: возвращают его и целиком («Математическая связь»), и обрезанным
+#: («Математическая») — проверено на живом SimInTech64, поэтому сверяется
+#: начало строки, а не равенство.
+WIRE_CLASS_PREFIX = "Математическая"
+
+#: Имя объекта-линии (свойство `Name`) — запасной признак.
+WIRE_NAME_PREFIX = "MBTYWire"
+
+
+def _is_wire_object(class_name: str, name: str) -> bool:
+    """Отличить линию связи от блока по имени класса или объекта."""
+    cls = (class_name or "").strip()
+    obj = (name or "").strip()
+    return (cls.startswith(WIRE_CLASS_PREFIX)
+            or obj.startswith(WIRE_NAME_PREFIX))
+
 
 class Page:
     """Страница проекта. Создаётся через Project.get_main_page() и т.п."""
@@ -117,18 +134,69 @@ class Page:
         return block
 
     def get_blocks(self) -> List["Block"]:
-        """Получить все блоки текущей страницы (GetPageBlockId по индексу)."""
+        """Получить блоки текущей страницы (`GetPageBlockId` по индексу).
+
+        Перечисление отдаёт **все** объекты страницы, включая линии связи:
+        на живой сборке счётчик вырастает на единицу после `CreateWire`, а
+        `GetPageBlockId` возвращает идентификатор линии. Поэтому линии тут
+        отсеиваются — иначе они попадали бы в список блоков (и в
+        `list_blocks`), как раньше в список сигналов попадали провода.
+
+        Линии отдельно — :meth:`get_wires`.
+        """
         from .block import Block
+        return [Block(self._project, block_id)
+                for block_id, is_wire in self._objects() if not is_wire]
+
+    def get_wires(self) -> List["Wire"]:
+        """Линии связи текущей страницы.
+
+        Перечисление то же, что у блоков, — `GetPageObjectCount` +
+        `GetPageBlockId` (идентификатор **проекта**, а не страницы: с
+        идентификатором страницы счётчик возвращает 0 — проверено на живом
+        SimInTech64).
+
+        **Концы линии этим путём не читаются.** Отдельных методов для портов
+        связи в интерфейсе нет (`GetPortWireId` и подобные — функции встроенного
+        языка, не COM), свойство `Points` у линии пусто даже после
+        `NormalizeWire`, а у портов нет читаемых свойств. Поэтому линия
+        возвращается без пары «откуда → куда»; сопоставить её с конкретными
+        блоками можно только по тем, что создала эта сессия.
+        """
+        from .wire import Wire
+        return [Wire(self._project, wire_id)
+                for wire_id, is_wire in self._objects() if is_wire]
+
+    def _objects(self) -> List[Tuple[int, bool]]:
+        """Объекты страницы: (идентификатор, признак «это линия связи»)."""
         self.activate()
         count = _as_i64(self._project.client.call(
             "GetPageObjectCount", self._project.id))
-        result: List[Block] = []
+        result: List[Tuple[int, bool]] = []
         for i in range(count):
-            block_id = _as_i64(self._project.client.call(
+            obj_id = _as_i64(self._project.client.call(
                 "GetPageBlockId", self._project.id, i))
-            if block_id:
-                result.append(Block(self._project, block_id))
+            if not obj_id:
+                continue
+            result.append((obj_id, self._is_wire(obj_id)))
         return result
+
+    def _is_wire(self, obj_id: int) -> bool:
+        """Линия ли это: по классу, при отказе чтения — по имени объекта."""
+        from ..exceptions import ComCallError
+        try:
+            class_name = self._project.client.call(
+                "GetBlockPropAsString", obj_id, "ClassName") or ""
+        except ComCallError:
+            class_name = ""
+        if _is_wire_object(str(class_name), ""):
+            return True
+        try:
+            name = self._project.client.call(
+                "GetBlockPropAsString", obj_id, "Name") or ""
+        except ComCallError:
+            return False
+        return _is_wire_object("", str(name))
 
     def find_block(self, name: str) -> Optional["Block"]:
         """Найти блок по свойству Name."""
