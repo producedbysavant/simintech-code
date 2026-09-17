@@ -69,6 +69,7 @@ files = [
     "simintech_api/layout/placer.py",
     "simintech_api/layout/router.py",
     "simintech_api/pak.py",
+    "simintech_api/tbl.py",
     "simintech_api/utils/xprt_signals.py",
 ]
 # Находки в импортируемых модулях не показывать: пока гейт покрывает не весь

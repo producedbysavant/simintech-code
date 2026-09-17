@@ -217,8 +217,17 @@ def _iter_custom_props(obj: str) -> Iterator[Tuple[str, str, Optional[int]]]:
     custom_match = _CUSTOM_RE.search(obj)
     if not custom_match:
         return
-    for data in (m.group("body")
-                 for m in _DATA_RE.finditer(custom_match.group(1))):
+    yield from _iter_data(custom_match.group(1))
+
+
+def _iter_data(body: str) -> Iterator[Tuple[str, str, Optional[int]]]:
+    """Пройти по записям ``<data>`` внутри секции параметров.
+
+    Один разбор на две секции: у блока это ``<custom_props>``, у расчётного
+    слоя — ``<parameters>``. Записи устроены одинаково (``<name>``,
+    ``<value>``, ``<mode>``), и второй копии разбора здесь быть не должно.
+    """
+    for data in (m.group("body") for m in _DATA_RE.finditer(body)):
         name_match = _NAME_RE.search(data)
         if not name_match:
             continue
@@ -230,6 +239,27 @@ def _iter_custom_props(obj: str) -> Iterator[Tuple[str, str, Optional[int]]]:
         mode_match = _MODE_RE.search(data)
         mode = int(mode_match.group(1)) if mode_match else None
         yield prop, value, mode
+
+
+def parse_xprt_layer_params(xml_text: str) -> Dict[str, str]:
+    """Настройки расчётного слоя из XML-проекта (.xprt).
+
+    Секция ``<parameters>`` слоя: ``starttime``, ``endtime``, ``hmin``,
+    ``hmax``, ``intmet`` и другие имена метода расчёта. Читаются **из
+    выгрузки**, а не через COM: метода чтения свойств слоя в интерфейсе нет —
+    есть только запись (``SetLayerProp``), и это единственный способ узнать,
+    какие имена в проекте вообще есть.
+
+    Возвращается **первая** секция ``<parameters>`` документа: она принадлежит
+    слою и идёт до объектов; параметры блоков лежат в ``<custom_props>``.
+    """
+    match = re.search(r"<parameters>(.*?)</parameters>", xml_text, re.S)
+    if match is None:
+        return {}
+    result: Dict[str, str] = {}
+    for prop, value, _ in _iter_data(match.group(1)):
+        result[prop] = value
+    return result
 
 
 def parse_xprt_block_props(xml_text: str) -> Dict[str, Dict[str, str]]:

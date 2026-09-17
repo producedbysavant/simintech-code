@@ -18,6 +18,7 @@ from simintech_api.catalog import (  # noqa: E402
     decode_xprt,
     load_default_catalog,
     parse_xprt_block_props,
+    parse_xprt_layer_params,
     parse_xprt_readonly,
 )
 
@@ -606,6 +607,42 @@ def test_merge_catalogs_keeps_params_of_same_class():
     merged = merge_catalogs([first, second])
 
     assert merged.defaults_for("А") == {"p": "1", "q": "2"}
+
+
+# ─── Настройки расчётного слоя ────────────────────────────────────
+
+XPRT_WITH_LAYER_PARAMS = """<?xml version="1.0" encoding="utf-8"?>
+<project>
+  <groups><pluginname>`mbtylib.dll`</pluginname></groups>
+  <parameters>
+    <data><name>`hmin`</name><value>`0.001`</value></data>
+    <data><name>`hmax`</name><value>`0.1`</value></data>
+    <data><name>`endtime`</name><value>`10`</value></data>
+  </parameters>
+  <object>
+    <name>`k_0`</name>
+    <class_name>`Константа`</class_name>
+    <custom_props>
+      <data><name>`a`</name><mode>`1`</mode><value>`2`</value></data>
+    </custom_props>
+  </object>
+</project>
+"""
+
+
+def test_layer_params_are_read_from_export():
+    """Настройки расчёта берутся из секции слоя, а не из свойств блоков."""
+    assert parse_xprt_layer_params(XPRT_WITH_LAYER_PARAMS) == {
+        "hmin": "0.001", "hmax": "0.1", "endtime": "10"}
+
+
+def test_layer_params_of_project_without_layer_are_empty():
+    """У проекта без расчётного слоя настроек нет — пусто, а не ошибка.
+
+    Так выглядит проект, созданный `NewProject`: считать в нём нечему, и
+    «настройки по умолчанию» тут были бы выдумкой.
+    """
+    assert parse_xprt_layer_params(XPRT_BACKTICK) == {}
 
 
 # ─── Покрытие: доля классов под проверкой имён ────────────────────

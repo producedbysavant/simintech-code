@@ -173,6 +173,55 @@ class Project:
         """
         self._client.call("ExportDBToXML", self._id, path)
 
+    # ─── Настройки расчёта (свойства слоя) ──────────────────────────
+
+    def calc_settings(self) -> dict:
+        """Настройки расчёта проекта: имена и значения параметров слоя.
+
+        Читаются **из выгрузки** `.xprt`, а не через COM: метода чтения свойств
+        слоя в интерфейсе нет, есть только запись (`SetLayerProp`). Выгрузка
+        даёт заодно ответ на вопрос «какие имена в этом проекте вообще есть» —
+        без него проверять имя при записи было бы нечем, а `SetLayerProp`
+        неизвестное имя, по аналогии с `SetBlockProp`, может принять молча.
+
+        Обычные имена: `starttime`, `endtime` (время расчёта), `hmin`, `hmax`
+        (шаг), `intmet` (метод интегрирования). У проекта без расчётного слоя
+        (созданного через `Project.new()`) секции параметров нет — возвращается
+        пустой словарь, и это не ошибка.
+
+        Требует COM: чтобы получить выгрузку, проект должен быть в среде.
+        """
+        from ..catalog import export_xprt_text, parse_xprt_layer_params
+
+        return parse_xprt_layer_params(export_xprt_text(self))
+
+    def set_calc_setting(self, name: str, value: str) -> "Project":
+        """Записать параметр расчёта (`SetLayerProp`), проверив имя.
+
+        Имя сверяется с теми, что уже есть в проекте (`calc_settings`):
+        неизвестное отвергается. Это не перестраховка — у `SetBlockProp` запись
+        в несуществующее имя молча ничего не делает, и `SetLayerProp`
+        проверять на это отдельно не приходилось.
+
+        Raises:
+            ProjectError: имени нет в настройках проекта, либо `SetLayerProp`
+                не принял значение (нет расчётного слоя).
+        """
+        known = self.calc_settings()
+        if known and name not in known:
+            raise ProjectError(
+                f"параметра «{name}» нет в настройках расчёта проекта. "
+                f"Известные: {', '.join(sorted(known))}"
+            )
+        handle = self._client.set_layer_prop(self._id, CALC_LAYER, name,
+                                             str(value))
+        if not handle:
+            raise ProjectError(
+                f"SetLayerProp не принял «{name}»: в проекте нет расчётного "
+                f"слоя. Создайте проект через Project.from_template()."
+            )
+        return self
+
     # ─── Точки рестарта ─────────────────────────────────────────────
     #
     # Рестарт (checkpoint/restore) — это снимок состояния модели, который

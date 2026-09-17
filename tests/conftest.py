@@ -37,6 +37,16 @@ def pytest_configure(config):
         "markers",
         "performance: бенчмарки производительности placer/router",
     )
+    # Сплошные проверки по файлам поставки SimInTech: медленные (обход
+    # 9p-каталога) и зависят от установленного SimInTech64. Объявление нужно
+    # не только «для порядка»: pytest 9 не добавляет необъявленную метку в
+    # ключевые слова теста, поэтому `pytest -m distribution` не выбрал бы
+    # ничего, а сама метка ругалась бы предупреждением на каждом прогоне.
+    config.addinivalue_line(
+        "markers",
+        "distribution: сплошные проверки по файлам поставки SimInTech"
+        " (медленные, нужен её каталог)",
+    )
 
 
 @pytest.fixture(scope="session")
