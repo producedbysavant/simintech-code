@@ -80,6 +80,63 @@ def _write(tmp_path):
     return path
 
 
+# Структура снята с поставляемого каталога `bin/DataBase/Catalog/pumps.xml`:
+# шаблон лежит в категории, рядом с `<nametemplate>`, и группа повторяет его
+# имена и значения.
+SDB_XML_WITH_TEMPLATE = textwrap.dedent("""\
+    <?xml version="1.0" encoding="utf-8"?>
+    <Header>
+    <database>
+     <category>
+      <name>'HS - Насос'</name>
+      <nametemplate></nametemplate>
+      <signalstemplate>
+       <data>
+        <name>'wn'</name>
+        <caption>'Номинальная частота'</caption>
+        <type>'0'</type>
+        <mode>'1'</mode>
+        <value>'12.3333333333333'</value>
+        <textvalue>'740/60'</textvalue>
+        <fconstant>'1'</fconstant>
+        <script></script>
+       </data>
+       <data>
+        <name>'Qnom'</name>
+        <caption>'Номинальный расход'</caption>
+        <type>'0'</type>
+        <mode>'1'</mode>
+        <value>'1000'</value>
+        <textvalue></textvalue>
+        <fconstant>'1'</fconstant>
+        <script></script>
+       </data>
+      </signalstemplate>
+      <group>
+       <name>'Насос1'</name>
+       <signals>
+        <data>
+         <name>'wn'</name>
+         <caption>'Номинальная частота'</caption>
+         <type>'0'</type>
+         <mode>'1'</mode>
+         <value>'12.3333333333333'</value>
+        </data>
+        <data>
+         <name>'Qnom'</name>
+         <caption>'Номинальный расход'</caption>
+         <type>'0'</type>
+         <mode>'1'</mode>
+         <value>'1000'</value>
+        </data>
+       </signals>
+      </group>
+     </category>
+    </database>
+    </Header>
+""")
+
+
 def test_from_xml_loads_categories_and_signals(tmp_path):
     db = SignalDatabase.from_xml(_write(tmp_path))
 
@@ -109,6 +166,80 @@ def test_signals_are_indexed_by_composite_key(tmp_path):
 
     assert info is not None
     assert info["name"] == "Kp"
+
+
+def test_signal_template_is_not_a_signal(tmp_path):
+    """`<signalstemplate>` — прототип категории, а не её сигналы.
+
+    В поставке каждый сигнал группы повторяет шаблон (то же имя, то же
+    значение), поэтому разбор шаблона как сигналов удвоил бы счёт и добавил бы
+    записи, которых в базе нет.
+    """
+    path = tmp_path / "signals.xml"
+    path.write_text(SDB_XML_WITH_TEMPLATE, encoding="utf-8")
+
+    db = SignalDatabase.from_xml(path)
+
+    # В группе два сигнала; шаблон описывает те же два и в счёт не идёт.
+    assert [c["signal_count"] for c in db.list_categories()] == [2]
+    assert [c["template_signal_count"] for c in db.list_categories()] == [2]
+    assert len(db.list_signals()) == 2
+    assert [s["name"] for s in db.find_signal("*")] == ["wn", "Qnom"]
+
+
+def test_category_template_exposes_prototype(tmp_path):
+    """Шаблон доступен отдельно — с именами, значениями и типом."""
+    path = tmp_path / "signals.xml"
+    path.write_text(SDB_XML_WITH_TEMPLATE, encoding="utf-8")
+
+    db = SignalDatabase.from_xml(path)
+
+    assert db.category_template("HS - Насос") == [
+        {"name": "wn", "caption": "Номинальная частота", "type": 0, "mode": 1,
+         "value": "12.3333333333333"},
+        {"name": "Qnom", "caption": "Номинальный расход", "type": 0, "mode": 1,
+         "value": "1000"},
+    ]
+    assert db.category_template("Нет такой") == []
+
+
+def test_category_without_template_parses(tmp_path):
+    """Отсутствие `<signalstemplate>` — обычное состояние, а не ошибка."""
+    db = SignalDatabase.from_xml(_write(tmp_path))
+
+    assert [c["template_signal_count"] for c in db.list_categories()] == [0]
+    assert db.category_template("Управление") == []
+
+
+#: Каталоги оборудования поставки — по ним проверяется разбор на настоящих
+#: файлах. Рукописная фикстура один раз уже скрыла падение `sdb.py`, поэтому
+#: счёт сверяется там, где поставка есть. Каталог можно задать переменной
+#: `SIMINTECH_BIN`; без него проверка пропускается (в CI поставки нет).
+CATALOG_DIR = os.path.join(
+    os.environ.get("SIMINTECH_BIN", "/mnt/c/SimInTech64/bin"),
+    "DataBase", "Catalog")
+
+
+@pytest.mark.parametrize("name, groups, signals, template", [
+    ("pumps.xml", 3, 54, 18),
+    ("valves.xml", 3, 15, 5),
+])
+def test_real_distribution_catalog(name, groups, signals, template):
+    """Числа этих файлов посчитаны по байтам поставки, а не по документации."""
+    path = os.path.join(CATALOG_DIR, name)
+    if not os.path.exists(path):
+        pytest.skip(f"поставки нет: {path}")
+
+    db = SignalDatabase.from_xml(path)
+    cats = db.list_categories()
+
+    assert len(cats) == 1
+    assert cats[0]["group_count"] == groups
+    assert cats[0]["signal_count"] == signals
+    assert cats[0]["template_signal_count"] == template
+    # Ни одно имя шаблона не теряется: все они есть среди сигналов групп.
+    names = {s["name"] for s in db.list_signals()}
+    assert {s["name"] for s in db.category_template(cats[0]["name"])} <= names
 
 
 def test_single_quotes_are_stripped(tmp_path):

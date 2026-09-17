@@ -114,6 +114,103 @@ def test_set_parameter_rejects_whitespace_in_value():
         _cli().set_parameter("model.prt", "Kp", "1.5 /close /exit")
 
 
+# ─── Рестарты и кодогенерация ─────────────────────────────────────
+
+def _capture(cli):
+    """Подменить запуск процесса и вернуть место, куда пишутся аргументы."""
+    calls = {}
+
+    def fake_run_sync(*args, **kwargs):
+        calls["args"] = args
+        return CLIResult(success=True)
+
+    cli.run_sync = fake_run_sync
+    return calls
+
+
+def test_save_restart_passes_path_and_closes():
+    """`/saverestart` получает путь, процесс закрывается и завершается."""
+    cli = _cli()
+    calls = _capture(cli)
+
+    cli.save_restart("model.prt", "C:\\rst\\model.rst")
+
+    assert calls["args"] == ("model.prt", "/saverestart C:\\rst\\model.rst",
+                             "/close", "/exit")
+
+
+def test_load_restart_passes_path_and_closes():
+    """`/loadrestart` отличается от `/saverestart` только опцией."""
+    cli = _cli()
+    calls = _capture(cli)
+
+    cli.load_restart("model.prt", "rst.rst")
+
+    assert calls["args"][1] == "/loadrestart rst.rst"
+
+
+def test_restart_rejects_whitespace_in_path():
+    """Пробел в пути рестарта породил бы лишние опции mmain.exe."""
+    with pytest.raises(ValueError, match="пробел"):
+        _cli().save_restart("model.prt", "rst.rst /exit")
+
+
+def test_generate_code_puts_outdir_before_gencode():
+    """Каталог вывода задаётся до генерации — так задан порядок в справке.
+
+    Аргументов у `/gencode` и `/cg*` справка не описывает вовсе, поэтому
+    проверяется ровно то, что мы решили: минимальный набор и порядок.
+    """
+    cli = _cli()
+    calls = _capture(cli)
+
+    cli.generate_code("model.prt", output_dir="C:\\gen")
+
+    assert calls["args"] == ("model.prt", "/cgsetoutdir C:\\gen", "/gencode",
+                             "/close", "/exit")
+
+
+def test_generate_code_without_outdir_omits_the_option():
+    """Без каталога опция не подставляется: пустой путь сломал бы разбор."""
+    cli = _cli()
+    calls = _capture(cli)
+
+    cli.generate_code("model.prt")
+
+    assert calls["args"] == ("model.prt", "/gencode", "/close", "/exit")
+
+
+def test_generate_code_waits_longer_than_usual():
+    """Сборка конфигурации дольше обычной операции — таймаут по умолчанию больше."""
+    cli = _cli()
+    seen = {}
+
+    def fake_run_sync(*args, **kwargs):
+        seen.update(kwargs)
+        return CLIResult(success=True)
+
+    cli.run_sync = fake_run_sync
+    cli.generate_code("model.prt")
+
+    assert seen["timeout"] > 300
+
+
+def test_project_macro_uses_its_own_option():
+    """`/projmacros` — отдельная опция, а не `/macros`: их различие и проверяем."""
+    cli = _cli()
+    calls = _capture(cli)
+    macro = str(Path(__file__).parent / "macro.txt")
+
+    cli.project_macro(macro)
+
+    assert calls["args"][0].startswith("/projmacros ")
+
+
+def test_project_macro_rejects_whitespace_in_path():
+    with pytest.raises(ValueError):
+        _cli().project_macro("/tmp/macro.txt /exit")
+
+
 def test_set_parameter_rejects_option_like_param():
     with pytest.raises(ValueError):
         _cli().set_parameter("model.prt", "/exit", "1")

@@ -40,10 +40,11 @@ testpaths = ["tests"]
 # стенные часы (`< 2.0s`) и на первом же прогоне в CI дали бы флак. Теперь
 # обычный прогон — только модульные тесты; остальное запускается явно:
 # `pytest -m integration` или `pytest -m performance`.
-addopts = "-m 'not performance and not integration'"
+addopts = "-m 'not performance and not integration and not distribution'"
 markers = [
     "integration: тесты, требующие реального COM-сервера SimInTech на Windows",
     "performance: бенчмарки производительности placer/router (меряют стенные часы)",
+    "distribution: сплошные проверки по файлам поставки SimInTech (медленные, нужен её каталог)",
 ]
 
 [tool.mypy]
