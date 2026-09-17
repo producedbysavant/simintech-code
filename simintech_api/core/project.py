@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, List
 
-from ..exceptions import ProjectError, SignalError
+from ..exceptions import PageError, ProjectError, SignalError
 from ..constants import CALC_LAYER, find_model_template
-from ..model import SignalInfo, TDataDescriptor
+from ..model import RestartNames, SignalInfo, TDataDescriptor
+from .com_client import _out_values
 
 if TYPE_CHECKING:
     from .com_client import COMClient
@@ -172,6 +173,118 @@ class Project:
         """
         self._client.call("ExportDBToXML", self._id, path)
 
+    # ─── Точки рестарта ─────────────────────────────────────────────
+    #
+    # Рестарт (checkpoint/restore) — это снимок состояния модели, который
+    # можно записать в файл и загрузить обратно, чтобы продолжить расчёт не
+    # с начала. Все методы группы адресуются идентификатором проекта, поэтому
+    # живут здесь. **Ни один из них не проверен на живом SimInTech**: смысл
+    # кодов возврата и флагов взят из имён параметров RIDL и не подтверждён
+    # практикой. Проверять их стоит на копии модели — что именно делает
+    # запись/чтение рестарта с уже посчитанным проектом, неизвестно.
+
+    def write_restart(self, path: str) -> None:
+        """Записать рестарт проекта в файл (COM `WriteProjectRestart`).
+
+        На живом SimInTech не проверено: ни формат файла, ни то, требуется ли
+        предварительный `write_restart_point`.
+        """
+        self._client.call("WriteProjectRestart", self._id, path)
+
+    def read_restart(self, path: str) -> None:
+        """Загрузить рестарт проекта из файла (COM `ReadProjectRestart`).
+
+        На живом SimInTech не проверено: не подтверждено ни то, что состояние
+        модели действительно меняется, ни как это отражается на времени
+        расчёта.
+        """
+        self._client.call("ReadProjectRestart", self._id, path)
+
+    def write_restart_point(self) -> int:
+        """Записать точку рестарта (COM `WriteRestartPoint`).
+
+        Возвращается результат COM-вызова как есть, приведённый к int: что
+        означает код, по RIDL не видно. И код, и поведение на живом SimInTech
+        не подтверждены.
+        """
+        return _as_int(self._client.call("WriteRestartPoint", self._id))
+
+    def read_restart_point(self) -> float:
+        """Вернуть точку рестарта (COM `ReadRestartPoint`).
+
+        Результат приводится к float в предположении, что точка рестарта —
+        момент модельного времени (рядом, в `GetProjectRestartNames`, есть
+        поле `aNewRestartTime`). Это предположение: ни тип, ни значение на
+        живом SimInTech не подтверждены. Если метод ничего не вернул (None),
+        результатом будет 0.0 — отличить «нет точки» от «точка в нуле» по
+        этому ответу нельзя.
+        """
+        return _as_float(self._client.call("ReadRestartPoint", self._id))
+
+    def set_restart_preserve_flag(self, preserve: int) -> None:
+        """Установить флаг сохранения рестарта (`SetRestartPreserveFlag`).
+
+        Args:
+            preserve: значение флага `fRestartPreserve` — целое, как в COM.
+                Смысл значений (0/1 — выключено/включено или наоборот) на
+                живом SimInTech не подтверждён.
+
+        На живом SimInTech не проверено.
+        """
+        self._client.call("SetRestartPreserveFlag", self._id, int(preserve))
+
+    def restart_names(self) -> RestartNames:
+        """Имена файлов рестарта и связанные с ними флаги.
+
+        Разбор `GetProjectRestartNames`: по RIDL метод отдаёт шесть
+        [out]-значений (два имени файла, два флага, время и флаг времени);
+        они раскладываются по полям `RestartNames`. Если метод вернул не
+        шесть значений, это отказ (`ComCallError`), а не молчаливо сдвинутый
+        разбор. На живом SimInTech не проверено — ни порядок значений, ни их
+        смысл.
+        """
+        values = _out_values(
+            self._client.call("GetProjectRestartNames", self._id),
+            "GetProjectRestartNames", 6)
+        return RestartNames(
+            read_file=_as_str(values[0]),
+            write_file=_as_str(values[1]),
+            read_flag=_as_int(values[2]),
+            write_flag=_as_int(values[3]),
+            new_restart_time=_as_float(values[4]),
+            set_new_time_flag=_as_int(values[5]),
+        )
+
+    def set_read_restart_file(self, path: str, load: int) -> None:
+        """Задать файл, из которого читается рестарт.
+
+        COM `SetProjectReadRestartFile`; это настройка проекта, а не сама
+        загрузка (загрузка — `read_restart`).
+
+        Args:
+            path: имя файла рестарта.
+            load: значение флага `fLoadRst` — целое, как в COM; что именно оно
+                включает, на живом SimInTech не подтверждено.
+
+        На живом SimInTech не проверено.
+        """
+        self._client.call("SetProjectReadRestartFile", self._id, path, int(load))
+
+    def set_write_restart_file(self, path: str, save: int) -> None:
+        """Задать файл, в который пишется рестарт.
+
+        COM `SetProjectWriteRestartFile`; это настройка проекта, а не сама
+        запись (запись — `write_restart`).
+
+        Args:
+            path: имя файла рестарта.
+            save: значение флага `fSaveRst` — целое, как в COM; что именно оно
+                включает, на живом SimInTech не подтверждено.
+
+        На живом SimInTech не проверено.
+        """
+        self._client.call("SetProjectWriteRestartFile", self._id, path, int(save))
+
     # ─── Страницы ───────────────────────────────────────────────────
 
     def get_main_page(self) -> "Page":
@@ -185,6 +298,71 @@ class Project:
         from .page import Page
         page_id = self._client.call("GetCurentPage", self._id)
         return Page(self, _as_i64(page_id))
+
+    # ─── Субмодели ──────────────────────────────────────────────────
+    #
+    # Субмодель — это модель внутри блока: у блока со субмоделью есть своя
+    # страница (`submodel_page`), а сама субмодель берётся из файла
+    # (`load_submodel`/`assign_submodel`). Методы живут на `Project`, потому
+    # что команды адресуются проектом и блоком; идентификатор блока при этом
+    # передаётся явно — угадывать его из проекта было бы нечем.
+    # **На живом SimInTech группа не проверена**: не подтверждено ни то, что
+    # `LoadSubmodel` и `AssignSubmodel` — разные операции, ни то, чем они
+    # отличаются. Проверять на копии модели.
+
+    def submodel_page(self, block_id: int) -> "Page":
+        """Страница субмодели блока (COM `GetSubmodelPage`).
+
+        Args:
+            block_id: идентификатор блока (`Block.id`), а не страницы.
+
+        Returns:
+            Страница субмодели — её можно активировать (`Page.activate`) и
+            создавать на ней блоки.
+
+        Raises:
+            PageError: COM вернул нулевую страницу. Это значит, что субмодели
+                у блока нет либо блок не найден — различить эти случаи по
+                ответу нечем.
+
+        На живом SimInTech не проверено.
+        """
+        from .page import Page
+        values = _out_values(
+            self._client.call("GetSubmodelPage", int(block_id)),
+            "GetSubmodelPage")
+        page_id = _as_i64(values[0])
+        if not page_id:
+            raise PageError(
+                f"GetSubmodelPage вернул нулевую страницу для блока "
+                f"{block_id}: субмодели у блока нет либо блок не найден "
+                f"(на живом SimInTech не подтверждено)."
+            )
+        return Page(self, page_id)
+
+    def load_submodel(self, block_id: int, path: str) -> None:
+        """Загрузить субмодель из файла в блок (COM `LoadSubmodel`).
+
+        Args:
+            block_id: идентификатор блока (`Block.id`).
+            path: путь к файлу субмодели (.prt).
+
+        На живом SimInTech не проверено: чем `load_submodel` отличается от
+        `assign_submodel`, по RIDL не видно, а практикой это не проверялось.
+        """
+        self._client.call("LoadSubmodel", int(block_id), path)
+
+    def assign_submodel(self, block_id: int, path: str) -> None:
+        """Назначить блоку субмодель из файла (COM `AssignSubmodel`).
+
+        Args:
+            block_id: идентификатор блока (`Block.id`).
+            path: путь к файлу субмодели (.prt).
+
+        На живом SimInTech не проверено: чем `assign_submodel` отличается от
+        `load_submodel`, по RIDL не видно, а практикой это не проверялось.
+        """
+        self._client.call("AssignSubmodel", self._id, int(block_id), path)
 
     # ─── Сигналы ────────────────────────────────────────────────────
 
@@ -291,9 +469,31 @@ def _as_i64(value) -> int:
     return int(value)
 
 
+def _as_int(value) -> int:
+    """Целое из результата COM-вызова: код возврата или флаг.
+
+    От `_as_i64` отличается отношением к `None`: COM ничего не вернул — это 0.
+    У флага 0 осмыслен (выключено), и отличить «выключено» от «не пришло» по
+    ответу нечем, а падать на `None` незачем.
+    """
+    if value is None:
+        return 0
+    if hasattr(value, "value"):
+        return int(value.value)
+    return int(value)
+
+
 def _as_str(value) -> str:
     if value is None:
         return ""
     if hasattr(value, "value"):
         return str(value.value)
     return str(value)
+
+
+def _as_float(value) -> float:
+    if value is None:
+        return 0.0
+    if hasattr(value, "value"):
+        return float(value.value)
+    return float(value)

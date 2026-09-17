@@ -75,6 +75,33 @@ class SignalInfo:
 
 
 @dataclass
+class RestartNames:
+    """Имена файлов рестарта проекта (из `GetProjectRestartNames`).
+
+    COM-метод отдаёт шесть [out]-значений одним кортежем; здесь они разложены
+    по именам, чтобы вызывающий не считал позиции. Значения отдаются **как
+    есть**: что означает каждый флаг, по одному имени не видно, а на живом
+    SimInTech метод ещё не проверялся — ни порядок значений, ни их смысл не
+    подтверждены. Пути — строки, флаги — целые, время — с плавающей точкой.
+
+    Args:
+        read_file: файл, из которого читается рестарт (`aReadRestartFile`).
+        write_file: файл, в который пишется рестарт (`aWriteRestartFile`).
+        read_flag: флаг чтения рестарта (`aReadRestartFlag`).
+        write_flag: флаг записи рестарта (`aWriteRestartFlag`).
+        new_restart_time: время новой точки рестарта (`aNewRestartTime`).
+        set_new_time_flag: флаг установки нового времени (`aSetNewTimeFlag`).
+    """
+
+    read_file: str
+    write_file: str
+    read_flag: int
+    write_flag: int
+    new_restart_time: float
+    set_new_time_flag: int
+
+
+@dataclass
 class PortInfo:
     """Информация о порте блока (из GetPortInfo)."""
 

@@ -69,6 +69,34 @@ class FakeServer:
         self.calls.append(("SetLayerProp", project_id, layer_no, name, value))
         return 777
 
+    # Перечисление проектов: [out]-параметры comtypes отдаёт кортежем.
+    def GetProjectCount(self):
+        self.calls.append(("GetProjectCount",))
+        return (2,)
+
+    def GetProjectIdByNumber(self, number):
+        self.calls.append(("GetProjectIdByNumber", number))
+        return (42,)
+
+    def GetProjectIdByFileName(self, file_name):
+        self.calls.append(("GetProjectIdByFileName", file_name))
+        return (43,)
+
+    def GetActiveProject(self):
+        self.calls.append(("GetActiveProject",))
+        return (42,)
+
+    def GetOpenedFileName(self, project_id):
+        self.calls.append(("GetOpenedFileName", project_id))
+        return (FakeVariant(r"C:\models\m.prt"),)
+
+
+class FakeVariant:
+    """VARIANT-значение comtypes: настоящий ответ приходит обёрнутым в `.value`."""
+
+    def __init__(self, value):
+        self.value = value
+
 
 def test_connect_initializes_com_for_current_thread(monkeypatch):
     """connect() инициализирует COM в текущем потоке.
@@ -316,3 +344,85 @@ def test_set_layer_prop_reports_zero_when_layer_rejects(monkeypatch):
     monkeypatch.setattr(fake, "SetLayerProp", lambda *a: 0)
 
     assert client.set_layer_prop(42, 0, "endtime", "1") == 0
+
+
+# ─── Перечисление открытых проектов ────────────────────────────────
+#
+# Методы адресуются номером или именем файла проекта, а не объектом, и живут
+# на клиенте. На живом SimInTech не проверены: тесты фиксируют имя метода,
+# порядок аргументов и разбор [out]-результата.
+
+
+def test_get_project_count_reads_out_value(monkeypatch):
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+    client.connect()
+
+    assert client.get_project_count() == 2
+    assert ("GetProjectCount",) in fake.calls
+
+
+def test_get_project_id_by_number_passes_number(monkeypatch):
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+    client.connect()
+
+    assert client.get_project_id_by_number(1) == 42
+    assert ("GetProjectIdByNumber", 1) in fake.calls
+
+
+def test_get_project_id_by_file_name_passes_name(monkeypatch):
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+    client.connect()
+
+    assert client.get_project_id_by_file_name("model.prt") == 43
+    assert ("GetProjectIdByFileName", "model.prt") in fake.calls
+
+
+def test_get_active_project_reads_out_value(monkeypatch):
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+    client.connect()
+
+    assert client.get_active_project() == 42
+    assert ("GetActiveProject",) in fake.calls
+
+
+def test_get_opened_file_name_unwraps_variant(monkeypatch):
+    """`[out] VARIANT*` приходит обёрнутым в `.value` — разворачиваем."""
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+    client.connect()
+
+    assert client.get_opened_file_name(42) == r"C:\models\m.prt"
+    assert ("GetOpenedFileName", 42) in fake.calls
+
+
+def test_get_opened_file_name_returns_empty_string_for_none(monkeypatch):
+    """`None` в VARIANT — пустая строка: проект не связан с файлом."""
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+    client.connect()
+    monkeypatch.setattr(fake, "GetOpenedFileName", lambda *a: (None,))
+
+    assert client.get_opened_file_name(42) == ""
+
+
+@pytest.mark.parametrize("method,attr", [
+    ("get_project_count", "GetProjectCount"),
+    ("get_active_project", "GetActiveProject"),
+])
+@pytest.mark.parametrize("answer", [None, ()])
+def test_project_enumeration_refuses_without_out_value(monkeypatch, method, attr,
+                                                       answer):
+    """Пустой результат — понятный отказ с именем метода, а не TypeError."""
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+    client.connect()
+    monkeypatch.setattr(fake, attr, lambda *a: answer)
+
+    with pytest.raises(ComCallError) as exc:
+        getattr(client, method)()
+
+    assert attr in str(exc.value)
