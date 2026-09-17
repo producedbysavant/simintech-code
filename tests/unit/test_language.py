@@ -17,6 +17,7 @@ import pytest  # noqa: E402
 
 from simintech_api.language import (  # noqa: E402
     DEFAULT_REGISTRY_PATH,
+    _fold_homoglyphs,
     build_registry,
     coverage,
     find_function,
@@ -478,3 +479,31 @@ def test_distribution_registry_is_not_stale():
 
     assert shipped["counts"] == fresh["counts"]
     assert shipped["functions"] == fresh["functions"]
+
+
+# ─── Кириллические двойники в именах справки ──────────────────────
+
+def test_find_function_tolerates_cyrillic_homoglyph():
+    """`arcsin`, набранный латиницей, находит `arсsin` из справки.
+
+    В справке SimInTech имя записано кириллической «с» (`U+0441`) — проверено
+    по байтам заголовка страницы. Точная сверка такое имя не найдёт, и
+    пользователь, набравший латиницу, получил бы «функции нет» там, где она
+    есть. Настоящее имя видно в поле `name`.
+    """
+    found = find_function("arcsin")
+
+    assert found is not None
+    assert found.name != "arcsin"          # имя в справке — с двойником
+    assert _fold_homoglyphs(found.name) == "arcsin"
+
+
+def test_find_functions_stays_exact():
+    """Точный поиск двойников не приводит: имя идёт в скрипт как есть.
+
+    Имя с двойником записано escape-последовательностью намеренно: визуально
+    эти две строки неразличимы, и «одинаковый» литерал в тесте проверял бы
+    сам себя.
+    """
+    assert find_functions("arcsin") == []
+    assert len(find_functions("ar\u0441sin")) == 1

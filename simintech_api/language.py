@@ -449,6 +449,23 @@ def registry_meta() -> Dict[str, object]:
     return dict(_registry_meta)
 
 
+#: Кириллические буквы, неотличимые на вид от латинских. В справке SimInTech они
+#: встречаются **внутри имён функций**: страницы называются `arсsin` и `arсtg`,
+#: где третья буква — `U+0441` (кириллическая «с»), а не латинская `c`.
+#: Это дефект справки, а не разбора: проверено по байтам заголовка страницы.
+#: Ловушка практическая — имя, скопированное из справки, в скрипт не встанет, а
+#: набранное руками латиницей не находилось в реестре.
+_HOMOGLYPHS = str.maketrans({
+    "а": "a", "с": "c", "е": "e", "о": "o", "р": "p", "х": "x", "у": "y",
+    "к": "k", "м": "m", "т": "t", "в": "b", "н": "h", "ѕ": "s", "і": "i",
+})
+
+
+def _fold_homoglyphs(text: str) -> str:
+    """Привести кириллические двойники к латинице (для поиска, не для вывода)."""
+    return text.translate(_HOMOGLYPHS)
+
+
 def find_function(name: str,
                   path: Optional[Path] = None) -> Optional[LanguageFunction]:
     """Найти функцию по имени.
@@ -457,17 +474,29 @@ def find_function(name: str,
     Если имя описано в нескольких категориях (`buffer` есть и в
     `22_funkcii_obrabotki_signalov`, и в `funkcii_raboty_s_bibliotekami`) —
     возвращается первая запись; обо всех расскажет `find_functions`.
+
+    Поиск терпим к кириллическим двойникам латинских букв: имя берётся из
+    справки как есть, поэтому `find_function("arcsin")`, набранный латиницей,
+    находит `arсsin` (см. `_HOMOGLYPHS`). Настоящее имя видно в поле `name`
+    результата — по нему и надо судить, что писать в скрипте.
     """
-    key = name.strip().lower()
+    exact = find_functions(name, path)
+    if exact:
+        return exact[0]
+    folded = _fold_homoglyphs(name.strip().lower())
     for function in language_functions(path):
-        if function.name.lower() == key:
+        if _fold_homoglyphs(function.name.lower()) == folded:
             return function
     return None
 
 
 def find_functions(name: str,
                    path: Optional[Path] = None) -> List[LanguageFunction]:
-    """Все записи реестра с таким именем (их бывает больше одной)."""
+    """Все записи реестра с таким именем (их бывает больше одной).
+
+    Сверка точная, без приведения двойников: здесь важно не ошибиться именем,
+    которое пойдёт в скрипт.
+    """
     key = name.strip().lower()
     return [f for f in language_functions(path) if f.name.lower() == key]
 
