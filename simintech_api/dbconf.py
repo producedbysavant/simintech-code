@@ -57,7 +57,7 @@ def _decode(value: str) -> str:
                      for line in value.split("\n"))
 
 
-def _text(elem, tag: str) -> str:
+def _text(elem: ET.Element, tag: str) -> str:
     """Значение дочернего элемента, разобранное :func:`_decode`."""
     value = elem.findtext(tag)
     return "" if value is None else _decode(value)
