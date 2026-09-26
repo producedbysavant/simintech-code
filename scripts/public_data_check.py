@@ -15,10 +15,11 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Pattern, Tuple
+from typing import Iterable, List, Optional, Pattern, Tuple
 
 #: Разрешённые образцы: проверяются ДО правил и гасят находку в строке.
 ALLOWED: Tuple[Pattern[str], ...] = (
@@ -132,10 +133,34 @@ def scan_text(text: str, *, path: str = "<text>") -> Findings:
     return findings
 
 
-def scan_tree(root: Path) -> Findings:
+def tracked_files(root: Path) -> Optional[List[Path]]:
+    """Файлы под контролем git — то, что действительно публикуется.
+
+    Гейт проверяет публикуемое, а не всё, что лежит в каталоге: рабочие копии
+    инструкций агента (`CLAUDE.md`, `.claude/`, `.remember/`) в git не попадают
+    и содержат домашние пути — находки на них были бы шумом, из-за которого
+    гейт отключают. `None` — git недоступен (временный каталог в тесте): тогда
+    дерево обходится целиком, как раньше.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "-z"], cwd=root, capture_output=True, text=True,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    return [root / name for name in result.stdout.split("\0") if name]
+
+
+def scan_tree(root: Path, *, files: Optional[Iterable[Path]] = None) -> Findings:
     """Пройти дерево: сначала расширения файлов, затем их содержимое."""
     findings = Findings()
-    for path in sorted(root.rglob("*")):
+    if files is None:
+        files = tracked_files(root)
+    if files is None:
+        files = sorted(root.rglob("*"))
+    for path in sorted(files):
         if not path.is_file():
             continue
         if SKIP_DIRS & set(path.parts) or path.suffix.lower() in SKIP_SUFFIXES:

@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import subprocess
+
 from public_data_check import Findings, scan_text, scan_tree
 
 
@@ -69,6 +71,21 @@ def test_vendor_fixture_directory_is_allowed(tmp_path):
     fixture = tmp_path / "tests" / "fixtures" / "vendor-public" / "sample.tbl"
     fixture.parent.mkdir(parents=True)
     fixture.write_text("1 2 3", encoding="utf-8")
+    assert not scan_tree(tmp_path)
+
+
+def test_untracked_files_are_skipped(tmp_path):
+    """Проверяется публикуемое: рабочие копии, не попавшие в git, — не забота гейта.
+
+    Иначе шум давали бы `CLAUDE.md`, `.claude/` и `.remember/` — в них есть
+    домашние пути, но в публикацию они не попадают.
+    """
+    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
+    (tmp_path / "tracked.py").write_text("ок", encoding="utf-8")
+    subprocess.run(["git", "add", "tracked.py"], cwd=tmp_path, check=True)
+    (tmp_path / "local.md").write_text(
+        r"каталог C:\Users\ivanov\AppData", encoding="utf-8")
+
     assert not scan_tree(tmp_path)
 
 
