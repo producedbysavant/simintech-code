@@ -18,18 +18,21 @@ from simintech_api.semantic import (  # noqa: E402
     ContainerRef,
     ModelOverview,
     PortPeer,
+    connection_query_to_dict,
     inspect_object,
     inspect_port,
     inspection_to_dict,
     overview_from_topology,
     overview_to_dict,
     port_inspection_to_dict,
+    query_connections,
 )
 from simintech_api.topology import (  # noqa: E402
     Connection,
     ObjectRow,
     PortRow,
     Topology,
+    connection_key,
     parse_topology,
 )
 
@@ -354,3 +357,141 @@ def test_port_inspection_to_dict_reuses_the_overview_port_shape():
         "peers": [{"object": "B", "index": 0}],
     }
     assert json.loads(json.dumps(as_dict)) == as_dict
+
+
+# ─── Запрос связей пары (M4.6) ────────────────────────────────────
+
+def test_query_gives_the_link_between_two_objects():
+    """«Какие связи между `A` и `B`» — связь, у которой названы **оба** конца.
+
+    Разбор хранит связь в порядке канонического ключа, поэтому в ответе видно и
+    `A.1`, и `B.0`: это не «сосед», у которого вторая сторона названа вызывающим,
+    а связь целиком.
+    """
+    query = query_connections(_overview(), "A", "B")
+    assert (query.object_a, query.object_b) == ("A", "B")
+    assert query.links == [Connection("A", 1, "B", 0)]
+
+
+def test_query_does_not_depend_on_the_order_of_the_pair():
+    """Порядок в вопросе ничего не значит: `(A, B)` и `(B, A)` — один вопрос.
+
+    Ответить по-разному значило бы утверждать направление связи, которого в
+    данных нет. Подпись ответа повторяет вопрос — но не переставляет его, а связь
+    остаётся в том порядке, в каком её записал разбор.
+    """
+    forward = query_connections(_overview(), "A", "B")
+    backward = query_connections(_overview(), "B", "A")
+    assert forward.links == backward.links == [Connection("A", 1, "B", 0)]
+    assert (backward.object_a, backward.object_b) == ("B", "A")
+
+
+def test_query_refusal_names_the_end_that_is_missing():
+    """Нет объекта — отказ, и проверяются **оба** конца, а не первый из двух.
+
+    Проверка только первого конца пропустила бы `("A", "нет_такого")` в пустой
+    ответ: агент прочитал бы «связи нет» там, где объекта нет вовсе.
+    """
+    with pytest.raises(ValueError) as missing_second:
+        query_connections(_overview(), "A", "нет_такого")
+    assert "нет_такого" in str(missing_second.value)
+
+    with pytest.raises(ValueError) as missing_first:
+        query_connections(_overview(), "нет_такого", "A")
+    text = str(missing_first.value)
+    assert "нет_такого" in text
+    # Именно весь список и именно в порядке обзора: `assert "A" in text` проходил
+    # бы и на усечённом перечне, и на перечне, где A — единственное имя.
+    assert "известные имена: A, B, C" in text, (
+        f"отказ не перечисляет известные имена целиком: {text}")
+
+
+def test_query_without_links_is_not_an_error():
+    """Отсутствие связи — обычное состояние модели, а не отказ.
+
+    `C` в снимке — объект без портов: связей у него нет вовсе, и это ответ, а не
+    повод отказать.
+    """
+    assert query_connections(_overview(), "A", "C").links == []
+    assert query_connections(_overview(), "C", "C").links == []
+
+
+def test_query_keeps_links_of_a_pair_apart_by_their_ports():
+    """У пары объектов связей может быть несколько — и у каждой своя пара портов.
+
+    Ответ называет каждую пару: «сосед» их не различил бы, и вопрос «через какие
+    порты связаны эти двое» остался бы без ответа.
+    """
+    topology = Topology(
+        objects=[ObjectRow("A", "Усилитель"), ObjectRow("B", "Константа")],
+        ports=[PortRow("A", 0, "in", "x"), PortRow("A", 1, "out", "y"),
+               PortRow("B", 0, "in", "x"), PortRow("B", 1, "out", "y")],
+        # Порядок намеренно **не** совпадает с отсортированным по концам: иначе
+        # тест проходил бы и на коде, который «нормализует» ответ сортировкой,
+        # хотя обещан порядок разбора (`docs/api.md`). Проверено мутацией:
+        # сортировка связей выживала на всём наборе, пока порядок здесь был
+        # совпадающим.
+        connections=[Connection("A", 1, "B", 0), Connection("A", 0, "B", 1)])
+    overview = overview_from_topology(topology, ContainerRef.main())
+    assert query_connections(overview, "A", "B").links == [
+        Connection("A", 1, "B", 0), Connection("A", 0, "B", 1)]
+
+
+def test_query_separates_a_self_link_from_links_with_others():
+    """Связь объекта с самим собой спрашивается тем же вызовом — и не смешивается.
+
+    «Связи `A`» включали бы и `A.0—A.1`, и `A.1—B.0`; вопрос про пару обязан
+    отвечать на свою: иначе на вопрос «замкнут ли `A` на себя» приходил бы ответ
+    со связями с соседями.
+    """
+    topology = Topology(
+        objects=[ObjectRow("A", "Усилитель"), ObjectRow("B", "Константа")],
+        ports=[PortRow("A", 0, "in", "x"), PortRow("A", 1, "out", "y"),
+               PortRow("B", 0, "in", "x")],
+        connections=[Connection("A", 0, "A", 1), Connection("A", 1, "B", 0)])
+    overview = overview_from_topology(topology, ContainerRef.main())
+
+    assert query_connections(overview, "A", "A").links == [
+        Connection("A", 0, "A", 1)]
+    assert query_connections(overview, "A", "B").links == [
+        Connection("A", 1, "B", 0)]
+
+
+def test_query_and_inspections_describe_the_same_links():
+    """Запрос пары и досмотры называют **одни и те же** связи — в обе стороны.
+
+    У каждой связи из ответа второй конец виден досмотром каждого из её концов, и
+    наоборот: связи `A`, у которых второй конец `B`, — это ровно ответ запроса.
+    Разойдись они, агент получал бы два описания одного отношения.
+    """
+    overview = _overview()
+    query = query_connections(overview, "A", "B")
+    assert query.links, "снимок соединён: ответ не может быть пустым"
+
+    for link in query.links:
+        from_a = inspect_port(overview, link.object_a, link.index_a).peers
+        from_b = inspect_port(overview, link.object_b, link.index_b).peers
+        assert PortPeer(link.index_a, link.object_b, link.index_b) in from_a
+        assert PortPeer(link.index_b, link.object_a, link.index_a) in from_b
+
+    expected = {connection_key(link)
+                for link in overview.connections
+                if {link.object_a, link.object_b} == {"A", "B"}}
+    assert {connection_key(link) for link in query.links} == expected
+
+
+def test_connection_query_to_dict_reuses_the_overview_connection_shape():
+    """Связь в ответе на запрос — **тот же** словарь, что и в обзоре."""
+    overview = _overview()
+    as_dict = connection_query_to_dict(query_connections(overview, "A", "B"))
+    assert as_dict == {
+        "between": ["A", "B"],
+        "connections": [{"a": ["A", 1], "b": ["B", 0]}],
+    }
+    assert as_dict["connections"] == overview_to_dict(overview)["connections"]
+    assert json.loads(json.dumps(as_dict)) == as_dict
+    # Пара в ответе — та, которую назвал вызывающий, и в том же порядке:
+    # «B, A» не должен канонизироваться в «A, B», иначе ответ стирает вопрос.
+    # Мутация «отсортировать пару» выживала, пока здесь был только один порядок.
+    reversed_pair = connection_query_to_dict(query_connections(overview, "B", "A"))
+    assert reversed_pair["between"] == ["B", "A"]

@@ -25,6 +25,7 @@ from simintech_api.semantic import (
     inspect_object,
     inspect_port,
     overview_to_dict,
+    query_connections,
 )
 from simintech_api.topology import Connection, connection_key
 
@@ -259,5 +260,134 @@ def test_model_overview_on_main_page_is_labeled_main(
             "читает не ту страницу, которой подписан")
         assert overview.container.kind == "main"
         assert (overview.container.block_id, overview.container.block_name) == (0, "")
+    finally:
+        project.close()
+
+
+def test_query_connections_matches_vendor_reference(
+        client: COMClient, tmp_path: Path,
+        reference: VendorReference) -> None:
+    """Запрос пары внутри контейнера: связи — как в эталоне, а пустая пара — ответ.
+
+    Пара берётся **из эталона**: самый связанный объект и один из его соседей, —
+    поэтому проверка не зависит от того, что лежит в демо. Сверяются канонические
+    ключи, то есть и порты. Дальше проверяется то, чего не видно из эталона:
+    запрос — **проекция того же обзора**, поэтому каждая его связь обязана быть
+    видна досмотром обоих своих концов, а каждый сосед из досмотра — находиться
+    запросом пары. Вторая половина проверяет обратное: у пары, которой эталон не
+    соединяет, ответ **пуст** и это не отказ, а несуществующее имя — отказ, то
+    есть «связи нет» и «объекта нет» живой слой различает так же, как юнит.
+    """
+    project = _open_demo(client, tmp_path)
+    try:
+        container = project.get_main_page().find_block(VENDOR_CONTAINER)
+        assert container is not None, (
+            f"на главной странице демо нет блока {VENDOR_CONTAINER!r}")
+        project.submodel_page(container.id).activate()
+        overview = read_model_overview(
+            client, project.id, tmp_path / "q.txt",
+            container=ContainerRef.submodel(container.id, container.get_name()))
+
+        keys = reference.connection_keys()
+        degrees = collections.Counter()
+        for left, right in keys:
+            degrees[left[0]] += 1
+            degrees[right[0]] += 1
+        name = degrees.most_common(1)[0][0]
+        partners = sorted({other
+                           for key in keys
+                           for other in (key[0][0], key[1][0])
+                           if other != name and name in (key[0][0], key[1][0])})
+        assert partners, f"у объекта {name!r} в эталоне нет ни одной связи"
+        partner = partners[0]
+
+        query = query_connections(overview, name, partner)
+        our_keys = {connection_key(link) for link in query.links}
+        expected = {key for key in keys
+                    if {key[0][0], key[1][0]} == {name, partner}}
+        assert our_keys == expected, (
+            f"связи пары {name!r}—{partner!r} разошлись с эталоном: "
+            f"лишние {our_keys - expected}, потерянные {expected - our_keys}")
+
+        # Критерий issue #4 в живой форме, в обе стороны. Запрос и досмотр — две
+        # проекции одного обзора; разойдись они, каждая осталась бы «верной» по
+        # эталону, а агент получал бы о связи два разных ответа.
+        for link in query.links:
+            ends = ((link.object_a, link.index_a, link.object_b, link.index_b),
+                    (link.object_b, link.index_b, link.object_a, link.index_a))
+            for own_name, own_index, peer_name, peer_index in ends:
+                peers = {(peer.port_index, peer.peer_object, peer.peer_index)
+                         for peer in inspect_port(overview, own_name,
+                                                  own_index).peers}
+                assert (own_index, peer_name, peer_index) in peers, (
+                    f"связь {link} не видна досмотром порта "
+                    f"{own_name}.{own_index}")
+                confirmed = {connection_key(back)
+                             for back in query_connections(
+                                 overview, own_name, peer_name).links}
+                assert connection_key(Connection(
+                    own_name, own_index, peer_name, peer_index)) in confirmed, (
+                    f"сосед {peer_name}.{peer_index} порта {own_name}.{own_index} "
+                    "не подтверждён запросом пары")
+
+        names = sorted({other for key in keys for other in (key[0][0], key[1][0])})
+        joined = [{key[0][0], key[1][0]} for key in keys]
+        unlinked = next(((left, right)
+                         for left in names
+                         for right in names
+                         if left != right and {left, right} not in joined), None)
+        assert unlinked is not None, "эталон соединяет все свои объекты попарно"
+        assert query_connections(overview, *unlinked).links == [], (
+            f"пара {unlinked} в эталоне не соединена, а запрос вернул связи")
+
+        # Докстринг обещает различение «связи нет» и «объекта нет» — второе
+        # проверяется здесь же: имя, которого в обзоре заведомо нет.
+        with pytest.raises(ValueError, match="нет объекта"):
+            query_connections(overview, name, name + "_нет_такого")
+    finally:
+        project.close()
+
+
+def test_query_connections_on_own_project_sees_the_wire_we_made(
+        client: COMClient, tmp_path: Path) -> None:
+    """Свой проект: запрос пары видит ту связь, которую провели **мы сами**.
+
+    Сверка не с эталоном, а со своим действием: два блока соединены через COM, и
+    запрос обязан вернуть ровно одну связь между ними, назвав оба конца — причём
+    порты в ней должны быть настоящими портами этих объектов, а не выдуманными
+    индексами. Пара «блок с самим собой» при этом пуста: замка мы не делали.
+    """
+    project = Project.from_template(client)
+    project.set_calc_end_time(1.0)
+    try:
+        page = project.get_main_page()
+        source = page.create_block("Константа", 0, 0)
+        gain = page.create_block("Усилитель", 200, 0)
+        gain.set_property("a", 2.0)
+        source.connect(gain)
+
+        overview = read_model_overview(
+            client, project.id, tmp_path / "own_query.txt",
+            container=ContainerRef.main())
+
+        query = query_connections(overview, source.get_name(), gain.get_name())
+        assert len(query.links) == 1, (
+            f"проведена одна связь, а запрос вернул {len(query.links)}: "
+            f"{query.links}")
+        link = query.links[0]
+        wired = {source.get_name(), gain.get_name()}
+        assert {link.object_a, link.object_b} == wired, (
+            f"связь ведёт не к тем объектам, которые мы соединили: {link}")
+
+        ports = {(port.object_name, port.index)
+                 for obj in overview.objects for port in obj.ports}
+        assert (link.object_a, link.index_a) in ports, (
+            f"в связи назван порт, которого у объектов обзора нет: {link}")
+        assert (link.object_b, link.index_b) in ports, (
+            f"в связи назван порт, которого у объектов обзора нет: {link}")
+
+        assert query_connections(overview, source.get_name(),
+                                 source.get_name()).links == [], (
+            "запрос пары «блок с самим собой» вернул связи, хотя замка нет")
     finally:
         project.close()

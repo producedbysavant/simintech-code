@@ -22,3 +22,4 @@
 | `conn-describes-wire-ends-pairwise` | verified | controlled-experiment | SimInTech64, поставка 2.26.6.23 | 2026-09-23 | `tests/integration/test_topology_live.py::test_vendor_cardinality_rule_makes_the_branch_a_star` (live) |
 | `fsm-blocks-need-full-record-name` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-15 | — |
 | `block-size-covers-few-classes` | measured | source-code | SimInTech64, поставка 2.26.6.23 | 2026-09-17 | — |
+| `semantic-query-and-inspection-agree` | verified | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-26 | `tests/integration/test_semantic_live.py::test_query_connections_matches_vendor_reference` (live) |
