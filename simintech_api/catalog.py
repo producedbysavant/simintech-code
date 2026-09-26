@@ -26,9 +26,11 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import tempfile
+from datetime import date
 
 # defusedxml, а не stdlib: см. пояснение в simintech_api/sdb.py.
 import defusedxml.ElementTree as ET
@@ -461,6 +463,32 @@ def _short_default(value: str) -> str:
     return value if len(value) <= MAX_DEFAULT_LEN else ""
 
 
+def _observation(xml_text: str) -> Dict[str, object]:
+    """Чем и когда снято наблюдение — чтобы знание было привязано к версии.
+
+    Без этого «каталог собран из поставки» не отличает поставку 2.26 от
+    следующей: имена параметров между версиями меняются (см.
+    `docs/gap-closure-plan.md`, Н1), и файл без версии невозможно сверить с
+    тем, на чём он собран.
+
+    `dump_sha256` — отпечаток выгрузки: по нему видно, что каталог собран
+    именно из этого файла, а не «примерно из такого». Версия продукта здесь
+    не выводится из окружения: её знает человек, запускавший генератор, и
+    подставлять догадку хуже, чем оставить `unknown`.
+    """
+    # Импорт ленивый: `__version__` объявлен в конце `__init__.py`, и на
+    # уровне модуля это дало бы цикл, если пакет начнёт импортировать каталог.
+    from . import __version__ as package_version
+
+    return {
+        "product": "SimInTech",
+        "version": "unknown",
+        "observed_at": date.today().isoformat(),
+        "dump_sha256": hashlib.sha256(xml_text.encode("utf-8")).hexdigest(),
+        "generator": f"simintech-api {package_version}",
+    }
+
+
 def build_catalog_from_xprt(
         xml_text: str,
         targets: Optional[Iterable[str]] = None,
@@ -498,6 +526,7 @@ def build_catalog_from_xprt(
             "source": "generated",
             "requested": sorted(wanted),
             "failed": sorted(clean_value(name) for name in (failed or ())),
+            "observation": _observation(xml_text),
         },
     )
 
@@ -519,6 +548,7 @@ def merge_catalogs(catalogs: Iterable[BlockCatalog]) -> BlockCatalog:
     requested: List[str] = []
     failed: List[str] = []
     source = "generated"
+    observation: Dict[str, object] = {}
     for catalog in catalogs:
         for class_name in catalog.classes():
             classes.setdefault(class_name, {}).update(
@@ -534,6 +564,9 @@ def merge_catalogs(catalogs: Iterable[BlockCatalog]) -> BlockCatalog:
         if isinstance(missed, list):
             failed.extend(str(name) for name in missed)
         source = str(catalog.meta.get("source") or source)
+        found_observation = catalog.meta.get("observation")
+        if isinstance(found_observation, dict) and found_observation:
+            observation = found_observation
     readonly_map.update(readonly)
     # Класс, который в итоге попал в каталог, создать удалось — значит в списке
     # провалов он числиться не может. Это не косметика: провал, оставшийся
@@ -548,6 +581,7 @@ def merge_catalogs(catalogs: Iterable[BlockCatalog]) -> BlockCatalog:
             "source": source,
             "requested": sorted(set(requested)),
             "failed": still_failed,
+            "observation": observation,
         },
     )
 

@@ -7526,5 +7526,14 @@
       "graphics_only": false,
       "purpose": "Доступ к переменной заданного типа по ссылке."
     }
-  ]
+  ],
+  "meta": {
+    "observation": {
+      "product": "SimInTech",
+      "version": "v15.05.2026",
+      "observed_at": "unknown",
+      "source": "справка поставки (help.simintech.ru)",
+      "generator": "unknown: сборщик реестра вне репозитория"
+    }
+  }
 }
