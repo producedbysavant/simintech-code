@@ -1,0 +1,30 @@
+# Dependabot: обновления зависимостей и версий action'ов.
+#
+# Группировка намеренная: минорные и патчевые обновления приходят **одной** PR —
+# их редко нужно читать по отдельности, — а мажорные **отдельными**: они ломают,
+# и разбирать их надо поштучно. Версии action'ов сгруппированы целиком: они
+# меняются вместе и проверяются одним прогоном CI.
+#
+# Проверка обновлений идёт против pyproject.toml: у пакета нет requirements.txt,
+# и extras `test` Dependabot тоже видит.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      python-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ["*"]
