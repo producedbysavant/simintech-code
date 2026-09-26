@@ -1,0 +1,192 @@
+# Реестр утверждений о SimInTech и библиотеке simintech-api.
+#
+# Зачем это нужно. Утверждения о среде живут в документах, спецификациях и
+# комментариях — то есть в прозе, где «мы измерили» и «мы предполагаем»
+# выглядят одинаково. Агент, действующий по такому тексту, не отличает факт от
+# догадки, а человек не видит, что именно проверено и на какой версии.
+# Здесь у каждого утверждения названы источник, версия и дата, а где есть
+# автотест — и он.
+#
+# Статусы (различие принципиальное):
+#   verified         — подтверждено источником вне нашего кода: живой COM-тест,
+#                      сверка с поставкой (маркер distribution) или справка;
+#   measured         — живой замер, записанный в документе; автотеста нет;
+#   unit-only        — покрыто только тестом на подделке. Это контракт кода,
+#                      но НЕ подтверждение поведения среды: подделка повторяет
+#                      наше допущение, и опровергнуть его она не может;
+#   refuted          — проверено и опровергнуто (хранится, чтобы вывод не
+#                      «починили» обратно);
+#   unknown          — не измерено;
+#   version-specific — верно для конкретной версии среды.
+#
+# `docs/evidence/verification-matrix.md` генерируется из этого файла:
+# `python scripts/evidence.py`. Правьте реестр, а не матрицу.
+
+- id: constant-param-is-a
+  claim: "У «Константы» значение задаётся параметром `a`; параметра `y0` не существует"
+  status: verified
+  source:
+    type: live-com
+    ref: "docs/roadmap-agentic-ecosystem.md §3.1"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-10
+  evidence: "`a=5` даёт в выгрузке [5]; `y0=5` не меняет ничего и отказа не даёт"
+  tests:
+    - file: tests/integration/test_lifecycle.py
+      id: test_build_simple_model
+      kind: live
+    - file: tests/unit/test_catalog_dumps.py
+      id: test_props_for_keeps_names_from_real_dumps
+      kind: distribution
+
+- id: setblockprop-ignores-unknown-name
+  claim: "`SetBlockProp` принимает неизвестное имя параметра молча: значение не меняется, отказа нет"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/roadmap-agentic-ecosystem.md §3.1"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-10
+  evidence: "Запись `Константа.y0 = 5` прошла без ошибки и не изменила ни одного значения — поэтому имена сверяются с каталогом ДО записи"
+  tests: []
+
+- id: blocks-are-not-renamed-via-com
+  claim: "`SetBlockProp(\"Name\")` не переименовывает блок: имя остаётся автоматическим (`k_0`, `kx_0`)"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/roadmap-agentic-ecosystem.md §6.1"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-15
+  evidence: "Имя не меняется ни в `get_name()`, ни в выгрузке `.xprt`; отдельного метода переименования в COM API нет"
+  tests: []
+
+- id: summator-ports-need-setportcount
+  claim: "Длина массива `a` у «Сумматора» не добавляет входы: число портов меняется только `SetPortCount`"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/roadmap-agentic-ecosystem.md §6.2"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-15
+  evidence: "При трёх коэффициентах в `a` входов остаётся два; `SetPortCount` получает число портов вместе с выходом (для трёх входов — 4)"
+  tests:
+    - file: tests/unit/test_block.py
+      id: test_set_in_port_count_adds_inputs
+      kind: unit
+
+- id: new-project-does-not-calculate
+  claim: "Проект из `Project.new()` не считает: в нём нет расчётного слоя и настроек расчёта"
+  status: measured
+  source:
+    type: controlled-experiment
+    ref: "docs/roadmap-agentic-ecosystem.md §6.5"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-15
+  evidence: "У пустого проекта один слой «Нулевой слой» с пустыми `<parameters>`; модельное время не растёт, но и ошибки нет — `run`/`step` возвращают успех"
+  tests: []
+
+- id: template-project-calculates
+  claim: "Проект из шаблона («Схема модели общего вида») считает; время расчёта задаётся свойством слоя `endtime`"
+  status: measured
+  source:
+    type: controlled-experiment
+    ref: "docs/roadmap-agentic-ecosystem.md §6.5"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-15
+  evidence: "`OpenTemplate` + `SetLayerProp(endtime)` + модель «Константа → Усилитель → В файл» дала 6 строк результата со значением 6 (2×3)"
+  tests: []
+
+- id: floating-input-stops-calculation
+  claim: "Неподключённый вход блока молча останавливает расчёт всей модели: ошибки нет, модельное время стоит"
+  status: measured
+  source:
+    type: controlled-experiment
+    ref: "docs/roadmap-agentic-ecosystem.md §6.5"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-15
+  evidence: "Одна и та же схема с соединённым входом считает до 1.0, с висящим — остаётся на 0.0; отказ не выдаётся"
+  tests: []
+
+- id: runto-is-not-blocking
+  claim: "`RunTo` в этой сборке не блокирующий, хотя в карте COM API помечен блокирующим"
+  status: measured
+  source:
+    type: controlled-experiment
+    ref: "docs/roadmap-agentic-ecosystem.md §6.4"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-15
+  evidence: "Сразу после `RunTo(0.5)` время 0.240 с, через мгновение — 0.5 с; поэтому достижение отметки подтверждается опросом `GetProjectTime`"
+  tests: []
+
+- id: signals-need-signal-base
+  claim: "`get_signal` работает только у проекта с подключённой базой сигналов; у модели из `create_project` базы нет"
+  status: verified
+  source:
+    type: live-com
+    ref: "docs/roadmap-agentic-ecosystem.md §6.3"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-10
+  evidence: "У проекта без базы `GetProjectSignalList` пуст, источник сигнала не разрешается — инструмент отказывает с объяснением"
+  tests:
+    - file: tests/integration/test_lifecycle.py
+      id: test_signal_by_name_refuses_without_signal_base
+      kind: live
+
+- id: wires-have-no-ends-via-com
+  claim: "Концы линий через COM не читаются: нет ни методов для портов связи, ни координат (`Points` пуст даже после нормализации)"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/gap-closure-plan.md, Н3"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-17
+  evidence: "`list_wires` отдаёт количество и идентификаторы; пара «откуда → куда» не восстанавливается — поэтому связь запоминает сам `connect`"
+  tests: []
+
+- id: findstartport-is-a-signal-resolver
+  claim: "`findstartport` — не оракул электрической смежности: на спорных портах он вернул порт другого контейнера, а вендорский экспортёр его не вызывает вовсе"
+  status: refuted
+  source:
+    type: controlled-experiment
+    ref: "docs/roadmap-agentic-ecosystem.md, раздел 10 (2026-09-23)"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-23
+  evidence: "Гипотеза «findstartport даёт непосредственное ребро» опровергнута: на трёх портах ответ противоречит эталону, а контракт связей в поставке строится на `traceallports` + `min(1, …)` для входов"
+  tests: []
+
+- id: conn-describes-wire-ends-pairwise
+  claim: "`conn` описывает концы линии попарно (для k концов — C(k,2) рёбер), а не отдельные физические провода"
+  status: verified
+  source:
+    type: controlled-experiment
+    ref: "docs/roadmap-agentic-ecosystem.md, раздел 10.7 (2026-09-23)"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-23
+  evidence: "На развилке из одного выхода вендорская поставка даёт звезду, попарное правило — треугольник; различие воспроизведено живым тестом на трёх формах ветвления"
+  tests:
+    - file: tests/integration/test_topology_live.py
+      id: test_vendor_cardinality_rule_makes_the_branch_a_star
+      kind: live
+
+- id: fsm-blocks-need-full-record-name
+  claim: "Блоки «Конечные автоматы» создаются только по полному имени записи («Конечные автоматы - Состояние автомата»); короткий заголовок с палитры `CreateBlock` не принимает"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/roadmap-agentic-ecosystem.md §3.0"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-15
+  evidence: "Короткое имя возвращает 0 (блок не создан), полное — создаёт запись; поэтому в справке это названо прямо, а не «класс не поддерживается»"
+  tests: []
+
+- id: block-size-covers-few-classes
+  claim: "`standard_block_size` знает размеры лишь части классов: остальным `layout_place` размер не подменяет, а берёт фактический"
+  status: measured
+  source:
+    type: source-code
+    ref: "docs/gap-closure-plan.md, Н9"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-17
+  evidence: "Размеры заданы правилами разработки SimInTech и для большинства классов неизвестны; подстановка чужого размера исказила бы схему"
+  tests: []

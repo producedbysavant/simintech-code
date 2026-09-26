@@ -24,7 +24,11 @@ dependencies = [
 # flake8 и mypy здесь, а не только в CI: CONTRIBUTING обещает прогон по
 # командам ниже, и на чистом окружении он падал с `flake8: command not found` —
 # extras `test` ставил один pytest, а линтер и типы CI доустанавливал сам.
-test = ["flake8>=7.0", "mypy>=1.7", "pytest>=7.0"]
+#
+# PyYAML — для реестра утверждений: `scripts/evidence.py` читает `claims.yaml`,
+# а `tests/unit/test_evidence.py` его проверяет. Без него реестр не читается
+# вовсе, поэтому зависимость обязательная, а не «удобная».
+test = ["flake8>=7.0", "mypy>=1.7", "pytest>=7.0", "pyyaml>=6.0"]
 
 [project.scripts]
 simintech-cli = "simintech_api.cli:main"

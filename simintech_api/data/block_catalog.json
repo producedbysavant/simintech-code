@@ -13252,6 +13252,13 @@
       "ЭП - СД - Синхронный двигатель (система dq)",
       "ЭП - СД - Синхронный двигатель с короткозамкнутым ротором",
       "классический"
-    ]
+    ],
+    "observation": {
+      "product": "SimInTech",
+      "version": "2.26.6.23",
+      "observed_at": "unknown",
+      "dump_sha256": "unknown",
+      "generator": "simintech-generate-catalog"
+    }
   }
 }
