@@ -39,7 +39,7 @@ CLIENT_SINGLE_QUOTES = textwrap.dedent("""\
     <Header>
     <dbconfig>
      <srvport></srvport>
-     <host>'10.0.0.5'</host>
+     <host>'192.0.2.5'</host>
      <port>'19003'</port>
      <srvenable>'0'</srvenable>
      <sync>'0'</sync>
@@ -67,7 +67,7 @@ def test_single_quotes_and_client_role():
     config = parse_db_config(CLIENT_SINGLE_QUOTES)
 
     assert config.role == "клиент"
-    assert config.host == "10.0.0.5"
+    assert config.host == "192.0.2.5"
     assert config.port == 19003
     assert config.receives_from_server is False
 
@@ -82,7 +82,7 @@ def test_node_can_be_server_and_client_at_once():
 
 def test_empty_values_mean_not_set_and_not_error():
     """Пустое поле — «не задано»: у 4 файлов поставки так устроены порт и хост."""
-    config = parse_db_config(CLIENT_SINGLE_QUOTES.replace("'10.0.0.5'", ""))
+    config = parse_db_config(CLIENT_SINGLE_QUOTES.replace("'192.0.2.5'", ""))
 
     assert config.host == ""
     assert config.port == 19003

@@ -326,7 +326,7 @@ def test_dotdot_staying_inside_the_pack_dir_is_allowed(tmp_path):
 
 
 def test_absolute_path_is_not_expanded_into_the_pack_dir(tmp_path):
-    """`D:\\project\\...` развернуть относительно пакета нечем — resolve() даёт None."""
+    """Абсолютный путь развернуть относительно пакета нечем — resolve() даёт None."""
     absolute = "D:\\project\\tim_init.prt"
     text = _pak_text(files=(RECORDED_PATH, absolute))
 
@@ -340,7 +340,7 @@ def test_absolute_path_is_not_expanded_into_the_pack_dir(tmp_path):
 
 
 def test_absolute_path_is_recognised_by_record_not_by_platform(tmp_path):
-    """`Path.is_absolute()` на Linux не признал бы `E:\\...` — правило по записи."""
+    """`Path.is_absolute()` на Linux не признал бы `D:\\...` — правило по записи."""
     text = _pak_text(files=("D:\\project\\tim_init.prt", "\\\\server\\share\\a.prt",
                             "/opt/models/b.prt"))
 
