@@ -182,6 +182,19 @@ def _object_to_dict(obj: ObjectView) -> Dict[str, Any]:
     }
 
 
+def _connection_to_dict(link: Connection) -> Dict[str, Any]:
+    """Форма одной связи — одна на все ответы слоя.
+
+    Связь встречается в обзоре и в запросе пары; разойдись эти формы, агент
+    получал бы об одном и том же два описания в зависимости от того, каким
+    вызовом спросил. Концы остаются нейтральными `a`/`b` — теми, в каком порядке
+    их записал разбор: «нашего» и «чужого» конца у связи нет, а запрос пары
+    задаётся вызывающим в любом порядке, и ответ его не переставляет.
+    """
+    return {"a": [link.object_a, link.index_a],
+            "b": [link.object_b, link.index_b]}
+
+
 def overview_to_dict(overview: ModelOverview) -> Dict[str, Any]:
     """JSON-готовая форма обзора — то, что отдаёт адаптер (MCP).
 
@@ -201,11 +214,8 @@ def overview_to_dict(overview: ModelOverview) -> Dict[str, Any]:
             "connections": len(overview.connections),
         },
         "objects": [_object_to_dict(obj) for obj in overview.objects],
-        "connections": [
-            {"a": [link.object_a, link.index_a],
-             "b": [link.object_b, link.index_b]}
-            for link in overview.connections
-        ],
+        "connections": [_connection_to_dict(link)
+                        for link in overview.connections],
     }
 
 
@@ -358,4 +368,60 @@ def port_inspection_to_dict(inspection: PortInspection) -> Dict[str, Any]:
         "object": inspection.object_name,
         "port": _port_to_dict(inspection.port),
         "peers": [_peer_to_dict(peer) for peer in inspection.peers],
+    }
+
+
+class ConnectionQuery(NamedTuple):
+    """Ответ на вопрос «какие связи между этими двумя объектами».
+
+    `links` — те же `Connection` обзора, без переупаковки: это отбор из уже
+    прочитанного отношения, а не второе отношение. Имена возвращаются так, как
+    их назвал вызывающий: порядок концов в вопросе значения не имеет, и ответ не
+    должен намекать, что имел место какой-то один.
+    """
+
+    object_a: str
+    object_b: str
+    links: List[Connection]
+
+
+def query_connections(overview: ModelOverview, object_a: str,
+                      object_b: str) -> ConnectionQuery:
+    """Связи между двумя названными объектами — в каком бы порядке их ни назвали.
+
+    **Новых COM-вызовов не делает**: это отбор по уже прочитанному обзору.
+
+    Отвечает **связями, а не соседями**: у каждой возвращённой связи названы оба
+    конца. Досмотры отвечают «чей это конец» — по одной стороне связи за вызов, —
+    а вопрос «какие связи идут между этими двумя» задаётся про отношение целиком,
+    и между теми же объектами связей может быть **несколько**, разными парами
+    портов: тогда ответ обязан назвать каждую пару, а не «ещё один сосед».
+
+    Адрес здесь — имя объекта, а не пара (имя, индекс): индексы портов видны в
+    самих `links`. Связь объекта с самим собой спрашивается тем же вызовом и
+    **не** смешивается со связями с другими объектами.
+
+    Отказы: имени нет в обзоре — отказ с перечнем известных имён, и проверяются
+    **оба** названных конца. Иначе «нет объекта» указывало бы на первый из двух, а
+    про второй нельзя было бы отличить «его нет» от «он есть, но связи нет».
+    Отсутствие связи — не отказ, а обычное состояние модели: `links == []`.
+    """
+    _find_object(overview, object_a)
+    _find_object(overview, object_b)
+    pair = {object_a, object_b}
+    links = [link for link in overview.connections
+             if {link.object_a, link.object_b} == pair]
+    return ConnectionQuery(object_a=object_a, object_b=object_b, links=links)
+
+
+def connection_query_to_dict(query: ConnectionQuery) -> Dict[str, Any]:
+    """JSON-готовая форма запроса: названная пара и связи между её концами.
+
+    Пара в ответе — та, которую назвал вызывающий, и в том же порядке: порядок в
+    вопросе ничего не значит, поэтому переставлять его в ответе было бы домыслом.
+    Связи — той же формой, что и в обзоре (`_connection_to_dict`).
+    """
+    return {
+        "between": [query.object_a, query.object_b],
+        "connections": [_connection_to_dict(link) for link in query.links],
     }
