@@ -400,7 +400,10 @@ def test_query_refusal_names_the_end_that_is_missing():
         query_connections(_overview(), "нет_такого", "A")
     text = str(missing_first.value)
     assert "нет_такого" in text
-    assert "A" in text, f"отказ не перечисляет известные имена: {text}"
+    # Именно весь список и именно в порядке обзора: `assert "A" in text` проходил
+    # бы и на усечённом перечне, и на перечне, где A — единственное имя.
+    assert "известные имена: A, B, C" in text, (
+        f"отказ не перечисляет известные имена целиком: {text}")
 
 
 def test_query_without_links_is_not_an_error():

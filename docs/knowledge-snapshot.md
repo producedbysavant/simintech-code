@@ -13,7 +13,7 @@
 | `simintech_api/data/block_catalog.json` | 958 классов с именами параметров | SimInTech64 2.26.6.23 | `unknown` (дата прогона не записана; выгрузка не сохранена) | `tests/unit/test_catalog_dumps.py` (сверка с реальными выгрузками), `tests/unit/test_knowledge_snapshot.py` (схема) |
 | `simintech_api/data/language_functions.json` | 907 функций встроенного языка, 878 уникальных имён | справка v15.05.2026 | `unknown` | `tests/unit/test_language.py` |
 | `docs/reference/com_api_inventory.md` | карта COM API: 176 методов, достижимость | SimInTech64 2.26.6.23 | 2026-09-17 | документ; выборочно — контрактный тест в MCP |
-| `docs/evidence/claims.yaml` | 14 утверждений о поведении среды | SimInTech64 2.26.6.23 | 2026-09-10 … 2026-09-23 | `scripts/evidence.py` + `tests/unit/test_evidence.py` |
+| `docs/evidence/claims.yaml` | 15 утверждений о поведении среды | SimInTech64 2.26.6.23 | 2026-09-10 … 2026-09-26 | `scripts/evidence.py` + `tests/unit/test_evidence.py` |
 | Разборы форматов: `.pak` (63 файла), `.tbl` (503), `.dblocalconf`/`.dbconf` (77), `.xprt` | структура файлов поставки | SimInTech64 2.26.6.23 | 2026-09-17 | `tests/unit/test_pak.py`, `test_tbl.py`, `test_dbconf.py`, `test_xprt_signals.py` |
 | Семантический слой топологии | объекты, порты, связи одного контейнера | SimInTech64 2.26.6.23 | 2026-09-23 … 2026-09-24 | живые тесты `tests/integration/test_topology_live.py`, `test_semantic_live.py` |
 

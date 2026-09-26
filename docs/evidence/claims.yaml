@@ -190,3 +190,17 @@
     observed_at: 2026-09-17
   evidence: "Размеры заданы правилами разработки SimInTech и для большинства классов неизвестны; подстановка чужого размера исказила бы схему"
   tests: []
+
+- id: semantic-query-and-inspection-agree
+  claim: "Запрос связей пары и досмотры портов — две проекции одного прочитанного обзора: каждая связь пары видна досмотром **обоих** своих концов, и каждый сосед из досмотра подтверждается запросом пары"
+  status: verified
+  source:
+    type: live-com
+    ref: "docs/api.md § query_connections"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-26
+  evidence: "Живой прогон по демо вендора (контейнер `acrms_Circuit1`): 7 passed за 92.68 с; связи пары совпали с эталоном, и каждая подтверждена досмотром с обеих сторон"
+  tests:
+    - file: tests/integration/test_semantic_live.py
+      id: test_query_connections_matches_vendor_reference
+      kind: live

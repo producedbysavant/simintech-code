@@ -271,9 +271,12 @@ def test_query_connections_matches_vendor_reference(
 
     Пара берётся **из эталона**: самый связанный объект и один из его соседей, —
     поэтому проверка не зависит от того, что лежит в демо. Сверяются канонические
-    ключи, то есть и порты. Вторая половина проверяет обратное: у пары, которой
-    эталон не соединяет, ответ **пуст** и это не отказ — «связи нет» и «объекта
-    нет» живой слой различает так же, как юнит.
+    ключи, то есть и порты. Дальше проверяется то, чего не видно из эталона:
+    запрос — **проекция того же обзора**, поэтому каждая его связь обязана быть
+    видна досмотром обоих своих концов, а каждый сосед из досмотра — находиться
+    запросом пары. Вторая половина проверяет обратное: у пары, которой эталон не
+    соединяет, ответ **пуст** и это не отказ, а несуществующее имя — отказ, то
+    есть «связи нет» и «объекта нет» живой слой различает так же, как юнит.
     """
     project = _open_demo(client, tmp_path)
     try:
@@ -306,6 +309,27 @@ def test_query_connections_matches_vendor_reference(
             f"связи пары {name!r}—{partner!r} разошлись с эталоном: "
             f"лишние {our_keys - expected}, потерянные {expected - our_keys}")
 
+        # Критерий issue #4 в живой форме, в обе стороны. Запрос и досмотр — две
+        # проекции одного обзора; разойдись они, каждая осталась бы «верной» по
+        # эталону, а агент получал бы о связи два разных ответа.
+        for link in query.links:
+            ends = ((link.object_a, link.index_a, link.object_b, link.index_b),
+                    (link.object_b, link.index_b, link.object_a, link.index_a))
+            for own_name, own_index, peer_name, peer_index in ends:
+                peers = {(peer.port_index, peer.peer_object, peer.peer_index)
+                         for peer in inspect_port(overview, own_name,
+                                                  own_index).peers}
+                assert (own_index, peer_name, peer_index) in peers, (
+                    f"связь {link} не видна досмотром порта "
+                    f"{own_name}.{own_index}")
+                confirmed = {connection_key(back)
+                             for back in query_connections(
+                                 overview, own_name, peer_name).links}
+                assert connection_key(Connection(
+                    own_name, own_index, peer_name, peer_index)) in confirmed, (
+                    f"сосед {peer_name}.{peer_index} порта {own_name}.{own_index} "
+                    "не подтверждён запросом пары")
+
         names = sorted({other for key in keys for other in (key[0][0], key[1][0])})
         joined = [{key[0][0], key[1][0]} for key in keys]
         unlinked = next(((left, right)
@@ -315,6 +339,11 @@ def test_query_connections_matches_vendor_reference(
         assert unlinked is not None, "эталон соединяет все свои объекты попарно"
         assert query_connections(overview, *unlinked).links == [], (
             f"пара {unlinked} в эталоне не соединена, а запрос вернул связи")
+
+        # Докстринг обещает различение «связи нет» и «объекта нет» — второе
+        # проверяется здесь же: имя, которого в обзоре заведомо нет.
+        with pytest.raises(ValueError, match="нет объекта"):
+            query_connections(overview, name, name + "_нет_такого")
     finally:
         project.close()
 
