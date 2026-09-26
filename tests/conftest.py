@@ -17,6 +17,16 @@ import sys
 
 import pytest
 
+# `scripts/` — инструменты репозитория (DLP-гейт публичных данных, генератор
+# каталога). Тесты проверяют их наравне с пакетом, а в PYTHONPATH их никто не
+# кладёт, поэтому путь добавляется здесь — до сбора тест-модулей.
+sys.path.insert(
+    0,
+    os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"
+    ),
+)
+
 
 def pytest_addoption(parser):
     parser.addoption(
