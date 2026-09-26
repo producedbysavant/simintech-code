@@ -423,10 +423,15 @@ def test_query_keeps_links_of_a_pair_apart_by_their_ports():
         objects=[ObjectRow("A", "Усилитель"), ObjectRow("B", "Константа")],
         ports=[PortRow("A", 0, "in", "x"), PortRow("A", 1, "out", "y"),
                PortRow("B", 0, "in", "x"), PortRow("B", 1, "out", "y")],
-        connections=[Connection("A", 0, "B", 1), Connection("A", 1, "B", 0)])
+        # Порядок намеренно **не** совпадает с отсортированным по концам: иначе
+        # тест проходил бы и на коде, который «нормализует» ответ сортировкой,
+        # хотя обещан порядок разбора (`docs/api.md`). Проверено мутацией:
+        # сортировка связей выживала на всём наборе, пока порядок здесь был
+        # совпадающим.
+        connections=[Connection("A", 1, "B", 0), Connection("A", 0, "B", 1)])
     overview = overview_from_topology(topology, ContainerRef.main())
     assert query_connections(overview, "A", "B").links == [
-        Connection("A", 0, "B", 1), Connection("A", 1, "B", 0)]
+        Connection("A", 1, "B", 0), Connection("A", 0, "B", 1)]
 
 
 def test_query_separates_a_self_link_from_links_with_others():
@@ -482,3 +487,8 @@ def test_connection_query_to_dict_reuses_the_overview_connection_shape():
     }
     assert as_dict["connections"] == overview_to_dict(overview)["connections"]
     assert json.loads(json.dumps(as_dict)) == as_dict
+    # Пара в ответе — та, которую назвал вызывающий, и в том же порядке:
+    # «B, A» не должен канонизироваться в «A, B», иначе ответ стирает вопрос.
+    # Мутация «отсортировать пару» выживала, пока здесь был только один порядок.
+    reversed_pair = connection_query_to_dict(query_connections(overview, "B", "A"))
+    assert reversed_pair["between"] == ["B", "A"]
