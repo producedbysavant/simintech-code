@@ -1,0 +1,72 @@
+name: CI
+
+# Проверяется только то, что не требует COM: он доступен лишь на Windows с
+# зарегистрированным `mmain.exe /regserver`. Интеграционные тесты и бенчмарки
+# исключены настройками pytest (`addopts`), поэтому `pytest` здесь — это
+# модульные тесты; запускать остальное нужно явно (`pytest -m integration`).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Установка
+        # flake8 и mypy объявлены в extras `test`: тот же блок команд, что в
+        # CONTRIBUTING, должен выполняться на чистом окружении дословно.
+        run: pip install -e ".[test]"
+
+      - name: Стиль
+        run: flake8
+
+      # Точечный гейт: только COM-независимые модули, список — в [tool.mypy].
+      - name: Типы
+        run: mypy
+
+      # Второй прогон — по Windows-платформе. На linux весь код после
+      # `if sys.platform != "win32": … return` невыполним и не проверяется;
+      # именно в этом слепом кармане прошёл дефект `set_silent_mode`.
+      # Оговорка: на linux-раннере это статическая проверка ветки, а не её
+      # исполнение.
+      - name: Типы (Windows-ветка)
+        run: mypy --platform win32
+
+      - name: Тесты
+        run: pytest -q
+
+  # Проверка секретов по всей истории.
+  # `fetch-depth: 0` обязателен: при checkout по умолчанию виден один коммит,
+  # и секрет, попавший в историю раньше, остался бы незамеченным.
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Установка gitleaks
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+          # Контрольная сумма из файла, который проект публикует вместе с
+          # выпуском: скачанный архив — тот же, что выпустил проект, иначе шаг
+          # падает до запуска проверок.
+          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        run: |
+          curl -sSfL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar xzf gitleaks.tar.gz gitleaks
+
+      # Секреты — по всей истории: из истории секрет не уходит сам.
+      # `--exit-code 1` закреплён явно: у gitleaks он по умолчанию 1, но
+      # проверка не должна зависеть от умолчания, которое может смениться.
+      - name: Секреты (вся история)
+        run: ./gitleaks git --exit-code 1 --no-banner --redact --log-opts="--all" --config .gitleaks.toml .
+

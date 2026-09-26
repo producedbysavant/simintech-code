@@ -1,0 +1,1811 @@
+{
+ "Objects": [
+  {
+   "Name": "Macro235",
+   "Class": "СПТ - Задатчик вектора частот",
+   "Properties": [
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "k1",
+         "ConnectedObjPortName": "Port_0",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Частоты гармоник, Гц",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "input"
+     }
+   ]
+  }
+ ,{
+   "Name": "k1",
+   "Class": "Константа",
+   "Properties": [
+     {
+      "Name": "a",
+      "Caption": "Значение ",
+      "Formula": "50",
+      "Value": "50"
+     }
+    ,{
+      "Name": "src_type",
+      "Caption": "Тип данных (для генерации кода)",
+      "Formula": "",
+      "Value": "0"
+     }
+    ,{
+      "Name": "txt",
+      "Caption": "Название",
+      "Formula": "",
+      "Value": "k"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "Macro235",
+         "ConnectedObjPortName": "Частоты гармоник, Гц",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Port_0",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "output"
+     }
+   ]
+  }
+ ,{
+   "Name": "Macro263",
+   "Class": "Субмодель",
+   "Properties": [
+     {
+      "Name": "Type",
+      "Caption": "Тип кабеля",
+      "Formula": "",
+      "Value": ""
+     }
+    ,{
+      "Name": "R1",
+      "Caption": "Погонное активное сопротивление, Ом/км",
+      "Formula": "0.077",
+      "Value": "0.077"
+     }
+    ,{
+      "Name": "X1",
+      "Caption": "Погонное индуктивное сопротивление, Ом/км",
+      "Formula": "0.071",
+      "Value": "0.071"
+     }
+    ,{
+      "Name": "L",
+      "Caption": "Длина линии, км",
+      "Formula": "0.05",
+      "Value": "0.05"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node24",
+         "ConnectedObjPortName": "Выход цепь 1",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Вход",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "input"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node21",
+         "ConnectedObjPortName": "Выход цепь 2",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Вход",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "input"
+     }
+   ]
+  }
+ ,{
+   "Name": "Macro245",
+   "Class": "Субмодель",
+   "Properties": [
+     {
+      "Name": "Inom",
+      "Caption": "Номинальный ток, А",
+      "Formula": "630",
+      "Value": "630"
+     }
+    ,{
+      "Name": "dPnom",
+      "Caption": "Номинальные потери реактора на одну фазу, кВт",
+      "Formula": "2.5",
+      "Value": "2.5"
+     }
+    ,{
+      "Name": "Xp",
+      "Caption": "Индуктивное сопротивление, Ом",
+      "Formula": "0.25",
+      "Value": "0.25"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node2v9",
+         "ConnectedObjPortName": "Выход цепь 2",
+         "ConnectedObjPortIndex": "2"
+        }
+      ],
+      "SelfPortName": "Вход",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "input"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node15",
+         "ConnectedObjPortName": "Выход цепь 2",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Вход",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "input"
+     }
+   ]
+  }
+ ,{
+   "Name": "acrms_node15",
+   "Class": "СПТ - Узел",
+   "Properties": [
+     {
+      "Name": "U0Re",
+      "Caption": "Потенциал выхода активный",
+      "Formula": "0",
+      "Value": "0"
+     }
+    ,{
+      "Name": "U0Im",
+      "Caption": "Потенциал выхода реактивный",
+      "Formula": "0",
+      "Value": "0"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node2v7",
+         "ConnectedObjPortName": "Вход цепь",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Выход цепь 1",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "output"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "Macro245",
+         "ConnectedObjPortName": "Вход",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Выход цепь 2",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "output"
+     }
+   ]
+  }
+ ,{
+   "Name": "Macro246",
+   "Class": "Субмодель",
+   "Properties": [
+     {
+      "Name": "4АН280М4У3",
+      "Caption": "Тип",
+      "Formula": "",
+      "Value": "ВАН-113-4"
+     }
+    ,{
+      "Name": "Udvig",
+      "Caption": "Номинальное напряжение, В",
+      "Formula": "6000",
+      "Value": "6000"
+     }
+    ,{
+      "Name": "Pdvig",
+      "Caption": "Номинальная мощность, кВт",
+      "Formula": "250",
+      "Value": "250"
+     }
+    ,{
+      "Name": "cosf",
+      "Caption": "Коэффициент мощности, о.е.",
+      "Formula": "0.9",
+      "Value": "0.9"
+     }
+    ,{
+      "Name": "KPD",
+      "Caption": "КПД, о.е.",
+      "Formula": "0.92",
+      "Value": "0.92"
+     }
+    ,{
+      "Name": "kip",
+      "Caption": "Кратность пускового тока по отношению к его номинальному току, о.е.",
+      "Formula": "6.5",
+      "Value": "6.5"
+     }
+    ,{
+      "Name": "kmp",
+      "Caption": "Кратность пускового моментапо отношению к его номинальному моментуо.е.",
+      "Formula": "1.2",
+      "Value": "1.2"
+     }
+    ,{
+      "Name": "U0",
+      "Caption": "Напряжение на выводах двигателя до КЗ по отношению к номинальному, о.е.",
+      "Formula": "1",
+      "Value": "1"
+     }
+    ,{
+      "Name": "I0",
+      "Caption": "Ток на выводах двигателя до КЗ по отношению к номинальному, о.е.",
+      "Formula": "1",
+      "Value": "1"
+     }
+    ,{
+      "Name": "snom",
+      "Caption": "Номинальное скольжение, о.е.",
+      "Formula": "20/1500",
+      "Value": "0.0133333333333333"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node20",
+         "ConnectedObjPortName": "Выход цепь 2",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Вход",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "input"
+     }
+   ]
+  }
+ ,{
+   "Name": "Macro268",
+   "Class": "Субмодель",
+   "Properties": [
+     {
+      "Name": "Type",
+      "Caption": "Тип кабеля",
+      "Formula": "",
+      "Value": ""
+     }
+    ,{
+      "Name": "R1",
+      "Caption": "Погонное активное сопротивление, Ом/км",
+      "Formula": "0.74",
+      "Value": "0.74"
+     }
+    ,{
+      "Name": "X1",
+      "Caption": "Погонное индуктивное сопротивление, Ом/км",
+      "Formula": "0.091",
+      "Value": "0.091"
+     }
+    ,{
+      "Name": "L",
+      "Caption": "Длина линии, км",
+      "Formula": "0.05",
+      "Value": "0.05"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node20",
+         "ConnectedObjPortName": "Выход цепь 1",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Вход",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "input"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node18",
+         "ConnectedObjPortName": "Выход цепь 2",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Вход",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "input"
+     }
+   ]
+  }
+ ,{
+   "Name": "Macro236",
+   "Class": "Субмодель",
+   "Properties": [
+     {
+      "Name": "Type",
+      "Caption": "Тип",
+      "Formula": "",
+      "Value": "ТСЗ-250/10"
+     }
+    ,{
+      "Name": "Snom",
+      "Caption": "Номинальная мощность трансформатора, МВА",
+      "Formula": "0.250",
+      "Value": "0.25"
+     }
+    ,{
+      "Name": "Uk",
+      "Caption": "Напряжение КЗ, %",
+      "Formula": "5.5",
+      "Value": "5.5"
+     }
+    ,{
+      "Name": "Uhv",
+      "Caption": "Нарпяжение ВН, кВ",
+      "Formula": "6",
+      "Value": "6"
+     }
+    ,{
+      "Name": "Ulv",
+      "Caption": "Напряжение НН, кВ",
+      "Formula": "0.4",
+      "Value": "0.4"
+     }
+    ,{
+      "Name": "dPk",
+      "Caption": "Нагрузочные потери, кВт",
+      "Formula": "3.8",
+      "Value": "3.8"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node2v5",
+         "ConnectedObjPortName": "Выход цепь 2",
+         "ConnectedObjPortIndex": "2"
+        }
+      ],
+      "SelfPortName": "Вход HV",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "input"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node17",
+         "ConnectedObjPortName": "Выход цепь 2",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Вход LV",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "input"
+     }
+   ]
+  }
+ ,{
+   "Name": "acrms_node16",
+   "Class": "СПТ - Узел",
+   "Properties": [
+     {
+      "Name": "U0Re",
+      "Caption": "Потенциал выхода активный",
+      "Formula": "0",
+      "Value": "0"
+     }
+    ,{
+      "Name": "U0Im",
+      "Caption": "Потенциал выхода реактивный",
+      "Formula": "0",
+      "Value": "0"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "Macro274",
+         "ConnectedObjPortName": "Вход",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Выход цепь 1",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "output"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node2v5",
+         "ConnectedObjPortName": "Вход цепь",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Выход цепь 2",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "output"
+     }
+   ]
+  }
+ ,{
+   "Name": "acrms_Q_P3",
+   "Class": "СПТ - Выключатель + Измеритель электрических величин комбинированный",
+   "Properties": [
+     {
+      "Name": "P1",
+      "Caption": "Параметры Выключателя ===================================",
+      "Formula": "",
+      "Value": ""
+     }
+    ,{
+      "Name": "ob_name",
+      "Caption": "Имя",
+      "Formula": "",
+      "Value": "Q"
+     }
+    ,{
+      "Name": "fr_bd",
+      "Caption": "Подключен к БД",
+      "Formula": "",
+      "Value": "0"
+     }
+    ,{
+      "Name": "tbl_name",
+      "Caption": "Имя таблицы БД",
+      "Formula": "",
+      "Value": "БУВ"
+     }
+    ,{
+      "Name": "R",
+      "Caption": "Сопротивление выключателя, Ом",
+      "Formula": "1e-6",
+      "Value": "1E-6"
+     }
+    ,{
+      "Name": "C",
+      "Caption": "Проходная ёмкость выключателя, Ф",
+      "Formula": "0",
+      "Value": "0"
+     }
+    ,{
+      "Name": "P2",
+      "Caption": "Параметры Измерителя ===================================",
+      "Formula": "",
+      "Value": ""
+     }
+    ,{
+      "Name": "_name",
+      "Caption": "Имя измерителя",
+      "Formula": "",
+      "Value": "1#QGT1"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "Key_manual_button_1",
+         "ConnectedObjPortName": "Выход",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Управление (Вкл/Откл)",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "input"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_Ground4",
+         "ConnectedObjPortName": "Выход цепь 1",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Вход +",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "input"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node17",
+         "ConnectedObjPortName": "Выход цепь 1",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Вход  -",
+      "SelfPortIndex": "2",
+      "SelfPortDirection": "input"
+     }
+   ]
+  }
+ ,{
+   "Name": "acrms_Ground4",
+   "Class": "СПТ - Узел граничный",
+   "Properties": [
+     {
+      "Name": "U0re",
+      "Caption": "Потенциал узла активный, В",
+      "Formula": "0",
+      "Value": "0"
+     }
+    ,{
+      "Name": "U0im",
+      "Caption": "Потенциал узла реактивный, В",
+      "Formula": "0",
+      "Value": "0"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_Q_P3",
+         "ConnectedObjPortName": "Вход +",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Выход цепь 1",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "output"
+     }
+   ]
+  }
+ ,{
+   "Name": "Key_manual_button_1",
+   "Class": "Кнопка",
+   "Properties": [
+     {
+      "Name": "XB01",
+      "Caption": "Выходное значение кнопки",
+      "Formula": "3",
+      "Value": "1"
+     }
+    ,{
+      "Name": "fixed_button",
+      "Caption": "Фиксация кнопки",
+      "Formula": "",
+      "Value": "1"
+     }
+    ,{
+      "Name": "value_button",
+      "Caption": "Значение на выходе",
+      "Formula": "1",
+      "Value": "1"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_Q_P3",
+         "ConnectedObjPortName": "Управление (Вкл/Откл)",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Выход",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "output"
+     }
+   ]
+  }
+ ,{
+   "Name": "acrms_node17",
+   "Class": "СПТ - Узел",
+   "Properties": [
+     {
+      "Name": "U0Re",
+      "Caption": "Потенциал выхода активный",
+      "Formula": "0",
+      "Value": "0"
+     }
+    ,{
+      "Name": "U0Im",
+      "Caption": "Потенциал выхода реактивный",
+      "Formula": "0",
+      "Value": "0"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_Q_P3",
+         "ConnectedObjPortName": "Вход  -",
+         "ConnectedObjPortIndex": "2"
+        }
+      ],
+      "SelfPortName": "Выход цепь 1",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "output"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "Macro236",
+         "ConnectedObjPortName": "Вход LV",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Выход цепь 2",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "output"
+     }
+   ]
+  }
+ ,{
+   "Name": "Macro270",
+   "Class": "Субмодель",
+   "Properties": [
+     {
+      "Name": "Type",
+      "Caption": "Тип",
+      "Formula": "",
+      "Value": "Т-6"
+     }
+    ,{
+      "Name": "Unom",
+      "Caption": "Номинальное напряжение, кВ",
+      "Formula": "6.3",
+      "Value": "6.3"
+     }
+    ,{
+      "Name": "Ta",
+      "Caption": "Постонная времени затухания апериодической составляющей, с",
+      "Formula": "0.13",
+      "Value": "0.13"
+     }
+    ,{
+      "Name": "Pnom",
+      "Caption": "Номинальная мощность, МВт",
+      "Formula": "6",
+      "Value": "6"
+     }
+    ,{
+      "Name": "cosf",
+      "Caption": "Коэффициент мощности, о.е.",
+      "Formula": "0.8",
+      "Value": "0.8"
+     }
+    ,{
+      "Name": "x''d",
+      "Caption": "Сверхпереходное сопротивление по продольной оси",
+      "Formula": "0.1208",
+      "Value": "0.1208"
+     }
+    ,{
+      "Name": "U0",
+      "Caption": "Напряжение на выводах генератора до КЗ по отношению к номинальному, о.е.",
+      "Formula": "1",
+      "Value": "1"
+     }
+    ,{
+      "Name": "I0",
+      "Caption": "Ток на выводах генератора до КЗ по отношению к номинальному, о.е.",
+      "Formula": "1",
+      "Value": "1"
+     }
+    ,{
+      "Name": "x2",
+      "Caption": "Сопротивление обратное последовательности, о.е.",
+      "Formula": "0.147",
+      "Value": "0.147"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node21",
+         "ConnectedObjPortName": "Выход цепь 1",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Вход",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "input"
+     }
+   ]
+  }
+ ,{
+   "Name": "acrms_Q_P4",
+   "Class": "СПТ - Выключатель + Измеритель электрических величин комбинированный",
+   "Properties": [
+     {
+      "Name": "P1",
+      "Caption": "Параметры Выключателя ===================================",
+      "Formula": "",
+      "Value": ""
+     }
+    ,{
+      "Name": "ob_name",
+      "Caption": "Имя",
+      "Formula": "",
+      "Value": "Q"
+     }
+    ,{
+      "Name": "fr_bd",
+      "Caption": "Подключен к БД",
+      "Formula": "",
+      "Value": "0"
+     }
+    ,{
+      "Name": "tbl_name",
+      "Caption": "Имя таблицы БД",
+      "Formula": "",
+      "Value": "БУВ"
+     }
+    ,{
+      "Name": "R",
+      "Caption": "Сопротивление выключателя, Ом",
+      "Formula": "1e-6",
+      "Value": "1E-6"
+     }
+    ,{
+      "Name": "C",
+      "Caption": "Проходная ёмкость выключателя, Ф",
+      "Formula": "0",
+      "Value": "0"
+     }
+    ,{
+      "Name": "P2",
+      "Caption": "Параметры Измерителя ===================================",
+      "Formula": "",
+      "Value": ""
+     }
+    ,{
+      "Name": "_name",
+      "Caption": "Имя измерителя",
+      "Formula": "",
+      "Value": "1#QGT1"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "Key_manual_button_2",
+         "ConnectedObjPortName": "Выход",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Управление (Вкл/Откл)",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "input"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node2v7",
+         "ConnectedObjPortName": "Выход цепь 1",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Вход +",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "input"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node18",
+         "ConnectedObjPortName": "Выход цепь 1",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Вход  -",
+      "SelfPortIndex": "2",
+      "SelfPortDirection": "input"
+     }
+   ]
+  }
+ ,{
+   "Name": "Key_manual_button_2",
+   "Class": "Кнопка",
+   "Properties": [
+     {
+      "Name": "XB01",
+      "Caption": "Выходное значение кнопки",
+      "Formula": "3",
+      "Value": "1"
+     }
+    ,{
+      "Name": "fixed_button",
+      "Caption": "Фиксация кнопки",
+      "Formula": "",
+      "Value": "1"
+     }
+    ,{
+      "Name": "value_button",
+      "Caption": "Значение на выходе",
+      "Formula": "1",
+      "Value": "1"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_Q_P4",
+         "ConnectedObjPortName": "Управление (Вкл/Откл)",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Выход",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "output"
+     }
+   ]
+  }
+ ,{
+   "Name": "acrms_node18",
+   "Class": "СПТ - Узел",
+   "Properties": [
+     {
+      "Name": "U0Re",
+      "Caption": "Потенциал выхода активный",
+      "Formula": "0",
+      "Value": "0"
+     }
+    ,{
+      "Name": "U0Im",
+      "Caption": "Потенциал выхода реактивный",
+      "Formula": "0",
+      "Value": "0"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_Q_P4",
+         "ConnectedObjPortName": "Вход  -",
+         "ConnectedObjPortIndex": "2"
+        }
+      ],
+      "SelfPortName": "Выход цепь 1",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "output"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "Macro268",
+         "ConnectedObjPortName": "Вход",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Выход цепь 2",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "output"
+     }
+   ]
+  }
+ ,{
+   "Name": "Macro272",
+   "Class": "Субмодель",
+   "Properties": [
+     {
+      "Name": "Type",
+      "Caption": "Тип кабеля",
+      "Formula": "",
+      "Value": ""
+     }
+    ,{
+      "Name": "R1",
+      "Caption": "Погонное активное сопротивление, Ом/км",
+      "Formula": "0.077",
+      "Value": "0.077"
+     }
+    ,{
+      "Name": "X1",
+      "Caption": "Погонное индуктивное сопротивление, Ом/км",
+      "Formula": "0.071",
+      "Value": "0.071"
+     }
+    ,{
+      "Name": "L",
+      "Caption": "Длина линии, км",
+      "Formula": "0.05",
+      "Value": "0.05"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node2v7",
+         "ConnectedObjPortName": "Выход цепь 2",
+         "ConnectedObjPortIndex": "2"
+        }
+      ],
+      "SelfPortName": "Вход",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "input"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node22",
+         "ConnectedObjPortName": "Выход цепь 2",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Вход",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "input"
+     }
+   ]
+  }
+ ,{
+   "Name": "Macro273",
+   "Class": "Субмодель",
+   "Properties": [
+     {
+      "Name": "Type",
+      "Caption": "Тип кабеля",
+      "Formula": "",
+      "Value": ""
+     }
+    ,{
+      "Name": "R1",
+      "Caption": "Погонное активное сопротивление, Ом/км",
+      "Formula": "0.74",
+      "Value": "0.74"
+     }
+    ,{
+      "Name": "X1",
+      "Caption": "Погонное индуктивное сопротивление, Ом/км",
+      "Formula": "0.091",
+      "Value": "0.091"
+     }
+    ,{
+      "Name": "L",
+      "Caption": "Длина линии, км",
+      "Formula": "0.05",
+      "Value": "0.05"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node19",
+         "ConnectedObjPortName": "Выход цепь 1",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Вход",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "input"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node2v9",
+         "ConnectedObjPortName": "Выход цепь 1",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Вход",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "input"
+     }
+   ]
+  }
+ ,{
+   "Name": "Macro274",
+   "Class": "Субмодель",
+   "Properties": [
+     {
+      "Name": "Type",
+      "Caption": "Тип кабеля",
+      "Formula": "",
+      "Value": ""
+     }
+    ,{
+      "Name": "R1",
+      "Caption": "Погонное активное сопротивление, Ом/км",
+      "Formula": "0.74",
+      "Value": "0.74"
+     }
+    ,{
+      "Name": "X1",
+      "Caption": "Погонное индуктивное сопротивление, Ом/км",
+      "Formula": "0.091",
+      "Value": "0.091"
+     }
+    ,{
+      "Name": "L",
+      "Caption": "Длина линии, км",
+      "Formula": "0.05",
+      "Value": "0.05"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node16",
+         "ConnectedObjPortName": "Выход цепь 1",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Вход",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "input"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node2v8",
+         "ConnectedObjPortName": "Выход цепь 1",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Вход",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "input"
+     }
+   ]
+  }
+ ,{
+   "Name": "Macro248",
+   "Class": "Субмодель",
+   "Properties": [
+     {
+      "Name": "Type",
+      "Caption": "Комплексная нагрузка",
+      "Formula": "",
+      "Value": ""
+     }
+    ,{
+      "Name": "Eload",
+      "Caption": "Эквивалентная сверхпереходная ЭДС, о.е.",
+      "Formula": "1.074",
+      "Value": "1.074"
+     }
+    ,{
+      "Name": "Rnom",
+      "Caption": "Эквивалентное активное сопротивление",
+      "Formula": "0.04",
+      "Value": "0.04"
+     }
+    ,{
+      "Name": "Xnom",
+      "Caption": "Эквивалентное реактивное сопротивление",
+      "Formula": "0.15",
+      "Value": "0.15"
+     }
+    ,{
+      "Name": "Unom",
+      "Caption": "Номинальное напряжение, кВ",
+      "Formula": "6",
+      "Value": "6"
+     }
+    ,{
+      "Name": "Snom",
+      "Caption": "Номинальная мощность, МВА",
+      "Formula": "5",
+      "Value": "5"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node19",
+         "ConnectedObjPortName": "Выход цепь 2",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Вход",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "input"
+     }
+   ]
+  }
+ ,{
+   "Name": "acrms_node19",
+   "Class": "СПТ - Узел",
+   "Properties": [
+     {
+      "Name": "U0Re",
+      "Caption": "Потенциал выхода активный",
+      "Formula": "0",
+      "Value": "0"
+     }
+    ,{
+      "Name": "U0Im",
+      "Caption": "Потенциал выхода реактивный",
+      "Formula": "0",
+      "Value": "0"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "Macro273",
+         "ConnectedObjPortName": "Вход",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Выход цепь 1",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "output"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "Macro248",
+         "ConnectedObjPortName": "Вход",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Выход цепь 2",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "output"
+     }
+   ]
+  }
+ ,{
+   "Name": "acrms_node20",
+   "Class": "СПТ - Узел",
+   "Properties": [
+     {
+      "Name": "U0Re",
+      "Caption": "Потенциал выхода активный",
+      "Formula": "0",
+      "Value": "0"
+     }
+    ,{
+      "Name": "U0Im",
+      "Caption": "Потенциал выхода реактивный",
+      "Formula": "0",
+      "Value": "0"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "Macro268",
+         "ConnectedObjPortName": "Вход",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Выход цепь 1",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "output"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "Macro246",
+         "ConnectedObjPortName": "Вход",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Выход цепь 2",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "output"
+     }
+   ]
+  }
+ ,{
+   "Name": "acrms_node21",
+   "Class": "СПТ - Узел",
+   "Properties": [
+     {
+      "Name": "U0Re",
+      "Caption": "Потенциал выхода активный",
+      "Formula": "0",
+      "Value": "0"
+     }
+    ,{
+      "Name": "U0Im",
+      "Caption": "Потенциал выхода реактивный",
+      "Formula": "0",
+      "Value": "0"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "Macro270",
+         "ConnectedObjPortName": "Вход",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Выход цепь 1",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "output"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "Macro263",
+         "ConnectedObjPortName": "Вход",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Выход цепь 2",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "output"
+     }
+   ]
+  }
+ ,{
+   "Name": "Macro275",
+   "Class": "Субмодель",
+   "Properties": [
+     {
+      "Name": "Type",
+      "Caption": "Тип",
+      "Formula": "",
+      "Value": "Т-6"
+     }
+    ,{
+      "Name": "Unom",
+      "Caption": "Номинальное напряжение, кВ",
+      "Formula": "6.3",
+      "Value": "6.3"
+     }
+    ,{
+      "Name": "Ta",
+      "Caption": "Постонная времени затухания апериодической составляющей, с",
+      "Formula": "0.13",
+      "Value": "0.13"
+     }
+    ,{
+      "Name": "Pnom",
+      "Caption": "Номинальная мощность, МВт",
+      "Formula": "6",
+      "Value": "6"
+     }
+    ,{
+      "Name": "cosf",
+      "Caption": "Коэффициент мощности, о.е.",
+      "Formula": "0.8",
+      "Value": "0.8"
+     }
+    ,{
+      "Name": "x''d",
+      "Caption": "Сверхпереходное сопротивление по продольной оси",
+      "Formula": "0.1208",
+      "Value": "0.1208"
+     }
+    ,{
+      "Name": "U0",
+      "Caption": "Напряжение на выводах генератора до КЗ по отношению к номинальному, о.е.",
+      "Formula": "1",
+      "Value": "1"
+     }
+    ,{
+      "Name": "I0",
+      "Caption": "Ток на выводах генератора до КЗ по отношению к номинальному, о.е.",
+      "Formula": "1",
+      "Value": "1"
+     }
+    ,{
+      "Name": "x2",
+      "Caption": "Сопротивление обратное последовательности, о.е.",
+      "Formula": "0.147",
+      "Value": "0.147"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node22",
+         "ConnectedObjPortName": "Выход цепь 1",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Вход",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "input"
+     }
+   ]
+  }
+ ,{
+   "Name": "acrms_node22",
+   "Class": "СПТ - Узел",
+   "Properties": [
+     {
+      "Name": "U0Re",
+      "Caption": "Потенциал выхода активный",
+      "Formula": "0",
+      "Value": "0"
+     }
+    ,{
+      "Name": "U0Im",
+      "Caption": "Потенциал выхода реактивный",
+      "Formula": "0",
+      "Value": "0"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "Macro275",
+         "ConnectedObjPortName": "Вход",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Выход цепь 1",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "output"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "Macro272",
+         "ConnectedObjPortName": "Вход",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Выход цепь 2",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "output"
+     }
+   ]
+  }
+ ,{
+   "Name": "acrms_Q_P5",
+   "Class": "СПТ - Выключатель + Измеритель электрических величин комбинированный",
+   "Properties": [
+     {
+      "Name": "P1",
+      "Caption": "Параметры Выключателя ===================================",
+      "Formula": "",
+      "Value": ""
+     }
+    ,{
+      "Name": "ob_name",
+      "Caption": "Имя",
+      "Formula": "",
+      "Value": "Q"
+     }
+    ,{
+      "Name": "fr_bd",
+      "Caption": "Подключен к БД",
+      "Formula": "",
+      "Value": "0"
+     }
+    ,{
+      "Name": "tbl_name",
+      "Caption": "Имя таблицы БД",
+      "Formula": "",
+      "Value": "БУВ"
+     }
+    ,{
+      "Name": "R",
+      "Caption": "Сопротивление выключателя, Ом",
+      "Formula": "1e-6",
+      "Value": "1E-6"
+     }
+    ,{
+      "Name": "C",
+      "Caption": "Проходная ёмкость выключателя, Ф",
+      "Formula": "0",
+      "Value": "0"
+     }
+    ,{
+      "Name": "P2",
+      "Caption": "Параметры Измерителя ===================================",
+      "Formula": "",
+      "Value": ""
+     }
+    ,{
+      "Name": "_name",
+      "Caption": "Имя измерителя",
+      "Formula": "",
+      "Value": "1#QGT1"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "Key_manual_button_3",
+         "ConnectedObjPortName": "Выход",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Управление (Вкл/Откл)",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "input"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_Ground6",
+         "ConnectedObjPortName": "Выход цепь 1",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Вход +",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "input"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node2v5",
+         "ConnectedObjPortName": "Выход цепь 1",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Вход  -",
+      "SelfPortIndex": "2",
+      "SelfPortDirection": "input"
+     }
+   ]
+  }
+ ,{
+   "Name": "Key_manual_button_3",
+   "Class": "Кнопка",
+   "Properties": [
+     {
+      "Name": "XB01",
+      "Caption": "Выходное значение кнопки",
+      "Formula": "3",
+      "Value": "0"
+     }
+    ,{
+      "Name": "fixed_button",
+      "Caption": "Фиксация кнопки",
+      "Formula": "",
+      "Value": "1"
+     }
+    ,{
+      "Name": "value_button",
+      "Caption": "Значение на выходе",
+      "Formula": "1",
+      "Value": "1"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_Q_P5",
+         "ConnectedObjPortName": "Управление (Вкл/Откл)",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Выход",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "output"
+     }
+   ]
+  }
+ ,{
+   "Name": "acrms_node2v5",
+   "Class": "СПТ - Узел - ветвление",
+   "Properties": [
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node16",
+         "ConnectedObjPortName": "Выход цепь 2",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Вход цепь",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "input"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_Q_P5",
+         "ConnectedObjPortName": "Вход  -",
+         "ConnectedObjPortIndex": "2"
+        }
+      ],
+      "SelfPortName": "Выход цепь 1",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "output"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "Macro236",
+         "ConnectedObjPortName": "Вход HV",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Выход цепь 2",
+      "SelfPortIndex": "2",
+      "SelfPortDirection": "output"
+     }
+   ]
+  }
+ ,{
+   "Name": "acrms_node2v7",
+   "Class": "СПТ - Узел - ветвление",
+   "Properties": [
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node15",
+         "ConnectedObjPortName": "Выход цепь 1",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Вход цепь",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "input"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_Q_P4",
+         "ConnectedObjPortName": "Вход +",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Выход цепь 1",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "output"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "Macro272",
+         "ConnectedObjPortName": "Вход",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Выход цепь 2",
+      "SelfPortIndex": "2",
+      "SelfPortDirection": "output"
+     }
+   ]
+  }
+ ,{
+   "Name": "acrms_Ground6",
+   "Class": "СПТ - Узел граничный",
+   "Properties": [
+     {
+      "Name": "U0re",
+      "Caption": "Потенциал узла активный, В",
+      "Formula": "0",
+      "Value": "0"
+     }
+    ,{
+      "Name": "U0im",
+      "Caption": "Потенциал узла реактивный, В",
+      "Formula": "0",
+      "Value": "0"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_Q_P5",
+         "ConnectedObjPortName": "Вход +",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Выход цепь 1",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "output"
+     }
+   ]
+  }
+ ,{
+   "Name": "acrms_node2v8",
+   "Class": "СПТ - Узел - ветвление",
+   "Properties": [
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node24",
+         "ConnectedObjPortName": "Выход цепь 2",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Вход цепь",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "input"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "Macro274",
+         "ConnectedObjPortName": "Вход",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Выход цепь 1",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "output"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node2v9",
+         "ConnectedObjPortName": "Вход цепь",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Выход цепь 2",
+      "SelfPortIndex": "2",
+      "SelfPortDirection": "output"
+     }
+   ]
+  }
+ ,{
+   "Name": "acrms_node24",
+   "Class": "СПТ - Узел",
+   "Properties": [
+     {
+      "Name": "U0Re",
+      "Caption": "Потенциал выхода активный",
+      "Formula": "0",
+      "Value": "0"
+     }
+    ,{
+      "Name": "U0Im",
+      "Caption": "Потенциал выхода реактивный",
+      "Formula": "0",
+      "Value": "0"
+     }
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "Macro263",
+         "ConnectedObjPortName": "Вход",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Выход цепь 1",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "output"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node2v8",
+         "ConnectedObjPortName": "Вход цепь",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Выход цепь 2",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "output"
+     }
+   ]
+  }
+ ,{
+   "Name": "acrms_node2v9",
+   "Class": "СПТ - Узел - ветвление",
+   "Properties": [
+   ],
+   "Connections": [
+     {
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "acrms_node2v8",
+         "ConnectedObjPortName": "Выход цепь 2",
+         "ConnectedObjPortIndex": "2"
+        }
+      ],
+      "SelfPortName": "Вход цепь",
+      "SelfPortIndex": "0",
+      "SelfPortDirection": "input"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "Macro273",
+         "ConnectedObjPortName": "Вход",
+         "ConnectedObjPortIndex": "1"
+        }
+      ],
+      "SelfPortName": "Выход цепь 1",
+      "SelfPortIndex": "1",
+      "SelfPortDirection": "output"
+     }
+    ,{
+      "ConnectedTo": [
+        {
+         "ConnectedObjName": "Macro245",
+         "ConnectedObjPortName": "Вход",
+         "ConnectedObjPortIndex": "0"
+        }
+      ],
+      "SelfPortName": "Выход цепь 2",
+      "SelfPortIndex": "2",
+      "SelfPortDirection": "output"
+     }
+   ]
+  }
+ ,{
+   "Name": "RTFComment6",
+   "Class": "Комментарий",
+   "Properties": [
+     {
+      "Name": "l",
+      "Caption": "Лево",
+      "Formula": "222",
+      "Value": "222"
+     }
+    ,{
+      "Name": "t",
+      "Caption": "Верх",
+      "Formula": "318",
+      "Value": "318"
+     }
+    ,{
+      "Name": "w",
+      "Caption": "Ширина",
+      "Formula": "771",
+      "Value": "771"
+     }
+    ,{
+      "Name": "h",
+      "Caption": "Высота",
+      "Formula": "609",
+      "Value": "609"
+     }
+    ,{
+      "Name": "text",
+      "Caption": "Текст собственно",
+      "Formula": "",
+      "Value": "{\rtf1\ansi\ansicpg1251\deff0\deflang1049{\fonttbl{\f0\fnil\fcharset204 Cambria;}{\f1\fnil\fcharset0 Cambria;}{\f2\fnil Cambria;}}
+\viewkind4\uc1\pard\f0\fs28\'cf\'f0\'e8\'ec\'e5\'f0 \'e2\'fb\'e7\'ee\'e2\'e0 \'f1\'ea\'f0\'e8\'ef\'f2\'e0 \'e0\'ed\'e0\'eb\'e8\'e7\'e0 \'f2\'ee\'ef\'ee\'eb\'ee\'e3\'e8\'e8 \'e8 \'fd\'ea\'f1\'ef\'ee\'f0\'f2\'e0 \'e2 \'f4\'e0\'e9\'eb \'ee\'e1\'ec\'e5\'ed\'e0, \'f1 \'f0\'e0\'f1\'f8\'e8\'f0\'e5\'ed\'e8\'e5\'ec \lang1033\f1 .json. \lang1049\f0\'cf\'ee\'f1\'eb\'e5 \'f1\'f2\'e0\'f0\'f2\'e0 \'e7\'e0\'e4\'e0\'f7\'e8 \'ed\'e0 \'f0\'e0\'f1\'f7\'e5\'f2 \'e2 \'e4\'e8\'f0\'e5\'ea\'f2\'ee\'f0\'e8\'e8 \'ef\'f0\'ee\'e5\'ea\'f2\'e0 \'ef\'f0\'ee\'e8\'f1\'f5\'ee\'e4\'e8\'f2 \'f1\'ee\'e7\'e4\'e0\'ed\'e8\'e5 \lang1033\f1 json-\lang1049\f0\'f4\'e0\'e9\'eb\'e0 \'f1\'ee\'e4\'e5\'f0\'e6\'e0\'f9\'e5\'e3\'ee \'e4\'e0\'ed\'ed\'fb\'e5 \'ee \'f2\'ee\'ef\'ee\'eb\'ee\'e3\'e8\'e8 \'e8 \'f1\'e2\'ee\'e9\'f1\'f2\'e2\'e0\'f5 \'f1\'f5\'e5\'ec\'fb.\f2\fs20\par
+}
+ "
+     }
+   ],
+   "Connections": [
+   ]
+  }
+ ]
+}

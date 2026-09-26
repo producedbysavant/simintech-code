@@ -1,0 +1,758 @@
+
+> **Для разработчиков тулкита.** Этот файл содержит внутреннюю техническую информацию и не требуется для повседневного использования тулкита.
+
+# COM API SimInTech: полный справочник методов IMVTU_Server
+
+Официальная справка: [API SimInTech](https://help.simintech.ru/27_SimInTech_api/DIR_api.html),
+[Командная строка](https://help.simintech.ru/27_SimInTech_api/DIR_komandnaya_stroka.html).
+
+Источник: `mmain.hpp` (MIDL), `SIT COM DEMO.cpp`, эксплуатация через comtypes.
+CLSID: `{ACE730D7-1712-4C70-87C8-7E4C55622E91}`
+IID: `{145848B3-2BE8-4497-9A6B-8A42DA658844}`
+
+Статусы: ✅ проверено на практике, ➖ проверено частично, ❓ не проверено.
+
+---
+
+## 1. Управление проектами
+
+| Метод | Сигнатура | Статус | Описание |
+|-------|-----------|--------|----------|
+| `GetProjectCount` | `() → long` | ✅ | Количество открытых проектов |
+| `GetProjectIdByNumber` | `(long PrjNumber) → __int64` | ✅ | ID проекта по индексу (0-based) |
+| `GetProjectIdByFileName` | `(BSTR PrjFileName) → __int64` | ✅ | ID проекта по имени файла |
+| `OpenProject` | `(BSTR PrjFileName) → __int64` | ✅ | Открыть .prt/.xprt файл |
+| `CloseProject` | `(__int64 ProjectId)` | ✅ | Закрыть проект |
+| `GetActiveProject` | `() → __int64` | ✅ | ID активного проекта |
+| `NewProject` | `() → __int64` | ✅ | Создать новый пустой проект. **В нём нет расчётного слоя — не считает, см. §18** |
+| `OpenTemplate` | `(BSTR TemplateName) → __int64` | ✅ | Создать проект из шаблона; нужен полный путь к `.prt` (см. §18) |
+| `GetOpenedFileName` | `(__int64 ProjectId) → BSTR` | ✅ | Путь к открытому файлу проекта |
+
+---
+
+## 2. Управление симуляцией (ядро тест-раннера)
+
+| Метод | Сигнатура | Статус | Описание |
+|-------|-----------|--------|----------|
+| `ProjectStart` | `(__int64 ProjectId)` | ✅ | Активировать солвер (обязательно перед Run/Step) |
+| `ProjectRun` | `(__int64 ProjectId)` | ✅ | Запустить симуляцию (неблокирующий) |
+| `ProjectStop` | `(__int64 ProjectId)` | ✅ | Остановить симуляцию |
+| `ProjectPause` | `(__int64 ProjectId)` | ✅ | Поставить на паузу |
+| `ProjectStep` | `(__int64 ProjectId)` | ✅ | Один шаг (~0.001 ед. времени) |
+| `RunTo` | `(__int64 ProjectId, double TargetTime) → __int64` | ✅ | Запустить до target time. **Не блокирующий** — см. ниже |
+| `WaitForTime` | `(__int64 ProjectId, double TargetTime) → __int64` | ➖ | Ожидать target time во время Run. В этой сборке возвращает 0 немедленно |
+| `GetProjectTime` | `(__int64 ProjectId) → double` | ✅ | Текущее модельное время |
+
+**Порядок:** `ProjectStart` → `ProjectRun` (или `RunTo`, или `ProjectStep`) → `ProjectStop`
+
+**`RunTo` не блокирует.** Проверено на SimInTech64 (2026-09-15): сразу после
+`RunTo(0.5)` модельное время 0.240 с, через мгновение — уже 0.5 с. Код возврата
+не означает достижения цели, а `WaitForTime` в этой сборке возвращает 0
+немедленно и фактически не ждёт. Достижение подтверждается **только** опросом
+`GetProjectTime` — так делает `Simulation.run_to` (библиотека) и `run` (MCP).
+
+**`ProjectStep` — около 0.001 ед. времени за шаг** (измерено на проекте из
+шаблона: 0.001, 0.002, … после пяти шагов).
+
+### Стоимость COM-рейсов и внешний дедлайн (измерено 2026-09-17)
+
+Замер работы 27 на живом SimInTech64. `run` ждёт расчёт **опросом**
+`GetProjectTime`, а перед этим проходит ещё COM-вызовы; их настенная стоимость
+(проект из шаблона, модель «Константа → Усилитель»):
+
+| Вызов | Настенное время |
+|-------|-----------------|
+| `ProjectStart` | ~22 мс |
+| `ProjectRun` | ~29 мс |
+| `RunTo` | ~47 мс |
+| `GetProjectTime` | ~0.1 мс |
+
+Итого накладные расходы до внутреннего дедлайна — **≈0.1 с**. Это подтверждено
+и косвенно: `run(to_time=1000, wait_timeout=119)` при `COM_CALL_TIMEOUT=120`
+завершился за 119.11 с, то есть на старте ушло ~0.11 с.
+
+Отсюда — измеренное отношение дедлайнов (проверено прогоном, а не выводом):
+
+* `wait_timeout = 119.00` → срабатывает **внутренний** дедлайн, отказ
+  содержательный: «Расчёт не дошёл до 1000.0 с: модельное время 371.404
+  (ждали 119 с)»;
+* `wait_timeout = 119.95` → срабатывает **внешний** дедлайн на 120.13 с, и
+  клиент получает «COM-вызов не ответил за 120 с … Перезапустите mmain.exe».
+
+То есть зазор между внутренним и внешним дедлайном — не миллисекунды, а
+**десятки миллисекунд** (≈0.1 с), и значения `wait_timeout` в интервале
+`[COM_CALL_TIMEOUT − 0.1, COM_CALL_TIMEOUT)` внешний дедлайн выигрывают.
+Проверка `wait_timeout >= COM_CALL_TIMEOUT` такой вход отвергает **не** — она
+закрывает только сам предел и выше.
+
+### Что происходит после срабатывания внешнего дедлайна (измерено 2026-09-17)
+
+COM-вызов в выделенном потоке по таймауту **не прерывается**, и это видно на
+живом COM:
+
+* `step(count=1000)` на медленной модели (~1.5 мс/шаг) при
+  `COM_CALL_TIMEOUT=1.0`: клиент получил отказ на 1.14 с, но шаги **досчитались**
+  — следующее `get_time` вернуло `0.001` (= 1000 × `hmax=1e-6`). То есть
+  «отказ» клиенту выдан, а работа продолжилась.
+* Поток освобождается сам: пробный `GetProcessID` сразу после отказа ждал
+  **0.000 с**. Перезапуск `mmain.exe` для этого не нужен.
+* Для долгого, но штатного `run` (внешний дедлайн на 120.13 с) сервер тоже
+  **не пострадал**: после отказа `get_time` и `list_blocks` отвечали, а рецепт
+  «`disconnect`, затем повторить» **без перезапуска `mmain.exe`** вернул
+  рабочую сессию (`create_project` → новый проект считает).
+
+Смертельный случай — не «таймаут сработал», а «COM-вызов не вернулся никогда»:
+тогда занят единственный выделенный поток, и перезапуск `mmain.exe` тоже не
+помогает, потому что поток занят ожиданием его же ответа. Проверить это на
+живом COM не удалось (зависание не воспроизводится по заказу) — вывод из
+устройства обёртки, а не из замера.
+
+### Переподключение после смерти `mmain.exe` (измерено 2026-09-17)
+
+Убийство процесса (`taskkill /PID … /F`) и следующий вызов:
+
+* пробник живучести `_client_is_alive` (`GetProcessID`) на мёртвом сервере
+  корректно отдаёт **False**;
+* `_ensure_client` тогда подменяет клиент и сбрасывает проект
+  (`session._project → None`) — проверено напрямую;
+* но достигается это только из `create_project`/`open_project`. Остальные
+  COM-инструменты (`list_blocks`, `get_time`, `run`, `step`, …) зовут
+  `session._ensure_project()` напрямую, **минуя пробник**, поэтому на мёртвом
+  сервере отказывают сырым `ComCallError` («Сервер RPC недоступен») и сами не
+  переподключаются, пока клиент не позовёт `create_project`/`open_project`.
+
+---
+
+## 3. Доступ к сигналам (основной способ обмена данными)
+
+| Метод | Сигнатура | Статус | Описание |
+|-------|-----------|--------|----------|
+| `FindSignalData` | `(BSTR SignalName, __int64 ProjectId) → TDataDescriptor` | ✅ | Найти сигнал по имени (внешние/внутренние) |
+| `FindProjectData` | `(BSTR DataName, __int64 ProjectId, long AccesForWrite) → TDataDescriptor` | ➖ | Поиск данных проекта (сложные имена, см. тесты) |
+| `ReadAsFloat` | `(TDataDescriptor) → double` | ✅ | Чтение double-значения сигнала |
+| `ReadAsInteger` | `(TDataDescriptor) → __int64` | ➖ | Чтение целого значения |
+| `ReadAsString` | `(TDataDescriptor) → BSTR` | ➖ | Чтение строкового значения |
+| `WriteAsFloat` | `(TDataDescriptor, double)` | ✅ | Запись double-значения сигнала |
+| `WriteAsInteger` | `(TDataDescriptor, __int64)` | ➖ | Запись целого значения |
+| `WriteAsString` | `(TDataDescriptor, BSTR)` | ➖ | Запись строки |
+
+### Работа с массивами
+
+| Метод | Сигнатура | Статус | Описание |
+|-------|-----------|--------|----------|
+| `GetArrayCount` | `(TDataDescriptor) → long` | ✅ | Размер массива |
+| `GetExtArrayElement` | `(TDataDescriptor, long Index) → double` | ✅ | Чтение элемента double-массива |
+| `GetIntArrayElement` | `(TDataDescriptor, long Index) → __int64` | ➖ | Чтение элемента int-массива |
+| `SetExtArrayElement` | `(TDataDescriptor, long Index, double)` | ➖ | Запись элемента double-массива (нужен desc) |
+| `SetIntArrayElement` | `(TDataDescriptor, long Index, __int64)` | ➖ | Запись элемента int-массива (нужен desc) |
+| `SetArrayCount` | `(TDataDescriptor, long Count)` | ➖ | Изменить размер массива (нужен desc) |
+
+### Типы данных сигналов (DataType в TDataDescriptor)
+
+| Код | Тип | Описание |
+|-----|-----|----------|
+| 0 | double | Вещественное число |
+| 1 | integer | Целое 64-bit |
+| 2 | boolean | Логическое |
+| 4 | string | Строка |
+| 5 | array | Массив double (out_0..out_14) |
+| 12 | intarray | Массив integer |
+
+**TDataDescriptor** - структура `{ __int64 DataId; long DataType; }` с UUID `9A591BFF-874A-4801-9C62-4B91C4C098F5` (VT_RECORD). Требует **comtypes** для корректного marshalling - pywin32 ломает VT_RECORD.
+
+---
+
+## 4. Списки сигналов (обнаружение всех сигналов проекта)
+
+| Метод | Сигнатура | Статус | Описание |
+|-------|-----------|--------|----------|
+| `GetProjectSignalList` | `(__int64 ProjectId) → SAFEARRAY(__int64)` | ⚠️ | Список сигналов проекта. **Не работает под Wine** (SAFEARRAY не маршалится). Workaround: XPRT-парсер. |
+| `GetPackSignalList` | `(__int64 PackId) → __int64` | ✅ | Список сигналов пака |
+| `GetListCount` | `(__int64 ListId) → __int64` | ➖ | Количество элементов в списке |
+| `GetDataInfoFromList` | `(__int64 ListId, long ElementNumber) → (name, caption, desc)` | ➖ | Информация об элементе |
+| `FindDataInListByName` | `(__int64 ListId, BSTR Name) → long` | ➖ | Поиск индекса по имени |
+
+**Примечание:** `GetProjectSignalList` требует comtypes (с pywin32 не работают вызовы с возвратом __int64).
+
+---
+
+## 5. Управление блоками
+
+| Метод | Сигнатура | Статус | Описание |
+|-------|-----------|--------|----------|
+| `CreateBlock` | `(__int64 ProjectId, long LayerNo, __int64 ParentBlock, BSTR LibRecordName) → __int64` | ✅ | Создать блок по имени класса |
+| `SetBlockPosition` | `(__int64 BlockId, double Left, double Top, double W, double H, double Angle)` | ➖ | Позиционирование блока |
+| `SetBlockProp` | `(__int64 BlockId, BSTR PropName, BSTR StrValue)` | ✅ | Установка свойства (все значения - строкой!) |
+| `GetBlockPropAsString` | `(__int64 BlockId, BSTR PropName) → BSTR` | ✅ | Чтение свойства блока |
+| `GetBlockPluginName` | `(__int64 BlockId) → BSTR` | ➖ | Имя плагина блока (сигнатура: нужен BlockId) |
+| `GetBlockCalcTemplate` | `(__int64 BlockId) → BSTR` | ➖ | Шаблон расчёта (сигнатура: нужен BlockId) |
+| `SetGraphBlockProp` | `(__int64 BlockId, BSTR PropName, BSTR StrValue)` | ✅ | Установка графического свойства |
+| `GetPropHandle` | `(__int64 BlockId, BSTR PropName) → __int64` | ✅ | Handle свойства |
+| `GetGraphPropHandle` | `(__int64 BlockId, BSTR PropName) → __int64` | ✅ | Handle графического свойства |
+| `GetBlockEngine` | `(__int64 BlockId) → __int64` | ✅ | ID движка блока |
+| `InitBlock` | `(__int64 BlockId)` | ✅ | Переинициализация блока |
+| `BlockAfterEdit` | `(__int64 BlockId)` | ✅ | Сигнал редактору о изменении |
+| `ExecutePropScript` | `(__int64 BlockId, __int64 DataId)` | ✅ | Выполнить скрипт свойства |
+| `GetPageObjectCount` | `(__int64 ProjectId) → long` | ✅ | Количество объектов на странице |
+| `GetPageBlockId` | `(__int64 ProjectId, long BlockIndex) → __int64` | ✅ | ID блока по индексу |
+
+**Размер блока задавать нельзя — его надо читать у блока.** Проверено на
+SimInTech64 (2026-09-15). `SetBlockPosition` задаёт размер **явно**, вместе с
+положением: переместить блок, не трогая размер, одним вызовом нельзя, поэтому
+незаданные W/H надо брать у самого блока и возвращать их же.
+
+Читаются размеры свойствами `GetBlockPropAsString(BlockId, "Width")` и
+`"Height"` — строкой (`'32'`, `'16'`). Отдельного `GetBlockPosition` в API нет,
+а `x`, `y`, `Left`, `Top`, `w`, `h` в качестве свойств **не читаются** (пусто),
+и их установка — молчаливый no-op: `SetBlockProp("x", …)` принимается без
+ошибки и ничего не делает.
+
+**`CreateBlock` создаёт блок 60x40 — это не штатный размер.** Замерено на 20+
+эталонных моделях поставки и папки «Модели SimInTech» (2026-09-15):
+
+| Класс | Штатный размер |
+|---|---|
+| `Константа` | 32x16 (31 модель; один раз 40x20) |
+| `Усилитель` | 32x32 (30 моделей) |
+| `Интегратор` | 32x32 (15) |
+| `Сумматор` | 32x32 при двух входах, 32x48 при трёх (11 и 10) |
+| `Ступенька`, `Синусоида` | 32x32 |
+| `Временной график` | 48x32 и 48x48 |
+
+Блок нестандартного размера — нарушение правил разработки SimInTech, поэтому
+размер выставляется при создании по таблице `constants.STANDARD_BLOCK_SIZES`
+(`standard_block_size(class_name, in_ports)`). Обёртки: `Block.get_size()`,
+`Page.create_block`; `set_position`/`set_center` сохраняют размер сами.
+
+**Библиотека «Конечные автоматы» создаётся — но только по полному имени
+записи.** Проверено на SimInTech64 (2026-09-15). `CreateBlock` принимает
+**имя записи в библиотеке**, а не заголовок с палитры: короткое
+`Состояние автомата` возвращает 0, а `Конечные автоматы - Состояние автомата` —
+блок (класс в модели будет ровно таким же). Записи лежат в
+`bin/LIB_Konechnye_avtomaty.csl` (внутри — таблица «имя записи → файл»),
+содержимое — в `bin/ParamSet_mvtu/kon_avt/*.ps`. Обёртки:
+`constants.FSM_BLOCK_RECORDS` и `fsm_record("состояние")`.
+
+Порядок создания (проверен): карта — на главной странице;
+`GetSubmodelPage(mapId)` даёт внутреннюю страницу карты, `SetCurrentPage` её
+активирует, и там создаются состояния; у состояния своя страница
+(`GetSubmodelPage`), на ней — `Вход состояния`, `Выход состояния`,
+`Флаг входа в состояние`. Свойства: у карты `default_state`, `state_counter`,
+у состояния `self_state_number`, `is_default`.
+
+Ошибка, которая стоила времени: сообщение «класс не создаётся через COM»
+относилось к *заголовку*; заголовок и имя записи в библиотеке — разные вещи
+(в редакторе это отдельные поля: «имя записи» и «заголовок»).
+
+**Как задаются переходы** (разобрано 2026-09-15 по сохранённому проекту
+эксплуатации с картой конечного автомата на подстранице; сам проект в этот
+репозиторий не входит, поэтому ни имени репозитория, ни пути к нему здесь
+нет — это внутренняя информация):
+
+* у карты: `default_state` — номер стартового состояния, и имена переменных
+  автомата `state_flags_name`, `state_id_name`, `state_values_name`,
+  `state_active_name`, `state_base_data_name`;
+* у состояния: `self_state_number` (номер), `is_default`, плюс
+  `local_active_name`, `local_number_name`, `state_is_active`;
+* внутри состояния SimInTech сам генерирует 11 объектов, включая
+  `Конечные автоматы - Вход состояния`, `- Выход состояния`,
+  `- Выход данных состояния`, `Формирование условия` и
+  `Условие выполнения субмодели`;
+* **переход задаётся номером на блоке состояния**: у «Выхода состояния» —
+  `to_state_number` (куда идём), у «Входа состояния» — `from_state_number`
+  (откуда пришли). В примере у одного состояния бывает несколько выходов
+  (`to_state_number` = 2 и 7);
+* **условие перехода** формируется связкой `Формирование условия` →
+  `Условие выполнения субмодели` (это обычная связь `MBTYWire`), то есть
+  сигнал-условие сначала помечается «Формированием условия», а затем
+  пропускается через «Условие выполнения субмодели»;
+* объекты `Связь состояния` (`StateWire`) и `КА - Связь блоков состояний`
+  (`KA_BlockStateWire`) — проводная графика между блоками состояний; условия
+  и номеров переходов в них нет.
+
+Логику переходов на этапе компиляции собирает скрипт
+`bin/include_mvtu/fsm.inc` (генератор кода автомата, UTF-8+BOM): «состояние» —
+объект со свойством `state_cod`, `state_num` — индекс, `isstartstate` —
+стартовое, `init_cod` — код входа, у блока-условия — `condition_cod`;
+результат — `switch(new_state)` с `curent_state`, `old_state`,
+`fsm_iter_count`, `storestates`.
+
+**Связь состояний делается из обычной линии сменой её класса.**
+Проверено на SimInTech64 (2026-09-16) — сборка автомата целиком через COM:
+
+1. карта (`Конечные автоматы - Карта состояний конечного автомата`) — на
+   главной странице;
+2. состояния (`Конечные автоматы - Состояние автомата`) — на внутренней
+   странице карты (`GetSubmodelPage` + `SetCurrentPage`), у каждого
+   `self_state_number`, у стартового `is_default=1`; у карты `default_state`;
+3. состояния соединяются **обычным** `CreateWire` (как `Block.connect`);
+4. полученной линии меняется класс на `КА - Связь блоков состояний`
+   **графическим** сеттером: `SetGraphBlockProp(wire, "ClassName",
+   "КА - Связь блоков состояний")` (и цвет, штатный — `9740548`). Обычный
+   `SetBlockProp("ClassName", …)` проходит без ошибки и **ничего не меняет** —
+   это графическое свойство, см. `Block.set_graph_prop`.
+5. после этого в модели столько объектов `КА - Связь блоков состояний`,
+   сколько переходов, — как в модели, нарисованной в GUI.
+
+Прямое создание связей не работает: классы `КА - Связь блоков состояний`,
+`Связь состояния`, `Связь состояния 2` через `CreateBlock` возвращают 0.
+Свойства `to_state_number`/`from_state_number` у блоков входа/выхода остаются
+`0` и в модели, нарисованной в GUI, — это внутренняя бухгалтерия редактора,
+заполняемая при компиляции, а не то, что пишет API-клиент.
+
+Практическое замечание по раскладке: линия связи между состояниями — прямая
+между портами, и при расположении состояний в ряд обратный переход ложится
+поверх прямых. Раскладывайте состояния так, чтобы переходы не совпадали
+(например треугольником), либо задавайте опорные точки.
+
+**Изломы связи состояния через API не задаются.** У провода, переименованного
+в `КА - Связь блоков состояний`, `SetWirePoint` не принимается — `Points`
+остаётся пустым; не помогает ни `NormalizeWire`, ни смена класса после
+трассировки (проверено на SimInTech64 2026-09-16). У настоящей связи,
+нарисованной в GUI, изломы лежат в свойстве `Points`
+(например `[(368,200),(368,232),(-24,232),(-24,200)]`) — их ставит редактор
+протяжкой мышью. Поэтому петлю обратного перехода дорисовывают в GUI один
+раз; всё остальное в автомате (карта, состояния, номера, стартовое состояние,
+связи, класс и цвет линий, сохранение) собирается через COM.
+
+Живое состояние автомата лежит в сигнальных переменных карты
+(`state_values_name`, `state_id_name`, `state_flags_name`,
+`state_active_name`) — читаются как обычные сигналы, то есть нужна база
+сигналов; свойства же `state_is_active` у состояния во время расчёта не
+обновляются (всегда 0).
+
+Альтернатива без блоков автомата (когда нужен минимум): «Ступенька» на моменты
+переходов + «Сумматор» — рецепт для `1 → 2 → 3 → 1` ниже.
+
+Автомат собирается из доступных блоков. Проверенный рецепт для перехода
+`1 → 2 → 3 → 1` по времени:
+
+* `Константа a=[1]` — начальное состояние;
+* `Ступенька t=[1], y0=[0], yk=[1]` — переход в состояние 2 на 1 с;
+* `Ступенька t=[2], y0=[0], yk=[1]` — переход в состояние 3 на 2 с;
+* `Ступенька t=[3], y0=[0], yk=[-2]` — возврат в состояние 1 на 3 с;
+* `Сумматор` с четырьмя входами (`in_ports=4`, `a=[1 , 1 , 1 , 1]`) — значение
+  состояния, оно же пишется «В файл».
+
+Траектория из файла результата (шаг 0.25 с): 1 до 1 с, 2 до 2 с, 3 до 3 с,
+с 3 с — снова 1. Для более длинного цикла нужен повторный запуск (рестарт),
+поскольку блоков памяти предметной области через COM нет.
+
+### Имена классов для CreateBlock (подтверждённые)
+
+| Имя класса | Описание |
+|------------|----------|
+| `Константа` | Блок-константа (свойство "a") |
+| `Язык программирования` | Блок-скрипт (свойство "Code") |
+| `Порт выхода` | Output port block |
+| `Сумматор` | Сумматор |
+| `Передаточная функция` | Передаточная ф-я (Laplace) |
+| `Demultiplexor_vec` | Демультиплексор (разбивка шины) |
+
+### Подтверждённые свойства блоков
+
+| Свойство | Блок | Описание |
+|----------|------|----------|
+| `name` | Любой | Имя блока |
+| `a` | Константа | Значение константы (строка!) |
+| `Code` | Язык программирования | Текст скрипта Pascal |
+| `Color` | Любой | Цвет блока (int → PASS/FAIL: 65280=зелёный, 255=красный) |
+| `value` | Порт выхода | Выходное значение (double) |
+| `x` | Любой | Координата X |
+| `y` | Любой | Координата Y |
+
+---
+
+## 6. Порты и соединения
+
+| Метод | Сигнатура | Статус | Описание |
+|-------|-----------|--------|----------|
+| `GetInPort` | `(__int64 BlockId, long InNo) → __int64` | ✅ | Получить входной порт по номеру |
+| `GetOutPort` | `(__int64 BlockId, long OutNo) → __int64` | ✅ | Получить выходной порт по номеру |
+| `GetPortCount` | `(__int64 BlockId) → long` | ✅ | Количество портов блока |
+| `SetPortCount` | `(__int64 BlockId, long Count, long DefaultMode, long DefaultType, long DefaultSide)` | ✅ | Изменить количество портов |
+| `SetCondPortCount` | `(...)` | ➖ | Условное количество портов |
+| `GetPortInfo` | `(__int64 PortId) → (Name, Side, Mode, TypeId, ItemId, ...)` | ✅ | Полная информация о порте (12 полей) |
+| `GetBlockPort` | `(__int64 BlockId, long Index) → __int64` | ✅ | Порт блока по индексу |
+| `SetPortSide` | `(__int64 PortId, long Side)` | ✅ | Сторона порта (left/right/top/bottom) |
+| `SetPortInverse` | `(__int64 PortId, long Inverse)` | ✅ | Инвертировать порт |
+| `SetPortItemId` | `(__int64 PortId, long ItemId)` | ✅ | ID элемента порта |
+| `SetPortMode` | `(__int64 PortId, long Mode)` | ✅ | Режим порта |
+| `SetPortName` | `(__int64 PortId, BSTR PortName)` | ✅ | Имя порта |
+| `SetPortLineTypeId` | `(__int64 PortId, long LineTypeId)` | ✅ | Тип линии порта |
+| `SetPortInvisible` | `(__int64 PortId, long Invisible)` | ✅ | Скрыть порт |
+| `CreateWire` | `(__int64 ProjectId, long LayerNo, long WireType, ...) → __int64` | ✅ | Создать провод между портами |
+| `SetWirePoint` | `(__int64 WireId, long PointNo, double X, double Y)` | ✅ | Точка излома провода |
+| `NormalizeWire` | `(__int64 WireId)` | ✅ | Нормализовать провод |
+
+**Геометрию линии задаёт SimInTech, а не вызывающий.** Проверено на
+SimInTech64 (2026-09-15). Свежесозданная линия идёт **по прямой между портами**
+— то есть по диагонали, если блоки стоят на разной высоте. `NormalizeWire`
+ломает её на ортогональные участки, но маршрут выбирает сам: поворот делается
+примерно на середине между портами, препятствия не учитываются вовсе. Если
+середина попадает на блок, линия пройдёт **сквозь** него; если считать
+маршрут по несобранной схеме (блоки ещё в (0,0) друг на друге), в геометрии
+остаются точки вида `(-160,-1056)` за пределами схемы, и повторная
+нормализация их уже не убирает.
+
+`SetWirePoint` маршрутом **не управляет**: на линии без размеченных точек он
+не даёт ничего (нормализация его игнорирует), а на размеченной — вставляет
+точку в ломаную, из-за чего она идёт назад (зигзаг). Способа задать свои
+изломы в API нет.
+
+Практический вывод: чистая схема получается **расстановкой** блоков — источник
+с единственным приёмником надо ставить вплотную к приёмнику, тогда середина
+маршрута попадает в свободный коридор (`LayeredPlacer` это делает сам).
+`NormalizeWire` всегда возвращает 0 и на неверном `WireId` не отказывает:
+проверить результат можно только по геометрии в файле. Построение обёрток:
+`Wire.normalize()`, порядок — `RepaintEditor` (см. §7), затем нормализация.
+
+### Что `CreateWire` возвращает при отказе (измерено 2026-09-17)
+
+Отдельный замер (работа 27): считалось, что отказ `CreateWire` — это **0** (как
+у `CreateBlock`, где нулевой возврат задокументирован). На SimInTech64 это **не
+подтвердилось**. Сырые вызовы `CreateWire(ProjectId, LayerNo, WireType, 0, -1,
+StartPort, EndPort, 0)` на проекте из шаблона:
+
+| Вход | Результат |
+|------|-----------|
+| валидная пара out → in, слой 0, тип 0 | id ≠ 0, линий на странице стало больше |
+| тот же порт дважды (out → out) | **id ≠ 0**, линия появилась |
+| вход как источник (in → in) | **id ≠ 0**, линия появилась |
+| `layer_no = 7` (такого слоя нет) | **id ≠ 0**, линия появилась |
+| `layer_no = −1` | **id ≠ 0**, линия появилась |
+| `EndPort = 0` | **id ≠ 0**, линия появилась |
+| порт чужого слоя → порт слоя 0 | **id ≠ 0**, линия появилась |
+| `wire_type = 99` | `ComCallError`: access violation в `mmain.exe` |
+| `StartPort = 0` или оба порта 0 | `ComCallError`: access violation в `mmain.exe` |
+| `StartPort` = 0, −1, 12345 (через `Port`) | `ComCallError`: access violation в `mmain.exe` |
+
+Выводы:
+
+1. **Нулевой возврат получить не удалось.** Ветка `if not wire_id` —
+   договорная страховка, а не измеренный путь отказа; на реальных входах она
+   не срабатывает.
+2. **Вырожденные, но ненулевые входы среда принимает молча** и создаёт объект
+   линии (`Page.get_wires()` растёт). Отличить такую линию от настоящей по
+   возврату нельзя — только по геометрии/поведению модели.
+3. **Настоящий отказ — исключение.** COM отдаёт access violation
+   (`[-0x7fff0001] … Access violation … in module 'mmain.exe'`), `ComClient.call`
+   оборачивает его в `ComCallError`. Процесс `mmain.exe` при этом **выживает**:
+   сразу после исключения клиент жив и следующий вызов проходит.
+4. Из MCP отказа достичь нельзя: `connect` берёт порты только через
+   `get_out_port`/`get_in_port`, а те сами бросают `PortError` на нулевом id,
+   поэтому до `CreateWire` доходят лишь валидные порты одного проекта — и они
+   всегда дают непустой id.
+
+---
+
+## 7. Страницы и субмодели
+
+| Метод | Сигнатура | Статус | Описание |
+|-------|-----------|--------|----------|
+| `GetMainPage` | `(__int64 ProjectId) → __int64` | ✅ | ID главной страницы |
+| `SetCurrentPage` | `(__int64 ProjectId, __int64 PageId)` | ✅ | Активировать страницу (нужно для доступа к блокам) |
+| `GetCurentPage` | `(__int64 ProjectId) → __int64` | ✅ | ID текущей страницы. Проверено 2026-09-22: отслеживает активацию (после `SetCurrentPage` на страницу субмодели возвращает её id) и **не меняется** от `SaveProjectXML` и `SetPageScript(…, CompileNow=1)` |
+| `GetSubmodelPage` | `(__int64 BlockId) → __int64` | ✅ | Страница субмодели (внутрь Macro_2) |
+| `PageUp` | `(__int64 PageId) → __int64` | ✅ | Родительская страница |
+| `LoadSubmodel` | `(__int64 BlockId, BSTR FileName)` | ✅ | Загрузить субмодель в блок |
+| `AssignSubmodel` | `(__int64 ProjectId, __int64 BlockId, BSTR FileName)` | ✅ | Назначить субмодель |
+| `SaveProjectBinary` | `(__int64 PrjId, BSTR FileName)` | ✅ | Сохранить как .prt |
+| `SaveProjectXML` | `(__int64 PrjId, BSTR FileName)` | ✅ | Сохранить как XML (для отладки) |
+| `SetPageScript` | `(__int64 ProjectId, BSTR Script, long CompileNow)` | ✅ | Скрипт страницы |
+| `SetPageWindow` | `(__int64 PageId, Left, Top, Width, Height)` | ✅ | Окно страницы |
+| `SetPageCoords` | `(__int64 PageId, double X, double Y, double Scale)` | ✅ | Координаты страницы |
+| `ShowAllBlocks` | `(__int64 ProjectId)` | ✅ | Показать все блоки |
+| `RepaintEditor` | `(__int64 ProjectId)` | ✅ | Перерисовать редактор |
+| `ClearProjectActions` | `(__int64 ProjectId)` | ✅ | Очистить действия |
+
+**Порядок «переместить блоки → перерисовать → трассировать» обязателен.**
+Проверено на SimInTech64 (2026-09-15). `Block.set_center` переносит блок и его
+порты (координаты портов в файле обновляются сразу), но **внутренние
+прямоугольники, по которым SimInTech прокладывает провода, обновляются только
+при перерисовке**. Если сразу после расстановки позвать `NormalizeWire`,
+маршрут строится в обход блоков на прежних местах — в геометрии остаются
+точки вида ``(-160,-1056)``, уходящие далеко за пределы схемы, и линия
+остаётся кривой: повторная нормализация их уже не убирает. С
+`RepaintEditor(ProjectId)` те же линии получаются ортогональными.
+
+`BlockAfterEdit` для каждого блока это **не** заменяет — проверено, геометрия
+остаётся сломанной. Обёртки: `Project.repaint()`, `Wire.normalize()`.
+Отдельно: `NormalizeWire` всегда возвращает 0 и на неверном `WireId` не
+отказывает — проверить результат из API нельзя, только по геометрии в файле.
+
+---
+
+## 8. Pack (многопроектный режим)
+
+| Метод | Сигнатура | Статус | Описание |
+|-------|-----------|--------|----------|
+| `GetPackCount` | `() → long` | ✅ | Количество открытых паков |
+| `GetPackId` | `(long PackNumber) → __int64` | ✅ | ID пака по индексу |
+| `GetPackIdByFileName` | `(BSTR PackFileName) → __int64` | ✅ | ID пака по имени |
+| `OpenPack` | `(BSTR FileName) → __int64` | ✅ | Открыть .pak файл |
+| `ClosePack` | `(__int64 PackId)` | ✅ | Закрыть пак |
+| `FindPackSignal` | `(__int64 PackId, BSTR SignalName) → TDataDescriptor` | ✅ | Найти сигнал в паке |
+| `PackStart` | `(__int64 PackId)` | ✅ | Старт всех проектов пака |
+| `PackRun` | `(__int64 PackId)` | ✅ | Запуск всех проектов |
+| `PackPause` | `(__int64 PackId)` | ✅ | Пауза всех проектов |
+| `PackStop` | `(__int64 PackId)` | ✅ | Остановка всех проектов |
+| `PackStep` | `(__int64 PackId)` | ✅ | Один шаг всех проектов |
+| `RunToPack` | `(__int64 PackId, double TargetTime)` | ✅ | RunTo для пака |
+| `WaitForTimePack` | `(__int64 PackId, double TargetTime)` | ✅ | WaitForTime для пака |
+| `SetRealTimeDelayPack` | `(__int64 PackId, long Flag, double Scale)` | ✅ | Синхронизация с реальным временем |
+| `PackGetProjCount` | `(__int64 PackId) → long` | ✅ | Количество проектов в паке |
+| `PackGetProjectIdByIndex` | `(__int64 PackId, long Index) → __int64` | ✅ | ID проекта по индексу |
+
+---
+
+## 9. Exchange File (файловый обмен данными)
+
+| Метод | Сигнатура | Статус | Описание |
+|-------|-----------|--------|----------|
+| `OpenExchangeFile` | `(TExchangeMethod, BSTR FileName) → __int64` | ✅ | Открыть файл обмена |
+| `CloseExchangeFile` | `(__int64 EngineId)` | ➖ | Закрыть файл обмена (type issue под Wine) |
+| `AddToReadList` | `(TDataDescriptor)` | ➖ | Добавить в список чтения |
+| `AddToWriteList` | `(TDataDescriptor)` | ➖ | Добавить в список записи |
+| `ClearReadList` | `()` | ✅ | Очистить список чтения |
+| `ClearWriteList` | `()` | ✅ | Очистить список записи |
+| `ReadList` | `(__int64 EngineId)` | ✅ | Выполнить чтение |
+| `WriteList` | `(__int64 EngineId)` | ✅ | Выполнить запись |
+| `Read` | `(THandleArray, __int64 EngineId)` | ➖ | Чтение через handle-массив (type issue под Wine) |
+| `Write` | `(THandleArray, __int64 EngineId)` | ➖ | Запись через handle-массив (type issue под Wine) |
+
+TExchangeMethod: `exmFile = 0`, `exmMemMapFile = 1`
+
+---
+
+## 10. Управление формой/окном
+
+| Метод | Сигнатура | Статус | Описание |
+|-------|-----------|--------|----------|
+| `FormShow` | `(__int64 ProjectId)` | ✅ | Показать форму |
+| `FormHide` | `(__int64 ProjectId)` | ✅ | Скрыть форму |
+| `FormBringToFront` | `(__int64 ProjectId)` | ✅ | На передний план |
+| `FormSendToBack` | `(__int64 ProjectId)` | ✅ | На задний план |
+| `GetFormVisible` | `(__int64 ProjectId) → long` | ➖ | Видимость формы (нужен ProjectId, не `()`) |
+| `GetFormState` | `(__int64 ProjectId) → long` | ➖ | Состояние формы (нужен ProjectId) |
+| `SetFormState` | `(__int64 ProjectId, long Value)` | ✅ | Установить состояние |
+| `GetFormHandle` | `(__int64 ProjectId) → __int64` | ➖ | HWND формы (нужен ProjectId) |
+| `GetFormCoords` | `(__int64 ProjectId) → (Left, Top, Right, Bottom, Xcenter, Ycenter, Scale)` | ➖ | Координаты формы (нужен ProjectId) |
+| `SetFormCoords` | `(__int64 ProjectId, ...)` | ➖ | Установить координаты (есть Flags) |
+| `GetFormStyle` | `(__int64 ProjectId) → long` | ➖ | Стиль формы (нужен ProjectId) |
+| `SetFormStyle` | `(__int64 ProjectId, long Value)` | ✅ | Установить стиль |
+| `GetFormBorderStyle` | `(__int64 ProjectId) → long` | ➖ | Стиль рамки (нужен ProjectId) |
+| `SetFormBorderStyle` | `(__int64 ProjectId, long Value)` | ✅ | Установить стиль рамки |
+| `SetFormCaption` | `(__int64 ProjectId, BSTR ACaption)` | ✅ | Заголовок формы |
+| `SetGraphicView` | `(__int64 ProjectId, long Left, ...)` | ➖ | Графическое отображение |
+| `SetMainFormVisible` | `(long Value)` | ✅ | Видимость главного окна |
+
+**`FormShow` нужен перед сохранением, иначе проект «не открывается» в GUI.**
+Проверено на SimInTech64 (2026-09-15). Состояние окна хранится в самом
+проекте — в шапке файла это ``<visible>`` внутри `<Header><project>`. Сессия,
+работающая через COM, формы не показывает, поэтому в сохранённый файл уходит
+``<visible>0</visible>``. Файл при этом рабочий: `OpenProject` его открывает и
+модель считается — но **GUI восстанавливает сохранённое состояние окна и
+оставляет окно модели скрытым**. Пользователь видит пустую рамку SimInTech и
+сообщает, что проект не открылся.
+
+`FormShow(ProjectId)` переводит флаг в 1, и файл открывается как обычно.
+Касается и `.prt`, и `.xprt` — проверено правкой одного `<visible>` в XML.
+`SetFormState(pid, 1)` флаг **не** меняет (и окна не показывает),
+`SetMainFormVisible(1)` — тоже. `FormShow` показывает окно на машине с
+COM-сервером: для безоконного сохранения вызов можно пропустить, но тогда
+файл в GUI не покажется. Обёртка — `Project.show_form()`.
+
+---
+
+## 11. Рестарт (checkpoint/restore)
+
+| Метод | Сигнатура | Статус | Описание |
+|-------|-----------|--------|----------|
+| `WriteProjectRestart` | `(__int64 ProjectId, BSTR FileName)` | ✅ | Сохранить рестарт |
+| `ReadProjectRestart` | `(__int64 ProjectId, BSTR FileName)` | ✅ | Загрузить рестарт |
+| `ResetProjectEngines` | `(__int64 ProjectId)` | ✅ | Сброс движков |
+| `WriteRestartPoint` | `(__int64 ProjectId)` | ✅ | Точка рестарта |
+| `ReadRestartPoint` | `(__int64 ProjectId)` | ✅ | Восстановить точку |
+| `SetProjectReadRestartFile` | `(...)` | ➖ | Настройка чтения рестарта (есть fLoadRst) |
+| `SetProjectWriteRestartFile` | `(...)` | ➖ | Настройка записи рестарта (есть fSaveRst) |
+| `GetProjectRestartNames` | `(__int64 ProjectId) → (readFile, writeFile, ...)` | ➖ | Имена файлов рестарта (нужен ProjectId) |
+| `SetRestartPreserveFlag` | `(__int64 ProjectId, long Flag)` | ✅ | Флаг сохранения рестарта |
+
+---
+
+## 12. Системные методы
+
+| Метод | Сигнатура | Статус | Описание |
+|-------|-----------|--------|----------|
+| `SetSilentMode` | `(long Mode)` | ✅ | 1 = без GUI, 0 = с GUI |
+| `SetShutdownOnLastRelease` | `(long Value)` | ✅ | Завершать процесс при последнем Release |
+| `SetNoCloseAppFlag` | `(long Value)` | ✅ | Не закрывать приложение при закрытии проекта |
+| `SetNoCloseFlag` | `(__int64 ProjectId, long Value)` | ✅ | Per-project no-close |
+| `SetDesktopAsParent` | `(long Value)` | ✅ | Desktop как родительское окно |
+| `SetReadOnlyFlag` | `(__int64 ProjectId, long ReadOnlyFlag)` | ✅ | Read-only режим |
+| `GetEditorFlags` | `(__int64 ProjectId) → (Modified, Saved, PageModified, ReadOnly)` | ➖ | Флаги редактора (нужен ProjectId) |
+| `GetProjectStateFlag` | `(__int64 ProjectId) → long` | ➖ | Флаг состояния проекта (нужен ProjectId) |
+| `GetProcessID` | `() → unsigned long` | ✅ | PID процесса SimInTech |
+| `SetSystemVariable` | `(BSTR aVarName, BSTR aValue)` | ✅ | Системная переменная |
+| `GetSystemVariableValue` | `(BSTR aVarName) → BSTR` | ✅ | Чтение системной переменной |
+| `SetSysProp` | `(...)` | ➖ | Системные свойства проекта |
+| `SetLayerProp` | `(__int64 ProjectId, long LayerNo, BSTR PropName, BSTR StrValue)` | ✅ | Свойства слоя |
+| `SetProjectModified` | `(__int64 ProjectId, long AModified)` | ✅ | Флаг модификации |
+| `SetParentPrjHandle` | `(__int64 ProjectId, __int64 Handle)` | ✅ | Parent handle |
+| `SetPrjPosByPrjId` | `(__int64 SrcPrjId, __int64 DestPrjId)` | ✅ | Позиция проекта |
+| `SetRealTimeDelay` | — | ❌ | Метода нет в интерфейсе вовсе: в `mmain.ridl` отсутствует. Есть только `SetProjectRealTimeDelay` (проект) и `SetRealTimeDelayPack` (пакет) |
+| `WaitForAllLoading` | `()` | ✅ | Ждать загрузки всех ресурсов |
+| `ProcessAllMessages` | `()` | ✅ | Обработка сообщений Windows |
+
+---
+
+## 13. База данных и плагины
+
+| Метод | Сигнатура | Статус | Описание |
+|-------|-----------|--------|----------|
+| `ExportDBToXML` | `(__int64 ProjectId, BSTR DBFileName) → long` | ✅ | Экспорт БД в XML |
+| `GetProjectDB` | `(__int64 ProjectId) → (DBPlugin, DBName)` | ➖ | Информация о БД проекта (нужен ProjectId) |
+| `ReloadProjectDB` | `(__int64 ProjectId, BSTR DBPluginName, BSTR DBName)` | ✅ | Перезагрузить БД |
+| `SetDBOverride` | `(BSTR aOverrideDBPlugin, BSTR aOverrideDBName)` | ✅ | Переопределение БД |
+| `GetLayerName` | `(__int64 ProjectId, long LayerNumber) → BSTR` | ✅ | Имя слоя |
+| `SendPluginCommand` | `(BSTR PluginName, long CommandId, BSTR CommandStr, __int64 ObjId) → (ResultStr, ResultPtr)` | ✅ | Команда плагину |
+
+---
+
+## 14. Примитивы (графика)
+
+| Метод | Сигнатура | Статус | Описание |
+|-------|-----------|--------|----------|
+| `CreatePrimitiv` | `(__int64 ProjectId, long LayerNo, __int64 Parent, long PrimitivId) → __int64` | ✅ | Создать примитив |
+| `AddObjectPoint` | `(__int64 BlockId, double X, double Y)` | ✅ | Добавить точку |
+| `InsertObjectPoint` | `(__int64 BlockId, long Index, double X, double Y)` | ✅ | Вставить точку |
+| `DeleteObjectPoint` | `(__int64 BlockId, long Index, long Count)` | ✅ | Удалить точки |
+| `GetPointCount` | `(__int64 BlockId) → long` | ✅ | Количество точек |
+
+---
+
+## 15. Утилиты
+
+| Метод | Сигнатура | Статус | Описание |
+|-------|-----------|--------|----------|
+| `SetJournalSavePeriod` | `(long Period)` | ➖ | Период сохранения журнала (мс) |
+| `SetPipeName` | `(BSTR PipeName)` | ➖ | Имя пайпа для лога |
+| `SetCallbackHandleAndDataID` | `(__int64 CallbackHWND, __int64 CallBackDataId)` | ✅ | Callback для событий |
+| `SetCmdStr` | `(__int64 ProjectId, BSTR CmdStr)` | ✅ | Команда проекту |
+| `GetCmdStr` | `(__int64 ProjectId) → BSTR` | ➖ | Чтение команды (нужен ProjectId) |
+| `WriteAsFont` | `(TDataDescriptor, BSTR FontName, long FontSize, byte FontStyle)` | ➖ | Запись шрифта (нужен desc) |
+| `SetFontData` | `(__int64 PropHandle, BSTR FontName, long Height, long Color, byte Style)` | ✅ | Данные шрифта |
+
+---
+
+## 16. Рекомендуемый порядок работы (проверенный workflow)
+
+```
+1. SetSilentMode(1)
+2. OpenProject("path.xprt") → pj_id
+3. GetProjectIdByNumber(0) → pj_id (защита от дублирования ID)
+4. GetMainPage(pj_id) → page_id
+5. SetCurrentPage(pj_id, page_id)
+6. FindSignalData("name", pj_id) → desc  (для каждого сигнала)
+7. WriteAsFloat(desc, value)  (запись входов ДО старта)
+8. ProjectStart(pj_id)
+9. ProjectRun(pj_id) или RunTo(pj_id, time) или ProjectStep(pj_id)
+10. ReadAsFloat(desc) → value (чтение выходов)
+11. ProjectStop(pj_id)
+12. CloseProject(pj_id)
+```
+
+### Порядок с WriteAsFloat между шагами (динамическое управление)
+
+```
+1-8. Как выше
+9. ProjectRun(pj_id)
+10. poll GetProjectTime(pj_id)
+11. WriteAsFloat(desc_in, new_value)  (изменение входа на лету)
+12. ProjectStep(pj_id)
+13. ReadAsFloat(desc_out) → value
+14. goto 10 или ProjectStop
+```
+
+---
+
+## 17. Критические ограничения
+
+| Проблема | Причина | Решение |
+|----------|---------|---------|
+| pywin32 не работает | VT_RECORD marshalling broken | comtypes |
+| SetBlockProp("a") не влияет на симуляцию | Константы инициализируются до ProjectStart | WriteAsFloat напрямую |
+| Color не читается из скрипта блока | Color - design-time property | Читать через COM API после остановки |
+| OpenProject не принимает .xprt? | Баг COM API - некоторые версии | Открывать .prt или использовать SaveProjectBinary |
+| `GetProjectTime` не растёт, хотя `ProjectRun`/`RunTo`/`ProjectStep` возвращают успех | Проект создан через `NewProject`: в нём нет расчётного слоя и настроек | Открывать **шаблон** через `OpenTemplate` — см. §18 |
+
+---
+
+## 18. Создание проекта: шаблон, а не `NewProject`
+
+Проверено на SimInTech64 (2026-09-15).
+
+`NewProject` создаёт **пустой** проект. В экспорте `.xprt` у него один слой
+«Нулевой слой» с пустыми `<groups>` и `<pluginname>`, а секция параметров слоя
+`<parameters>` пуста. У работоспособного проекта слой называется «Автоматика»,
+его плагин — `$(Root)\mbtylib.dll@layer`, а в `<parameters>` лежат настройки
+расчёта: подписи «Начальное/Конечное время расчёта» → `starttime`/`endtime`,
+а также `hmin`, `hmax`, `startstep`, `intmet`, `synstep`, `serial_mode` и др.
+
+Следствие: у пустого проекта модельное время **не растёт ничем** — `ProjectRun`
+(опрос 6 с), `RunTo` (возвращает `1`), `WaitForTime` (`0`), `ProjectStep`,
+`GetProjectStateFlag` (`0`). Не помогают `save_binary` с повторным открытием,
+`WaitForAllLoading` и `SetSilentMode(0)`. Ошибки при этом нет: вызовы сообщают
+об успехе, а расчёт не идёт.
+
+**Рабочий путь — `OpenTemplate` с шаблоном пустой модели из поставки:**
+
+```
+C:\SimInTech64\bin\Template\Схема модели общего вида.prt
+```
+
+В GUI это то же, что «Файл → Создать → Схема модели общего вида». По короткому
+имени (без пути) `OpenTemplate` возвращает `0`, нужен полный путь. Рядом лежат
+и другие шаблоны: `Схема БТС.prt`, `Схема ГПС.prt`, `Схема теплогидравлическая.prt`,
+`Схема электрическая.prt`, `Web интерфейс.prt`.
+
+**Настройки расчёта меняются свойством расчётного слоя** (`SetLayerProp`),
+номер слоя `0`, значение — строкой:
+
+```python
+client.call("SetLayerProp", project_id, 0, "endtime", "2.0")   # → handle != 0
+```
+
+Возврат `0` — свойство не принято (например, у проекта нет расчётного слоя:
+для `NewProject` вызов возвращает `0` и ничего не меняет). У шаблонного проекта
+`endtime` по умолчанию `10`; после записи `2` расчёт останавливается ровно на
+`2.0`. Другие свойства слоя задаются так же.
+
+**Методы, отсутствовавшие в таблицах выше** (найдены интроспекцией интерфейса
+`IMVTU_Server`):
+
+| Метод | Назначение |
+|---|---|
+| `SendDataToLayer(i64, long, long, BSTR, …)` | «Послать произвольные данные в расчётный слой» |
+| `GetProjectByCOMName(BSTR) → i64` | Проект по COM-имени |
+
+Остальные имена совпали с уже описанными: `GetPropHandle` («ссылка на элемент
+данных по имени настраиваемого свойства»), `ReloadProjectDB`,
+`ResetProjectEngines`, `ProcessAllMessages`, `RepaintEditor`.
+
+**Вывод результатов.** `get_signal`/`ReadAsFloat` работают только у проекта с
+подключённой базой сигналов. Независимый путь — блок **«В файл»** (класс для
+`CreateBlock`: `В файл`, автоимя `ToFile_0`; справка — «Вывод данных → В файл»):
+пишет по строке на момент времени в формате `<время> <значение 1> … <значение n>`.
+Свойства: `filename` (по умолчанию `file.dat`), `count` (число входов), `step`
+(массив шага записи, по умолчанию `[1]`), `fform`, `strendformat`, `divstyle`.
+Проверено: `Константа(2) → Усилитель(3) → В файл(step=[0.2])` при `endtime=1`
+даёт 6 строк `0 … 1` со значением `6`.
+
+**Неподключённый вход останавливает расчёт всей модели — молча.** Проверено
+там же: схема «Константа → В файл» при связанных входах считает до `1.0`; та же
+схема с висящим входом у «В файл» даёт `GetProjectTime = 0.0` и **никакой
+ошибки**; одна «Константа» без «В файл» — снова `1.0`. То есть отсутствие
+соединения — такая же причина «расчёт не идёт», как и отсутствие расчётного
+слоя, и отличается от него только диагностикой.

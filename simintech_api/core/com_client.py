@@ -1,0 +1,416 @@
+"""COM-клиент: низкоуровневый доступ к серверу SimInTech (IMVTU_Server).
+
+Работает только на Windows (COM). Обёртка над comtypes; TDataDescriptor
+передаётся структурой (VT_RECORD), поэтому pywin32 не подходит.
+"""
+
+from __future__ import annotations
+
+import sys
+from typing import Any, List, Optional
+
+from ..exceptions import ComConnectionError, ComCallError
+from ..model import TDataDescriptor
+
+
+class COMClient:
+    """Подключение к SimInTech через COM и выполнение методов IMVTU_Server.
+
+    Args:
+        silent_mode: запустить SimInTech в скрытом режиме (без UI).
+        com_progid: ProgID COM-объекта. Если None — пробуются стандартные
+            ProgID и CLSID (mmain.MVTU_Server, MVTU.Server,
+            {ACE730D7-1712-4C70-87C8-7E4C55622E91}).
+    """
+
+    # Реально зарегистрированные идентификаторы кокласса MVTU_Server
+    # (библиотека mmain, см. mmain_TLB.pas / mmain.ridl):
+    CLSID_MVTU_SERVER = "{ACE730D7-1712-4C70-87C8-7E4C55622E91}"
+    DEFAULT_PROGIDS = (
+        "mmain.MVTU_Server",   # стандартный ProgID (library.coclass)
+        "MVTU.Server",         # псевдоним из simintech-connector
+    )
+
+    def __init__(self, silent_mode: bool = True,
+                 com_progid: Optional[str] = None):
+        self._server: Any = None
+        self._connected = False
+        self._silent_mode = silent_mode
+        self._com_progid = com_progid
+        # PID процесса, порождённого ЭТИМ клиентом (только его можно завершать).
+        self._owned_pid: Optional[int] = None
+
+    # ─── Жизненный цикл ─────────────────────────────────────────────
+
+    @property
+    def is_available(self) -> bool:
+        """COM доступен только на Windows."""
+        return sys.platform == "win32"
+
+    @property
+    def connected(self) -> bool:
+        """True, если клиент подключён к серверу."""
+        return self._connected
+
+    def connect(self) -> "COMClient":
+        """Подключиться к COM-серверу SimInTech.
+
+        Вызывает mmain.exe (out-of-proc). Требует зарегистрированного
+        COM-объекта: `bin/mmain.exe /regserver`.
+        """
+        if not self.is_available:
+            raise ComConnectionError(
+                "COM API SimInTech работает только на Windows. "
+                "Текущая платформа: " + sys.platform
+            )
+
+        try:
+            import comtypes.client
+        except ImportError as exc:  # pragma: no cover — только Windows
+            raise ComConnectionError(
+                "Библиотека comtypes не установлена: pip install comtypes"
+            ) from exc
+
+        # COM инициализируется ПО ПОТОКАМ. comtypes вызывает CoInitializeEx
+        # при импорте, но только для импортировавшего потока. Асинхронные
+        # серверы (например, MCP/FastMCP) выполняют синхронные инструменты в
+        # рабочих потоках — там COM не инициализирован, и CreateObject падает
+        # с «Не был произведён вызов CoInitialize» (CO_E_NOTINITIALIZED).
+        _ensure_com_initialized()
+
+        # Список идентификаторов для перебора
+        if self._com_progid:
+            candidates = [self._com_progid]
+        else:
+            candidates = list(self.DEFAULT_PROGIDS) + [self.CLSID_MVTU_SERVER]
+
+        last_error = None
+        for ident in candidates:
+            try:
+                self._server = comtypes.client.CreateObject(ident)
+                self._com_progid = ident
+                break
+            except Exception as exc:
+                last_error = exc
+                self._server = None
+
+        if self._server is None:
+            raise ComConnectionError(
+                f"Не удалось создать COM-объект SimInTech "
+                f"(пробовали: {', '.join(map(str, candidates))}). "
+                f"Последняя ошибка: {last_error}. Убедитесь, что SimInTech "
+                f"установлен и выполнен: bin\\mmain.exe /regserver"
+            ) from last_error
+
+        # Защита от автозавершения сервера при отсоединении последнего клиента
+        self._safe_call("SetNoCloseAppFlag", 1)
+        if self._silent_mode:
+            self._safe_call("SetSilentMode", 1)
+
+        # Запоминаем PID процесса SimInTech, к которому подключились.
+        # Убийство процесса НЕ выполняется здесь автоматически — вызывающая
+        # сторона (тесты/утилиты) сама решает, какие процессы завершать,
+        # по принципу «только появившиеся после начала работы» (см. conftest).
+        self._owned_pid = None
+        try:
+            self._owned_pid = _as_int(self._server.GetProcessID())
+        except Exception:
+            self._owned_pid = None
+
+        self._connected = True
+        return self
+
+    def disconnect(self) -> None:
+        """Отсоединиться от сервера (не закрывая приложение)."""
+        self._server = None
+        self._connected = False
+
+    def shutdown(self, kill_pids=None) -> None:
+        """Отсоединиться от сервера.
+
+        По умолчанию НЕ завершает процессы SimInTech (это безопасно: не
+        трогает процессы, запущенные пользователем). Для принудительного
+        завершения укажите kill_pids — список PID'ов, которые можно убить
+        (например, только появившиеся после начала работы).
+
+        Args:
+            kill_pids: итерация PID'ов mmain.exe, разрешённых к завершению.
+                Пусто (по умолчанию) — ничего не убивать.
+        """
+        self.disconnect()
+        if not kill_pids or sys.platform != "win32":
+            return
+        from ..utils.processes import kill_pids as _kill
+        _kill(kill_pids)
+
+    # ─── Низкоуровневые вызовы ──────────────────────────────────────
+
+    def call(self, method: str, *args: Any) -> Any:
+        """Вызвать метод IMVTU_Server и вернуть результат.
+
+        В comtypes [out]-параметры возвращаются в порядке объявления;
+        [in]-параметры передаются как обычные аргументы.
+        """
+        if not self._connected or self._server is None:
+            raise ComConnectionError(
+                "COM-сервер не подключён. Вызовите connect() первым."
+            )
+        func = getattr(self._server, method, None)
+        if func is None:
+            raise ComCallError(
+                method, message="метод не найден в интерфейсе IMVTU_Server")
+        try:
+            return func(*args)
+        except Exception as exc:
+            hr = getattr(exc, "hresult", None) or getattr(exc, "hr", None)
+            raise ComCallError(method, hr=hr, message=str(exc)) from exc
+
+    def _safe_call(self, method: str, *args: Any) -> Any:
+        """Вызов без строгой обработки ошибок (для необязательных настроек)."""
+        if self._server is None:
+            return None
+        func = getattr(self._server, method, None)
+        if func is None:
+            return None
+        try:
+            return func(*args)
+        except Exception:
+            return None
+
+    # ─── Типизированные вспомогательные методы ──────────────────────
+
+    def open_project(self, path: str) -> int:
+        """Открыть проект (.prt/.xprt), вернуть ProjectId (i64)."""
+        project_id = self.call("OpenProject", path)
+        return _as_int(project_id)
+
+    def new_project(self) -> int:
+        """Создать новый проект, вернуть ProjectId.
+
+        Проект получается **пустым**: без моделирующего слоя и настроек расчёта,
+        поэтому он не считает. Для работоспособной модели используйте
+        `open_template()` (см. `Project.from_template`).
+        """
+        project_id = self.call("NewProject")
+        return _as_int(project_id)
+
+    def open_template(self, template: str) -> int:
+        """Создать проект из шаблона SimInTech, вернуть ProjectId.
+
+        Шаблоны лежат в `<корень SimInTech>\\bin\\Template\\*.prt`; имя файла
+        обязательно должно быть полным путём — по короткому имени (без пути)
+        метод возвращает 0 и проект не создаётся.
+        """
+        return _as_int(self.call("OpenTemplate", template))
+
+    def open_pack(self, path: str) -> int:
+        """Открыть пакет проектов (`.pak`), вернуть PackId.
+
+        Пакет — несколько связанных проектов с общим модельным временем:
+        оно равно минимуму времён проектов, а обмен идёт через общую базу
+        сигналов. Состав дают `Pack.project_ids()`. Возвращает 0, если пакет
+        открыть не удалось.
+        """
+        return _as_int(self.call("OpenPack", path))
+
+    def close_pack(self, pack_id: int) -> None:
+        """Закрыть пакет."""
+        self.call("ClosePack", pack_id)
+
+    def get_pack_count(self) -> int:
+        """Сколько пакетов открыто."""
+        return _as_int(self.call("GetPackCount"))
+
+    def set_layer_prop(self, project_id: int, layer_no: int,
+                       name: str, value: Any) -> int:
+        """Установить свойство расчётного слоя проекта, вернуть handle.
+
+        Свойства слоя — это настройки расчёта из секции «Основные параметры»:
+        `endtime`, `starttime`, `hmin`, `hmax`, `intmet` и т. п. Работает
+        только у проекта с настоящим расчётным слоем (шаблон, а не `NewProject`);
+        у пустого проекта возвращает 0 и ничего не меняет (проверено).
+        """
+        return _as_int(self.call("SetLayerProp", project_id, layer_no,
+                                 name, str(value)))
+
+    def get_process_id(self) -> int:
+        """Вернуть PID процесса mmain.exe."""
+        return _as_int(self.call("GetProcessID"))
+
+    # ─── Перечисление открытых проектов ─────────────────────────────
+    #
+    # Группа адресуется номером или именем файла проекта, а не объектом:
+    # она и нужна затем, чтобы получить ProjectId, когда объекта ещё нет.
+    # Поэтому методы живут на клиенте, а не на `Project`.
+    #
+    # Ни один из них не проверен на живом SimInTech: по RIDL каждый отдаёт
+    # единственный [out]-параметр, и значение берётся из кортежа-результата
+    # (`_out_values`). Если в сборке сигнатура другая, обёртка откажет с
+    # понятным сообщением, а не разберёт результат наугад.
+
+    def get_project_count(self) -> int:
+        """Сколько проектов открыто (COM `GetProjectCount`).
+
+        На живом SimInTech не проверено. Ноль означает, что открытых проектов
+        нет, а не ошибку.
+        """
+        return _as_int(_out_values(
+            self.call("GetProjectCount"), "GetProjectCount")[0])
+
+    def get_project_id_by_number(self, number: int) -> int:
+        """Идентификатор проекта по его номеру среди открытых.
+
+        COM `GetProjectIdByNumber`; нумерация, судя по `Pack`, с нуля.
+        Возвращает 0, если проекта с таким номером нет. Нумерация и поведение
+        на живом SimInTech не подтверждены.
+        """
+        return _as_int(_out_values(
+            self.call("GetProjectIdByNumber", int(number)),
+            "GetProjectIdByNumber")[0])
+
+    def get_project_id_by_file_name(self, file_name: str) -> int:
+        """Идентификатор проекта по имени файла (COM `GetProjectIdByFileName`).
+
+        Возвращает 0, если проект с таким именем не открыт. Как именно
+        сопоставляется имя (полный путь, только имя файла, регистр) — на живом
+        SimInTech не подтверждено.
+        """
+        return _as_int(_out_values(
+            self.call("GetProjectIdByFileName", file_name),
+            "GetProjectIdByFileName")[0])
+
+    def get_active_project(self) -> int:
+        """Идентификатор активного проекта (COM `GetActiveProject`).
+
+        Возвращает 0, если активного проекта нет. Что делает проект активным
+        (последний открытый, последняя активированная страница) — на живом
+        SimInTech не подтверждено.
+        """
+        return _as_int(_out_values(
+            self.call("GetActiveProject"), "GetActiveProject")[0])
+
+    def get_opened_file_name(self, project_id: int) -> str:
+        """Путь к файлу, из которого открыт проект (`GetOpenedFileName`).
+
+        Пустая строка означает, что проект не связан с файлом (например,
+        создан через `NewProject`) — это предположение: и оно, и то, полный
+        это путь или короткое имя, на живом SimInTech не подтверждены.
+        """
+        return _as_str(_out_values(
+            self.call("GetOpenedFileName", int(project_id)),
+            "GetOpenedFileName")[0])
+
+    def find_signal(self, name: str, project_id: int) -> Any:
+        """Найти сигнал по имени в проекте; вернуть дескриптор.
+
+        Возвращается дескриптор comtypes как есть — его нельзя подменять
+        нашей одноимённой структурой (см. `_to_descriptor`).
+        """
+        return _to_descriptor(self.call("FindSignalData", name, project_id))
+
+
+# RPC_E_CHANGED_MODE: поток уже инициализирован COM в другом режиме.
+# Это не ошибка — работать можно, просто режим другой.
+_RPC_E_CHANGED_MODE = -2147417850
+
+
+def _ensure_com_initialized() -> None:
+    """Инициализировать COM для ТЕКУЩЕГО потока (идемпотентно).
+
+    COM инициализируется по потокам. `comtypes` вызывает `CoInitializeEx`
+    при импорте, но только для импортировавшего потока. Серверы, выполняющие
+    синхронные обработчики в пуле потоков (MCP/FastMCP, любые async-обёртки),
+    попадают в поток без инициализации — `CreateObject` там падает с
+    `CO_E_NOTINITIALIZED` («Не был произведён вызов CoInitialize»).
+
+    Повторный вызов на уже инициализированном потоке безопасен: `CoInitializeEx`
+    увеличивает счётчик и не переключает режим. `CoUninitialize` намеренно не
+    вызывается — потоки пула переиспользуются, и разбалансировка счётчика
+    опаснее, чем неизрасходованный ресурс на время жизни процесса.
+    """
+    try:
+        import comtypes
+    except ImportError:  # pragma: no cover — только Windows
+        return
+    try:
+        comtypes.CoInitializeEx(comtypes.COINIT_APARTMENTTHREADED)
+    except OSError as exc:
+        winerror = getattr(exc, "winerror", None)
+        if winerror is None:
+            winerror = getattr(exc, "args", [None])[0]
+        if winerror != _RPC_E_CHANGED_MODE:
+            raise
+
+
+def _as_int(value: Any) -> int:
+    """Привести результат COM-вызова к int (comtypes ctypes-значения)."""
+    if value is None:
+        return 0
+    if hasattr(value, "value"):
+        return int(value.value)
+    return int(value)
+
+
+def _as_str(value: Any) -> str:
+    """Привести результат COM-вызова к str (BSTR, VARIANT или None)."""
+    if value is None:
+        return ""
+    if hasattr(value, "value"):
+        return str(value.value)
+    return str(value)
+
+
+def _out_values(result: Any, method: str, count: int = 1) -> List[Any]:
+    """Разобрать результат COM-вызова на [out]-значения.
+
+    comtypes отдаёт [out]-параметры одним кортежем в порядке объявления (для
+    одного параметра — кортежем из одного элемента). Разбирать результат
+    «наугад» нельзя: у метода, которого в этой сборке нет или у которого
+    другая сигнатура, результат будет `None` или пустым, и `TypeError` из
+    распаковки ничего не объясняет. Поэтому такой результат превращается в
+    `ComCallError` с именем метода — иначе неверная сигнатура выглядела бы
+    как ошибка в коде вызывающего.
+
+    Args:
+        result: то, что вернул `COMClient.call`.
+        method: имя COM-метода — попадает в сообщение об отказе.
+        count: сколько [out]-значений ожидается по RIDL.
+
+    Raises:
+        ComCallError: результат пуст (`None`) или значений не столько, сколько
+            объявлено.
+    """
+    if result is None:
+        raise ComCallError(method, message=(
+            f"метод не вернул [out]-значений (получено None), а по RIDL "
+            f"ожидалось {count}. Проверьте сигнатуру метода в этой сборке "
+            f"SimInTech."))
+    # Значение без кортежа — это [out, retval]: comtypes отдаёт его напрямую,
+    # и отличить его от одиночного [out] по результату нельзя.
+    values = list(result) if isinstance(result, (tuple, list)) else [result]
+    if len(values) != count:
+        raise ComCallError(method, message=(
+            f"метод вернул {len(values)} значений вместо {count} ожидаемых "
+            f"по RIDL. Проверьте сигнатуру метода в этой сборке SimInTech."))
+    return values
+
+
+def _to_descriptor(value: Any) -> Any:
+    """Нормализовать дескриптор из результата comtypes-вызова.
+
+    Родной дескриптор comtypes возвращается как есть — см.
+    `utils.converters._to_descriptor`: подмена его нашим одноимённым классом
+    ломает Read*/Write* («expected TDataDescriptor instance instead of
+    TDataDescriptor»).
+    """
+    from ..utils.converters import is_descriptor
+
+    if value is None:
+        return TDataDescriptor()
+    if is_descriptor(value):
+        return value
+    if isinstance(value, (tuple, list)):
+        data_id = value[0] if len(value) > 0 else 0
+        data_type = value[1] if len(value) > 1 else 0
+        return TDataDescriptor(_as_int(data_id), _as_int(data_type))
+    return TDataDescriptor()

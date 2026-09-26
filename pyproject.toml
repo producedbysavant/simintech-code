@@ -1,0 +1,99 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "simintech-api"
+# Версия берётся из `simintech_api/__init__.py`: пока она была прописана в двух
+# местах, они разошлись (в `__init__.py` осталось 0.1.0 против 0.2.0 здесь), и
+# `simintech_api.__version__` врал.
+dynamic = ["version"]
+description = "Python-библиотека для программного управления SimInTech через внешний COM API"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "producedbysavant" }]
+dependencies = [
+    # comtypes — только Windows: COM API SimInTech там и работает
+    "comtypes>=1.1.0; sys_platform == 'win32'",
+    # разбор XML-выгрузок SimInTech: защита от XXE и разворачивания сущностей
+    "defusedxml>=0.7",
+]
+
+[project.optional-dependencies]
+# flake8 и mypy здесь, а не только в CI: CONTRIBUTING обещает прогон по
+# командам ниже, и на чистом окружении он падал с `flake8: command not found` —
+# extras `test` ставил один pytest, а линтер и типы CI доустанавливал сам.
+test = ["flake8>=7.0", "mypy>=1.7", "pytest>=7.0"]
+
+[project.scripts]
+simintech-cli = "simintech_api.cli:main"
+simintech-generate-catalog = "simintech_api.catalog_tool:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["simintech_api"]
+
+[tool.hatch.version]
+path = "simintech_api/__init__.py"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Маркеры объявлены, но не исключались: `pytest` по умолчанию тянул и
+# интеграционные тесты (им нужен COM на Windows), и бенчмарки — а те меряют
+# стенные часы (`< 2.0s`) и на первом же прогоне в CI дали бы флак. Теперь
+# обычный прогон — только модульные тесты; остальное запускается явно:
+# `pytest -m integration`, `pytest -m performance` или `pytest -m distribution`.
+addopts = "-m 'not performance and not integration and not distribution'"
+markers = [
+    "integration: тесты, требующие реального COM-сервера SimInTech на Windows",
+    "performance: бенчмарки производительности placer/router (меряют стенные часы)",
+    # Долгие проверки по установленной поставке: обход дерева Demo по 9p
+    # медленный, а самого SimInTech64 на CI нет.
+    "distribution: сплошные проверки по поставке SimInTech (нужен SimInTech64)",
+]
+
+[tool.mypy]
+python_version = "3.11"
+# Гейт **точечный**: проверяются не все модули пакета, а только те, что не
+# трогают COM и уже полностью аннотированы. `comtypes` поставляется без
+# заглушек, и `--strict` по всему пакету утонул бы в шуме COM-слоя — гейт
+# выглядел бы строгим, ничего не проверяя там, где типовые ошибки и живут.
+# Список растёт по мере аннотирования модулей, а не кампанией сразу.
+strict = true
+files = [
+    "simintech_api/catalog.py",
+    "simintech_api/catalog_tool.py",
+    "simintech_api/cli.py",
+    "simintech_api/constants.py",
+    "simintech_api/core/semantic.py",
+    "simintech_api/csl_library.py",
+    "simintech_api/dbconf.py",
+    "simintech_api/exceptions.py",
+    "simintech_api/language.py",
+    "simintech_api/layout/grid.py",
+    "simintech_api/layout/placer.py",
+    "simintech_api/layout/router.py",
+    "simintech_api/pak.py",
+    "simintech_api/script_probe.py",
+    "simintech_api/semantic.py",
+    "simintech_api/tbl.py",
+    "simintech_api/topology.py",
+    "simintech_api/utils/processes.py",
+    "simintech_api/utils/xprt_signals.py",
+]
+# Список проверяется дважды: обычным прогоном (linux) и вторым
+# `mypy --platform win32`. Без второго весь код после `if sys.platform !=
+# "win32": … return` — а это и cli.py, и catalog_tool.py, и utils/processes.py —
+# для гейта не существует, потому что на linux-платформе он невыполним. Именно
+# в этом слепом кармане прошёл дефект `set_silent_mode`. Оба прогона — в CI.
+# Находки в импортируемых модулях не показывать: пока гейт покрывает не весь
+# пакет, иначе ошибки COM-слоя всплывали бы на каждом прогоне и их пришлось бы
+# глушить, а не чинить.
+follow_imports = "silent"
+
+[[tool.mypy.overrides]]
+# Сторонние библиотеки без заглушек — перечислены поимённо, а не общим
+# `ignore_missing_imports`: общий флаг молча выключил бы проверку и для своих
+# модулей, и гейт перестал бы что-либо значить.
+module = ["comtypes", "comtypes.*", "defusedxml", "defusedxml.*"]
+ignore_missing_imports = true
