@@ -34,3 +34,13 @@
 | `script-compile-errors-are-silent-via-com` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
 | `savemodeltofile-understands-absolute-path` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
 | `createmodelfromfile-did-not-create-objects` | unknown | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `traceallports-order-is-not-a-contract` | verified | official-doc | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `branch-point-is-not-a-separate-object` | verified | official-doc | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `getparentwire-functions-describe-branching` | verified | official-doc | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `getparentwire-functions-return-zero-without-branching` | verified | official-doc | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `object-type-constants-are-named` | verified | official-doc | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `createblock-creates-by-class-name` | verified | official-doc | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `port-index-identity-holds-for-blocks-only` | verified | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | `tests/integration/test_topology_live.py::test_port_index_round_trip_is_identity` (live), `tests/integration/test_topology_live.py::test_line_fails_addressing_round_trip` (live) |
+| `model-text-function-family-has-four-names` | verified | official-doc | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `savemodeltotext-missing-from-distribution` | unknown | source-code | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `tracestartportwires-walks-service-blocks` | verified | official-doc | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |

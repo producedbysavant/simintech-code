@@ -329,3 +329,126 @@
     observed_at: 2026-09-28
   evidence: "Ни роста числа объектов, ни сообщения об отказе — причина не локализована: неизвестно, дело в формате текста, в ожидаемом расширении или в чём-то ещё. Отдельно: обе функции (`savemodeltofile` и `createmodelfromfile`) в срезе справки (`simintech_api/data/language_functions.json`, v15.05.2026, 878 имён) отсутствуют, то есть по реестру имён их существование не подтверждается"
   tests: []
+
+# Второй ответ технической поддержки вендора, 2026-09-28. Здесь другое, чем
+# выше, основание: это **описания вендора**, а не наши замеры, и статус у них
+# соответствующий — тип источника `official-doc` (тот же, что у первого ответа,
+# см. `docs/evidence/sources.md`), который для статуса `verified` достаточен
+# сам. Разбор — в спецификации
+# `docs/superpowers/specs/2026-09-28-wire-level-and-coports.md`, §2.
+
+- id: traceallports-order-is-not-a-contract
+  claim: "Порядок объектов в ответе `traceallports` — не контракт: лист строится подъёмом по `ParentWire` до корневой линии (корень всегда первый), затем рекурсивным обходом в глубину (линия добавляется один раз, дочерние — в порядке индексов), затем сопряжениями с обоих концов; **для сложных топологий порядок не гарантирован**"
+  status: verified
+  source:
+    type: official-doc
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.1"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-28
+  evidence: "Второй ответ технической поддержки вендора, 2026-09-28: «первым идёт источник входа» верно только для топологий **без служебных блоков**, а вендорский `export_1layer_topology` назван обработчиком частного случая, а не рабочим инструментом. Наше основание не отменяется и не подтверждается: взятое у вендора правило кратности берёт у входного порта первого соседа (`min(1, cols(peers))`), то есть порядок для него значим, а на топологии со служебными блоками это не проверялось (см. §4 спецификации)"
+  tests: []
+
+- id: branch-point-is-not-a-separate-object
+  claim: "Точка ветвления не добавляется в модель отдельным элементом: её роль играет сама линия-родитель"
+  status: verified
+  source:
+    type: official-doc
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.2"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-28
+  evidence: "Второй ответ технической поддержки вендора, 2026-09-28. Согласуется с замером 2026-09-28: ветвь адресуется парой «имя линии + номер точки», а не собственным идентификатором, — искать ветвь среди объектов контейнера нечего"
+  tests: []
+
+- id: getparentwire-functions-describe-branching
+  claim: "`getparentwireid` отдаёт идентификатор родительской линии, а `getparentwirenodeindex` — номер точки (начиная с 1) на родительской линии, куда подключена дочерняя; идентификатор ветвления вторая функция не возвращает"
+  status: verified
+  source:
+    type: official-doc
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.3"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-28
+  evidence: "Второй ответ технической поддержки вендора, 2026-09-28: в его примере видны номера 3, 4 и 5 — то есть нумеруются точки линии, а не ветви. Совпадает с замером 2026-09-28 (`wire-node-number-is-point-nmb-plus-one`) и с адресом ветви в выгрузке (`wire:K`, K = узел − 1)"
+  tests: []
+
+- id: getparentwire-functions-return-zero-without-branching
+  claim: "`getparentwireid` и `getparentwirenodeindex` работают только с ветвлением: если линия подключена к порту блока или «висит в воздухе», обе возвращают 0"
+  status: verified
+  source:
+    type: official-doc
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.3"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-28
+  evidence: "Второй ответ технической поддержки вендора, 2026-09-28. Следствие для чтения: ноль здесь значит «ветвления нет», а не «идентификатор неизвестен», и отличить его от ошибки вызова нечем"
+  tests: []
+
+- id: object-type-constants-are-named
+  claim: "У типов объектов есть именованные константы: `otBlock` = 100, `otWire` = 101, `otSubModel` = 102, `otBlockPort` = 103, `otToMem` = 104, `otFromMem` = 105, `otWatchPoint` = 106, `otLineBlock` = 107, `otLabel` = 108, `otNewBlock` = 109, `otCtrlPoint` = 110, `otBridge` = 111, `otInOut` = 112, `otNode` = 113, `otImageFrameBlock` = 114"
+  status: verified
+  source:
+    type: official-doc
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.4"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-28
+  evidence: "Второй ответ технической поддержки вендора, 2026-09-28; числа совпадают с таблицей справки (`getobjtypeid`). Нового знания здесь нет: те же числа называют отбор по типам и докстринги библиотеки — запись фиксирует, что имена вендора и наши числа об одном"
+  tests: []
+
+- id: createblock-creates-by-class-name
+  claim: "`createblock` не привязан к типам объектов: объект создаётся по имени класса из библиотеки блоков — `createblock(getcurrentprojectid, \"Из памяти\")`"
+  status: verified
+  source:
+    type: official-doc
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.5"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-28
+  evidence: "Второй ответ технической поддержки вендора, 2026-09-28. Имя класса — часть контракта создания, и проверить его можно по каталогу поставки (`simintech_api/data/block_catalog.json`). Пример вендора называет класс `Из памяти` — тот самый 105, который отвергает COM-путь (`UnsupportedBlockError`); что язык его создаёт, измерено через `createprimitiv` (запись `createprimitiv-object-has-no-ports`). Основание отбора по типам от этого не меняется: у неконфигурированного объекта портов нет"
+  tests: []
+
+- id: port-index-identity-holds-for-blocks-only
+  claim: "Тождество индекса порта (`getportindex(getblockportid(obj, i)) = i`) верно для всех блоков — функции взаимно обратные; граница у него одна: линии (тип 101) блоками не являются, и на них тождество не держится"
+  status: verified
+  source:
+    type: live-com
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.6"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-28
+  evidence: "Второй ответ технической поддержки вендора, 2026-09-28 — про все блоки; граница на линиях измерена раньше: `getportindex(getblockportid(wire, 1))` вернул 2 вместо 1 (живой тест `test_line_fails_addressing_round_trip`, замер 2026-09-23). Вывод тот же, что у отбора по типам: линии в адресации портов не участвуют"
+  tests:
+    - file: tests/integration/test_topology_live.py
+      id: test_port_index_round_trip_is_identity
+      kind: live
+    - file: tests/integration/test_topology_live.py
+      id: test_line_fails_addressing_round_trip
+      kind: live
+
+- id: model-text-function-family-has-four-names
+  claim: "Семейство функций текста модели вендор называет из четырёх имён: `createmodel`, `createmodelfromfile`, `savemodeltofile`, `savemodeltotext`"
+  status: verified
+  source:
+    type: official-doc
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.7"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-28
+  evidence: "Второй ответ технической поддержки вендора, 2026-09-28. В срезе справки (`simintech_api/data/language_functions.json`, v15.05.2026, 878 имён) нет ни одного из четырёх имён, но там нет и `savemodeltofile` с `createmodelfromfile`, которые отвечали живым вызовом, — поэтому реестр имён для этого семейства не источник ни в ту, ни в другую сторону"
+  tests: []
+
+- id: savemodeltotext-missing-from-distribution
+  claim: "`savemodeltotext` — то единственное имя семейства, которого мы не нашли в поставке 2.26.6.23"
+  status: unknown
+  source:
+    type: source-code
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.7"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-28
+  evidence: "Расхождение с ответом вендора: он называет четыре функции, в поставке видны три. Сам поиск опирался на срез справки (`simintech_api/data/language_functions.json`, v15.05.2026, 878 имён) — ни одного из четырёх имён там нет, но нет и `savemodeltofile` с `createmodelfromfile`, которые отвечали живым вызовом (§1.6), — значит, отсутствие в реестре ничего не доказывает. Причина не локализована: либо функции нет в этой поставке, либо вендор назвал её иначе. Опираться на это имя в сценарии, пока расхождение не разрешено, не на чем"
+  tests: []
+
+- id: tracestartportwires-walks-service-blocks
+  claim: "`tracestartportwires` учитывает встречающиеся на пути служебные блоки — у которых есть сопряжённые порты: «в память», «из памяти», порты субмоделей, шины"
+  status: verified
+  source:
+    type: official-doc
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.8"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-28
+  evidence: "Второй ответ технической поддержки вендора, 2026-09-28 — официальное описание того же механизма, который мы измерили вторым аргументом `traceallports` (запись `traceallports-second-arg-crosses-container`): обход с `1` приносит порты чужого контейнера"
+  tests: []
