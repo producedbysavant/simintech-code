@@ -23,3 +23,14 @@
 | `fsm-blocks-need-full-record-name` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-15 | — |
 | `block-size-covers-few-classes` | measured | source-code | SimInTech64, поставка 2.26.6.23 | 2026-09-17 | — |
 | `semantic-query-and-inspection-agree` | verified | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-26 | `tests/integration/test_semantic_live.py::test_query_connections_matches_vendor_reference` (live) |
+| `traceallports-second-arg-crosses-container` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `wire-node-number-is-point-nmb-plus-one` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `savemodeltofile-describes-current-container` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `createprimitiv-object-has-no-ports` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `createprimitiv-needs-graphic-container` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `objects-are-created-only-in-initialization` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `submodel-ports-are-created-on-its-page` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `tab-is-a-predefined-constant` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `script-compile-errors-are-silent-via-com` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `savemodeltofile-understands-absolute-path` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `createmodelfromfile-did-not-create-objects` | unknown | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |

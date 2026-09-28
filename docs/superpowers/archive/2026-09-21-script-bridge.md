@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.11, `comtypes` (COM), pytest. Никаких новых зависимостей.
 
-**Основание:** `docs/superpowers/specs/2026-09-21-script-bridge-design.md` — спецификация с измерениями на живом SimInTech64.
+**Основание:** `docs/superpowers/archive/2026-09-21-script-bridge-design.md` — спецификация с измерениями на живом SimInTech64.
 
 **Вне области этого плана:** конкретная проба топологии (обход портов и линий, структурированный результат) — отдельный план; вывод моста в MCP — отдельное решение. Здесь только механизм и его контракт отказа.
 
@@ -526,7 +526,7 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'simintech_api.core.scr
 что скрипт записал в файл.
 
 Контракт измерен 2026-09-21 на SimInTech64 (см.
-`docs/superpowers/specs/2026-09-21-script-bridge-design.md`):
+`docs/superpowers/archive/2026-09-21-script-bridge-design.md`):
 
 * `SetPageScript` возвращает `1` всегда — и при синтаксически неверном скрипте
   тоже, поэтому код возврата как признак успеха бесполезен;
@@ -941,7 +941,7 @@ SimInTech64: `SetPageScript` возвращает `1` и при синтакси
 времени. `result.complete == False` означает, что скрипт оборвался и строки
 неполны — использовать их как полный результат нельзя.
 
-Подробности и измерения: `docs/superpowers/specs/2026-09-21-script-bridge-design.md`.
+Подробности и измерения: `docs/superpowers/archive/2026-09-21-script-bridge-design.md`.
 ```
 
 - [ ] **Step 2: Добавить факты в `CLAUDE.md`**

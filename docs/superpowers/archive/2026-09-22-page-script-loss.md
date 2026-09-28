@@ -18,7 +18,7 @@
 **мы**, а не что она просто оказалась единственной изменившейся.
 
 **Стек:** Python 3.11, `comtypes` (COM, только Windows), pytest. Спецификация —
-`docs/superpowers/specs/2026-09-22-page-script-loss-design.md`, все замеры в ней
+`docs/superpowers/archive/2026-09-22-page-script-loss-design.md`, все замеры в ней
 сделаны на копиях поставки SimInTech64.
 
 ## Файловая структура
@@ -1262,7 +1262,7 @@ git commit -m "test(bridge): живая регрессия — скрипт не
 
 **Files:**
 - Modify: `docs/api.md`, `CLAUDE.md`, `docs/reference/com_api_inventory.md`,
-  `docs/superpowers/specs/2026-09-22-page-script-loss-design.md`
+  `docs/superpowers/archive/2026-09-22-page-script-loss-design.md`
 
 - [x] **Step 1: Снять предупреждение в `api.md`**
 

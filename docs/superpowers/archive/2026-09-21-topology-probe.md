@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.11, pytest. Новых зависимостей нет.
 
-**Основание:** `docs/superpowers/specs/2026-09-21-topology-probe-design.md`.
+**Основание:** `docs/superpowers/archive/2026-09-21-topology-probe-design.md`.
 
 **Вне области этого плана:** субмодели, координаты, правка портов, выход в MCP.
 

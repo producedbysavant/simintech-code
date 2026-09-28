@@ -41,12 +41,13 @@ ALLOWED: Tuple[Pattern[str], ...] = (
 ALLOWLIST_PATHS: Tuple[Tuple[str, str], ...] = (
     ("scripts/public_data_check.py", "*"),           # определения правил
     ("tests/unit/test_public_data_check.py", "*"),   # их проверка
-    # План по этому гейту: в нём примеры правил и разбор находок.
-    ("docs/superpowers/plans/2026-09-26-ecosystem-hardening.md", "*"),
+    # План по этому гейту (с 2026-09-28 — в `archive/`): примеры правил и
+    # разбор находок.
+    ("docs/superpowers/archive/2026-09-26-ecosystem-hardening.md", "*"),
     # Дальше — зоны, зависящие от содержимого этого репозитория.
-    # Исторический план: синтетический пример UNC-пути в описании отказа;
-    # план не переписывается — это журнал замеров.
-    ("docs/superpowers/plans/2026-09-21-script-bridge.md", "unc-path"),
+    # Исторический план (в `archive/` с 2026-09-28): синтетический пример
+    # UNC-пути в описании отказа; план не переписывается — это журнал замеров.
+    ("docs/superpowers/archive/2026-09-21-script-bridge.md", "unc-path"),
     # Тест разбора сетевых путей: пример UNC-пути синтетический.
     ("tests/unit/test_script_probe.py", "unc-path"),
 )

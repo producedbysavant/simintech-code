@@ -1,7 +1,7 @@
 # Topology Probe: чтение топологии модели через встроенный язык
 
 Дата: 2026-09-21. Статус: спецификация. Опирается на транспорт, влитый PR #11
-(`docs/superpowers/specs/2026-09-21-script-bridge-design.md`).
+(`docs/superpowers/archive/2026-09-21-script-bridge-design.md`).
 
 ## Задача
 

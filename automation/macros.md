@@ -105,7 +105,7 @@ obj_id = getmainpageid(proj_id);
 * `getportindex` и `getblockportid` — **взаимно обратные**: пример в справке
   берёт `getblockportid(macro2, 2)`, затем `getportindex` от результата и
   получает `2`. Это и есть тождество, на котором стоит адресация связей в
-  пробе топологии (см. `docs/superpowers/specs/2026-09-21-topology-probe-design.md`).
+  пробе топологии (см. `docs/superpowers/archive/2026-09-21-topology-probe-design.md`).
 
 Поиск объектов по классу идёт сравнением результата `getobjclassname`
 с русским именем класса: `«Субмодель»`, `«Порт входа»`, `«Запись в базу сигналов»`.
