@@ -18,12 +18,18 @@ from simintech_api.script_probe import (  # noqa: E402
     BRIDGE_WRITE_PROCEDURE,
     DECOY_DESCRIPTOR_NAME,
     END_MARKER,
+    OUTCOME_ABORTED,
+    OUTCOME_MODEL_NOT_RUNNING,
+    OUTCOME_NOT_COMPILED,
+    OUTCOME_OK,
+    OUTCOME_SECTION_NOT_RUN,
     PAGE_BEGIN_MARKER,
     PAGE_END_MARKER,
     TARGET_TOKEN_HEX_DIGITS,
     bridge_descriptor_name,
     build_page_script,
     build_probe_script,
+    classify_page_result,
     decode_xprt_value,
     find_changed_script_record,
     leftover_of,
@@ -530,3 +536,31 @@ def test_page_script_uses_forward_slashes_and_refuses_quotes():
 
     with pytest.raises(ValueError):
         build_page_script("seterrorflag(0);", 'C:/out/кав"ычка.txt', token="//TOK")
+
+
+def test_classify_page_result_reads_five_outcomes():
+    """Пять исходов различимы.
+
+    Успех, «модель не считает», обрыв, «не собрался», «секция не шла».
+    """
+    full = f"{PAGE_BEGIN_MARKER}\nСТРОКА_ТЕЛА\n{PAGE_END_MARKER}\n"
+    aborted = f"{PAGE_BEGIN_MARKER}\nУСПЕЛО\n"
+
+    ok = classify_page_result(full, time_grew=True)
+    assert ok.kind == OUTCOME_OK
+    assert ok.lines == ["СТРОКА_ТЕЛА"]
+
+    stuck = classify_page_result(full, time_grew=False)
+    assert stuck.kind == OUTCOME_MODEL_NOT_RUNNING
+    assert stuck.lines == ["СТРОКА_ТЕЛА"]
+
+    broken = classify_page_result(aborted, time_grew=False)
+    assert broken.kind == OUTCOME_ABORTED
+    assert broken.lines == ["УСПЕЛО"], "у обрыва видно, что успело записаться"
+
+    not_compiled = classify_page_result("", time_grew=False)
+    assert not_compiled.kind == OUTCOME_NOT_COMPILED
+    assert not_compiled.lines == []
+
+    section_skipped = classify_page_result("", time_grew=True)
+    assert section_skipped.kind == OUTCOME_SECTION_NOT_RUN

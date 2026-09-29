@@ -228,6 +228,61 @@ def build_page_script(body: str, result_path: str, token: str) -> str:
     )
 
 
+#: Исходы контура. Строки, а не перечисление: значение уходит в тексты ответов
+#: и в тесты, где перечисление пришлось бы разворачивать обратно.
+OUTCOME_OK = "ok"
+OUTCOME_MODEL_NOT_RUNNING = "model-not-running"
+OUTCOME_ABORTED = "aborted"
+OUTCOME_NOT_COMPILED = "not-compiled"
+OUTCOME_SECTION_NOT_RUN = "section-not-run"
+
+
+class ContourOutcome(NamedTuple):
+    """Разобранный исход контура.
+
+    `kind` — один из `OUTCOME_*`; `lines` — строки тела между маркерами (у
+    обрыва — то, что успело записаться; у «не собрался» и «секция не шла» —
+    пусто: данных нет, а хранить их рядом с исходом — приглашение однажды ими
+    воспользоваться).
+    """
+
+    kind: str
+    lines: List[str]
+
+
+def classify_page_result(text: str, *, time_grew: bool) -> ContourOutcome:
+    """Классифицировать исход по файлу результата и росту времени.
+
+    До этой функции мост различал только «есть ровно одна пара маркеров» или
+    отказ, и два разных состояния — «скрипт не собрался» и «скрипт собрался, а
+    модель не считает» — выглядели одинаково.
+
+    Маркеры пишет **сам** скрипт страницы (`build_page_script`), поэтому:
+
+    * начального маркера нет — секция `initialization` до исполнения не дошла.
+      Если при этом время росло, расчёт шёл, а секция не выполнилась (редкий
+      случай: сообщаем как есть); если не росло — вероятнее всего скрипт не
+      скомпилировался, и это единственный различимый признак, потому что
+      ошибок компиляции через COM не видно;
+    * начальный есть, конечного нет — тело оборвалось на исполнении (ошибка
+      времени выполнения молча прекращает скрипт);
+    * оба есть — тело дошло до конца; исход зависит от того, пошёл ли расчёт.
+    """
+    lines = text.splitlines()
+    begins = [index for index, line in enumerate(lines)
+              if line == PAGE_BEGIN_MARKER]
+    if not begins:
+        kind = OUTCOME_SECTION_NOT_RUN if time_grew else OUTCOME_NOT_COMPILED
+        return ContourOutcome(kind=kind, lines=[])
+    start = begins[0]
+    ends = [index for index, line in enumerate(lines)
+            if line == PAGE_END_MARKER and index > start]
+    if not ends:
+        return ContourOutcome(kind=OUTCOME_ABORTED, lines=lines[start + 1:])
+    kind = OUTCOME_OK if time_grew else OUTCOME_MODEL_NOT_RUNNING
+    return ContourOutcome(kind=kind, lines=lines[start + 1:ends[0]])
+
+
 def parse_probe_result(text: str) -> ProbeResult:
     """Разобрать файл результата.
 
