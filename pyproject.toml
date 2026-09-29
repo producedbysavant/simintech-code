@@ -77,6 +77,7 @@ files = [
     "simintech_api/layout/grid.py",
     "simintech_api/layout/placer.py",
     "simintech_api/layout/router.py",
+    "simintech_api/model_operations.py",
     "simintech_api/pak.py",
     "simintech_api/script_probe.py",
     "simintech_api/semantic.py",
