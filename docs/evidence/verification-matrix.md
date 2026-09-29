@@ -44,3 +44,5 @@
 | `model-text-function-family-has-four-names` | verified | official-doc | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
 | `savemodeltotext-missing-from-distribution` | unknown | source-code | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
 | `tracestartportwires-walks-service-blocks` | verified | official-doc | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `page-script-runs-in-initialization` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | `tests/integration/test_language_contour_live.py::test_body_runs_in_initialization_and_previous_script_returns` (live) |
+| `language-literal-uses-chr34-and-clrf` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | `tests/unit/test_model_operations.py::test_literal_escapes_quotes_and_newlines_the_measured_way` (unit) |
