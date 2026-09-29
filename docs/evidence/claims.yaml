@@ -204,3 +204,128 @@
     - file: tests/integration/test_semantic_live.py
       id: test_query_connections_matches_vendor_reference
       kind: live
+
+# Замеры 2026-09-28 (поставка 2.26.6.23). Разбор — в спецификации
+# `docs/superpowers/specs/2026-09-28-wire-level-and-coports.md`; автотестов у
+# них нет: проверить их можно только живым прогоном, а он требует Windows.
+
+- id: traceallports-second-arg-crosses-container
+  claim: "`traceallports(port, 1)` обходит сопряжённые порты **через границу контейнера**, а с `0` её не переходит"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.1"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-28
+  evidence: "Опрашивался внешний порт блока «Субмодель» на родительской странице: вызов с `1` вернул внешний источник и два порта страницы субмодели — объект типа 103 («Блок-идентификатор порта») и внутренний блок (у обоих владелец по `getownercontainer` — контейнер субмодели); вызов с `0` — только внешнего соседа. В обратную сторону (опрос внутреннего порта) замер не делался. Вендорский `export_1layer_topology` зовёт функцию с `0`, то есть границу не переходит: её держит аргумент, а не среда"
+  tests: []
+
+- id: wire-node-number-is-point-nmb-plus-one
+  claim: "Номер узла родительской линии = `point_nmb` + 1: `createwire(..., point_nmb, ...)` нумерует точки с нуля, `getparentwirenodeindex` — с единицы"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.2"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-28
+  evidence: "Замер дал переходы 0 → 1 и 1 → 2; на линии без промежуточных точек (`points_count = 0`) обе ветви приходятся на узел 1 и друг от друга неотличимы. Тот же переход виден в выгрузке: адрес ветви `wire:K` нумеруется с нуля, то есть K = узел − 1"
+  tests: []
+
+- id: savemodeltofile-describes-current-container
+  claim: "`savemodeltofile` описывает текущий контейнер: объекты (включая «В память» 104 и «Временной график» 106), провода (`type = \"wire\"`, `src = \"block:out:N\"`, `dst = \"block:in:N\"`) и свойство `script` страницы"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.3"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-28
+  evidence: "Ветвь адресуется как `src = \"wireName:K\"` (K с нуля), что равно `getparentwirenodeindex − 1`. Достаточность этой выгрузки для восстановления дерева сегментов не проверялась"
+  tests: []
+
+- id: createprimitiv-object-has-no-ports
+  claim: "Объект, созданный `createprimitiv` по блочному коду (105/109/113), появляется **без портов** — это штатное состояние неконфигурированного блока"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.4"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-28
+  evidence: "Порт задаётся `setprop(obj, \"PortNames\", \"<имя>\")` + `initobject(obj)`: замер — было 0 портов, стало 1. Класс объекта остаётся внутренним (`FromMem`, `NewBlock`), а не «Из памяти»/«Блок-узел». Прежняя запись «классы 105/109/113 нельзя создать» верна для `CreateBlock`/`add_block`, но не для языка"
+  tests: []
+
+- id: createprimitiv-needs-graphic-container
+  claim: "`createprimitiv` доступна только в графическом контейнере: из макроса среда отвечает «Функция createprimitiv не найдена»"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.4"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-28
+  evidence: "Замер: тот же вызов в скрипте страницы проходит, в макросе — отказ среды"
+  tests: []
+
+- id: objects-are-created-only-in-initialization
+  claim: "Создавать объекты можно только в секции `initialization` скрипта страницы: во время моделирования установка блока запрещена, `createblock` возвращает 0"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.4"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-28
+  evidence: "Во время расчёта `createblock` вернул 0 без сообщения; среда отвечает «Установка блока на схему в процессе моделирования запрещена». Правило «создавать объекты только в `initialization`» подтверждено ответом технической поддержки вендора, 2026-09-28"
+  tests: []
+
+- id: submodel-ports-are-created-on-its-page
+  claim: "Внешние порты субмодели создаются на её странице: `getsubmodelid(sub)` → `createblock(contid, \"Порт входа\" / \"Порт выхода\")`"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.4"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-28
+  evidence: "В `initialization` эти порты ещё не видны (`getblockportcount = 0`) и появляются к первому шагу расчёта; пошагово момент не измерен. Классы «Порт входа» и «Порт выхода» есть в каталоге поставки"
+  tests: []
+
+- id: tab-is-a-predefined-constant
+  claim: "`TAB` — предопределённая константа языка (`TAB = chr(9)`): присваивание ей в секции ломает компиляцию сообщением «Константу нельзя присваивать»"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.5"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-28
+  evidence: "В теле скрипта то же имя работает как локальное: вложенная процедура объявляет собственный `TAB` и компилируется — так написана проба топологии"
+  tests: []
+
+- id: script-compile-errors-are-silent-via-com
+  claim: "Ошибки компиляции скрипта страницы через COM не читаются: расчёт стартует молча, текст ошибки виден только в окне сообщений редактора"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.5"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-28
+  evidence: "Дополняет уже известное (`SetPageScript` возвращает 1 и на некомпилируемом тексте): отличить компилируемый скрипт от некомпилируемого по возврату нельзя, а признак отказа — нерастущее модельное время"
+  tests: []
+
+- id: savemodeltofile-understands-absolute-path
+  claim: "`savemodeltofile` понимает абсолютный путь, а относительный разрешает от рабочего каталога приложения"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.6"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-28
+  evidence: "Замер: выгрузка с абсолютным путём записалась туда, куда её просили, с относительным — в рабочий каталог приложения"
+  tests: []
+
+- id: createmodelfromfile-did-not-create-objects
+  claim: "`createmodelfromfile` на тексте, собранном по образцу демонстрационного проекта, объектов не создал: счётчик не изменился, сообщений не было"
+  status: unknown
+  source:
+    type: live-com
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.6"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-28
+  evidence: "Ни роста числа объектов, ни сообщения об отказе — причина не локализована: неизвестно, дело в формате текста, в ожидаемом расширении или в чём-то ещё. Отдельно: обе функции (`savemodeltofile` и `createmodelfromfile`) в срезе справки (`simintech_api/data/language_functions.json`, v15.05.2026, 878 имён) отсутствуют, то есть по реестру имён их существование не подтверждается"
+  tests: []
