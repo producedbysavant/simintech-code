@@ -18,8 +18,11 @@ from simintech_api.script_probe import (  # noqa: E402
     BRIDGE_WRITE_PROCEDURE,
     DECOY_DESCRIPTOR_NAME,
     END_MARKER,
+    PAGE_BEGIN_MARKER,
+    PAGE_END_MARKER,
     TARGET_TOKEN_HEX_DIGITS,
     bridge_descriptor_name,
+    build_page_script,
     build_probe_script,
     decode_xprt_value,
     find_changed_script_record,
@@ -500,3 +503,30 @@ def test_find_changed_script_record_refuses_token_that_was_already_there():
     with pytest.raises(ScriptBridgeUnsafeStateError) as exc:
         find_changed_script_record(before, after, token)
     assert "до установки" in str(exc.value)
+
+
+# ─── Контур языкового слоя: скрипт страницы и его исходы ─────────────────────
+
+
+def test_page_script_frames_body_with_markers_and_keeps_token_first():
+    """Скрипт страницы: метка первой строкой, тело в initialization, маркеры вокруг."""
+    script = build_page_script("seterrorflag(0);", "C:/out/r.txt", token="//TOK_1")
+    lines = script.splitlines()
+
+    assert lines[0] == "//TOK_1", "метка обязана быть первой строкой"
+    assert "initialization" in script
+    assert f'writelnutf8(br_result_1, "{PAGE_BEGIN_MARKER}");' in script
+    assert f'writelnutf8(br_result_1, "{PAGE_END_MARKER}");' in script
+    assert "  seterrorflag(0);" in script, "тело попадает в скрипт с отступом"
+    assert f"  {DECOY_DESCRIPTOR_NAME} = br_result_1;" in script
+    assert "if firststep then" not in script, (
+        "тело скрипта страницы идёт в initialization: под firststep создавать "
+        "объекты уже запрещено")
+
+
+def test_page_script_uses_forward_slashes_and_refuses_quotes():
+    script = build_page_script("seterrorflag(0);", r"C:\out\r.txt", token="//TOK")
+    assert 'createfile("C:/out/r.txt", -1)' in script
+
+    with pytest.raises(ValueError):
+        build_page_script("seterrorflag(0);", 'C:/out/кав"ычка.txt', token="//TOK")

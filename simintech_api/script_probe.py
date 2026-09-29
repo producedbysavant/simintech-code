@@ -173,6 +173,61 @@ def build_probe_script(body: str, result_path: str, token: str) -> str:
     )
 
 
+#: Маркеры контура языкового слоя. От маркеров моста (`SCRIPT_BRIDGE_*`)
+#: отличаются намеренно: там границу держит **проба**, здесь — скрипт страницы,
+#: и по маркерам контур различает пять исходов
+#: (`docs/superpowers/specs/2026-09-29-language-contour.md` §3). Смешать их
+#: значило бы потерять это различие: у моста «нет конечного маркера» — отказ,
+#: у контура — один из четырёх различимых исходов.
+PAGE_BEGIN_MARKER = "CTX_BEGIN"
+PAGE_END_MARKER = "CTX_END"
+
+
+def build_page_script(body: str, result_path: str, token: str) -> str:
+    """Собрать скрипт страницы: `initialization`, маркеры контура и тело.
+
+    Тело исполняется в секции `initialization`, потому что создавать объекты
+    разрешено только там (измерено 2026-09-28: во время расчёта среда отвечает
+    «Установка блока на схему в процессе моделирования запрещена», а
+    `createblock` возвращает 0).
+
+    Метка (`token`) ставится **первой строкой**, до секции: она остаётся в
+    скрипте, даже если тело не скомпилировалось, — а именно по ней мост
+    опознаёт в выгрузке ту запись, которую изменил он сам, чтобы вернуть
+    прежний скрипт (`find_changed_script_record`).
+
+    Дескриптор результата недоступен телу по имени: он назван случайной частью
+    метки (`bridge_descriptor_name`), а `fid` — приманка. Причина та же, что у
+    `build_probe_script`: чужой код внутри тела (вендорская
+    `export_1layer_topology`) присваивает `fid = createfile(...)` и увёл бы
+    дескриптор контура вместе с его маркерами.
+
+    Путь переводится в прямые слэши и не может содержать кавычку или перевод
+    строки — он подставляется в литерал встроенного языка.
+    """
+    if '"' in result_path or "\n" in result_path or "\r" in result_path:
+        raise ValueError(
+            "путь результата не может содержать кавычку или перевод строки: "
+            f"{result_path!r} — он подставляется в литерал встроенного языка")
+    literal_path = result_path.replace("\\", "/")
+    name = bridge_descriptor_name(token)
+    indented = "".join(
+        f"  {line}\n" for line in body.splitlines() if line.strip())
+    return (
+        f"{token}\n"
+        "initialization\n"
+        f"  var {name}: integer;\n"
+        f"  var {DECOY_DESCRIPTOR_NAME}: integer;\n"
+        f'  {name} = createfile("{literal_path}", -1);\n'
+        f'  writelnutf8({name}, "{PAGE_BEGIN_MARKER}");\n'
+        f"  {DECOY_DESCRIPTOR_NAME} = {name};\n"
+        f"{indented}"
+        f'  writelnutf8({name}, "{PAGE_END_MARKER}");\n'
+        f"  freeobject({name});\n"
+        "end;\n"
+    )
+
+
 def parse_probe_result(text: str) -> ProbeResult:
     """Разобрать файл результата.
 
