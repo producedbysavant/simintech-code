@@ -1082,3 +1082,44 @@ def test_run_page_script_keeps_model_stuck_separate_from_success(tmp_path):
 
     assert result.outcome.kind == OUTCOME_MODEL_NOT_RUNNING
     assert result.outcome.lines == ["A"]
+
+
+# ─── Чтение скрипта страницы ─────────────────────────────────────────────────
+
+
+def test_read_page_script_returns_text_without_touching_calculation(tmp_path):
+    """Чтение скрипта: текст возвращён, расчёт НЕ запускался.
+
+    Через `run_page_script` читать нельзя: он запускает `ProjectStart`, а тот
+    обнуляет модельное время — читающий инструмент уничтожил бы результаты
+    расчёта вызывающего. Проверка сторожит именно это.
+    """
+    env, bridge = _bridge(installed="// прежний скрипт\nseterrorflag(0);")
+
+    text = bridge.read_page_script()
+
+    assert text == "// прежний скрипт\nseterrorflag(0);"
+    assert env.scripts[0] == "// прежний скрипт\nseterrorflag(0);", (
+        "прежний скрипт не вернулся на место")
+    called = [name for name, _ in env.calls]
+    assert "ProjectStart" not in called, "чтение запустило расчёт"
+    assert "ProjectStep" not in called
+
+
+def test_read_page_script_returns_empty_string_for_page_without_script(tmp_path):
+    """Пустой скрипт — это скрипт, а не «нечего читать» и не отказ."""
+    env, bridge = _bridge(installed="")
+
+    assert bridge.read_page_script() == ""
+    assert env.scripts[0] == ""
+
+
+def test_read_page_script_refuses_on_calculating_project(tmp_path):
+    """Идущий расчёт — отказ до всякой работы: чтение не смеет его сломать."""
+    env, bridge = _bridge()
+    env.state = 7  # расчёт уже идёт: значение из измеренной маски
+
+    with pytest.raises(ScriptBridgeUnsafeStateError):
+        bridge.read_page_script()
+
+    assert env.set_page_script_calls() == [], "проект тронут при идущем расчёте"

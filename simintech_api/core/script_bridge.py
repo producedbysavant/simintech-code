@@ -293,6 +293,83 @@ class ScriptBridge:
         outcome = classify_page_result(run.text, time_grew=self._last_time_grew)
         return PageRunResult(outcome=outcome, restored_script=run.restored_script)
 
+    def read_page_script(self) -> str:
+        """Прочитать скрипт текущей страницы, **не запуская расчёт**.
+
+        У COM нет чтения скрипта страницы: `SetPageScript` пишет и о прежнем
+        содержимом не сообщает ничего, а `GetPageScript` в интерфейсе нет вовсе
+        (`docs/reference/com_api_inventory.md`). Различимый путь один — тот же,
+        которым мост возвращает прежний скрипт: поставить в страницу **заглушку
+        с меткой**, снять снимок выгрузки и взять из него прежний текст той
+        записи, которую изменила установка.
+
+        Расчёт здесь **не запускается**: `ProjectStart` — это инициализация, и
+        она обнуляет модельное время (см. `_refuse_if_calculating`). Читающий
+        инструмент, сдвигающий время, уничтожал бы результаты расчёта
+        вызывающего — цена, которой чтение не стоит.
+
+        Шаги те же, что у `_execute_installed`, но общий помощник не выделен
+        намеренно: между установкой и возвратом там стоит расчёт, и «общая»
+        функция получила бы флаг «запускать ли расчёт» — то есть развилку,
+        ради которой её и пришлось бы читать.
+        """
+        target_page_id, before, token = self._prepare()
+        # Заглушка — только метка. Пустая строка не годится: изменившаяся
+        # запись обязана содержать метку, иначе `find_changed_script_record`
+        # откажет («изменилась чужая страница»), и цель не будет опознана.
+        stub = token + "\n"
+        target = None
+        original = None
+        probe_error = None
+        try:
+            try:
+                self.install_script(stub)
+            except BaseException as exc:                          # noqa: BLE001
+                raise self._unsafe(
+                    f"не удалось поставить заглушку для чтения скрипта: {exc}.",
+                    self._records_or_none(), token,
+                    snapshot_proves_absence=False) from exc
+            try:
+                after = self._dump_records()
+            except BaseException as exc:                          # noqa: BLE001
+                raise self._unsafe(
+                    "не удалось снять снимок скриптовых записей после "
+                    f"установки заглушки: {exc}.",
+                    self._records_or_none(), token,
+                    snapshot_proves_absence=False) from exc
+            try:
+                target = find_changed_script_record(before, after, token)
+            except ScriptBridgeUnsafeStateError as exc:
+                raise self._unsafe(f"{exc}", after, token,
+                                   snapshot_proves_absence=False) from exc
+            raw_original = before[target]
+            if leftover_of(raw_original):
+                raise self._unsafe(
+                    f"скриптовая запись {target} содержит нераспознанный текст "
+                    "выгрузки: прочитать скрипт нечем — кодек покрывает не "
+                    "весь текст, и вернулось бы усечённое значение.",
+                    after, token)
+            try:
+                original = decode_xprt_value(raw_original)
+            except ScriptBridgeError as exc:
+                raise self._unsafe(
+                    f"скриптовая запись {target} не разбирается: {exc}.",
+                    after, token) from exc
+        except BaseException as exc:                              # noqa: BLE001
+            probe_error = exc
+            raise
+        finally:
+            restore_problem = None
+            if target is not None and original is not None:
+                try:
+                    self._restore_script(before, target, original,
+                                         target_page_id, token, probe_error)
+                except ScriptBridgeUnsafeStateError as exc:
+                    restore_problem = exc
+            if restore_problem is not None:
+                raise restore_problem
+        return original if original is not None else ""
+
     def _execute_installed(self, script: str, result_path: Path, token: str,
                            target_page_id: int, before: List[str], *,
                            time_growth_is_an_error: bool = True) -> InstalledRun:
