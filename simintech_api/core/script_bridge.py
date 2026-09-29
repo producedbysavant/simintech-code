@@ -458,7 +458,8 @@ class ScriptBridge:
                 self._last_time_grew = True
             else:
                 self._last_time_grew = self._try_start_and_wait()
-            text = self._read_result_text(result_path)
+            text = self._read_result_text(
+                result_path, missing_is_empty=not time_growth_is_an_error)
         except BaseException as exc:
             probe_error = exc
             raise
@@ -571,13 +572,25 @@ class ScriptBridge:
                     "инициализирован, добавление блока отвергается.")
         return None
 
-    def _read_result_text(self, result_path: Path) -> str:
+    def _read_result_text(self, result_path: Path, *,
+                          missing_is_empty: bool = False) -> str:
         """Прочитать файл результата **сырым** текстом.
 
         Разбор у вызывающего: мосту нужна пара маркеров как признак, контуру —
         маркеры контура и то, что успело записаться при обрыве.
+
+        `missing_is_empty` — как понимать **отсутствие** файла. Мост на нём
+        отказывает (флага нет): там это признак обрыва. Контур передаёт `True`,
+        потому что у него отсутствие файла означает другое состояние — скрипт
+        **не скомпилировался** (живой замер 2026-09-29: у не собравшегося скрипта
+        файл не создаётся вовсе, в отличие от оборвавшегося, который успевает
+        записать начальный маркер). Отказ здесь терял бы ровно то различие, ради
+        которого контур и делался: «не собрался» отличается от «оборвался» и от
+        «модель не считает» — и различает их классификатор по пустому тексту.
         """
         if not result_path.exists():
+            if missing_is_empty:
+                return ""
             raise ScriptBridgeError(
                 "скрипт не создал файл результата: расчёт шёл, но скрипт "
                 f"оборвался до записи в {result_path}. Ошибка времени "

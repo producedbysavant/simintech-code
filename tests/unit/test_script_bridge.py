@@ -1123,3 +1123,38 @@ def test_read_page_script_refuses_on_calculating_project(tmp_path):
         bridge.read_page_script()
 
     assert env.set_page_script_calls() == [], "проект тронут при идущем расчёте"
+
+
+def test_run_page_script_reports_not_compiled_when_file_absent(tmp_path):
+    """Файла нет вовсе — это исход «не собрался», а не отказ.
+
+    Живой замер 2026-09-29: у **не собравшегося** скрипта файл результата не
+    создаётся совсем (в отличие от оборвавшегося — тот успевает записать
+    начальный маркер). Пока это было отказом «файл не создан», контур терял
+    ровно то различие, ради которого он делался.
+    """
+    env, bridge = _bridge(writes_result=False, time_grows=False)
+
+    result = bridge.run_page_script("x();", tmp_path / "r.txt")
+
+    assert result.outcome.kind == OUTCOME_NOT_COMPILED
+    assert result.outcome.lines == []
+
+
+def test_run_page_script_reports_section_not_run_when_file_absent(tmp_path):
+    """Тот же случай, но время росло: секция не выполнилась — и это отдельный исход."""
+    env, bridge = _bridge(writes_result=False, time_grows=True)
+
+    result = bridge.run_page_script("x();", tmp_path / "r.txt")
+
+    assert result.outcome.kind == OUTCOME_SECTION_NOT_RUN
+
+
+def test_run_probe_still_refuses_when_file_absent(tmp_path):
+    """Мост на отсутствии файла по-прежнему отказывает: у него это признак обрыва."""
+    env, bridge = _bridge(writes_result=False)
+
+    with pytest.raises(ScriptBridgeError) as exc:
+        bridge.run_probe("", tmp_path / "out.txt")
+
+    assert "файл результата" in str(exc.value)
