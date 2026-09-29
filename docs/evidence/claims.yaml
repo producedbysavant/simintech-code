@@ -285,7 +285,7 @@
     ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.4"
     product_version: "SimInTech64, поставка 2.26.6.23"
     observed_at: 2026-09-28
-  evidence: "В `initialization` эти порты ещё не видны (`getblockportcount = 0`) и появляются к первому шагу расчёта; пошагово момент не измерен. Классы «Порт входа» и «Порт выхода» есть в каталоге поставки"
+  evidence: "Классы «Порт входа» и «Порт выхода» есть в каталоге поставки. Видимость портов уточнена замером 2026-09-29: без `initsubmodelports` в `initialization` их не видно (`getblockportcount = 0`), а с ним — видно сразу (запись `initsubmodelports-makes-ports-immediately-visible`)"
   tests: []
 
 - id: tab-is-a-predefined-constant
@@ -323,13 +323,13 @@
 
 - id: createmodelfromfile-did-not-create-objects
   claim: "`createmodelfromfile` на тексте, собранном по образцу демонстрационного проекта, объектов не создал: счётчик не изменился, сообщений не было"
-  status: unknown
+  status: refuted
   source:
     type: live-com
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.6"
+    ref: "docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.4"
     product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-28
-  evidence: "Ни роста числа объектов, ни сообщения об отказе — причина не локализована: неизвестно, дело в формате текста, в ожидаемом расширении или в чём-то ещё. Отдельно: обе функции (`savemodeltofile` и `createmodelfromfile`) в срезе справки (`simintech_api/data/language_functions.json`, v15.05.2026, 878 имён) отсутствуют, то есть по реестру имён их существование не подтверждается"
+    observed_at: 2026-09-29
+  evidence: "Опровергнуто замером 2026-09-29: причина была на нашей стороне — кавычка в тексте модели задавалась неверно. Удвоение `\"\"` в этой сборке даёт **пустую строку**, обратный слэш не экранирует; с `chr(34)` тот же текст принимается и объекты создаются. Пять демонстрационных проектов поставки (`createmodel`, `createmodelfromfile`, `eval` из файла, `loadtextfromfile`, `savemodeltofile`) проходят; дефекта у вендора нет, сигнал снят"
   tests: []
 
 # Второй ответ технической поддержки вендора, 2026-09-28. Здесь другое, чем
@@ -453,4 +453,84 @@
     product_version: "SimInTech64, поставка 2.26.6.23"
     observed_at: 2026-09-28
   evidence: "Второй ответ технической поддержки вендора, 2026-09-28 — официальное описание того же механизма, который мы измерили вторым аргументом `traceallports` (запись `traceallports-second-arg-crosses-container`): обход с `1` приносит порты чужого контейнера"
+  tests: []
+
+# Замеры 2026-09-29: субмодель со скриптом, семейство текста модели, удаление
+# объектов и обход контейнеров (спецификация 2026-09-29-submodel-script-and-model-text.md).
+
+- id: submodel-script-injection-needs-reinitsubmodel
+  claim: "Присвоенный субмодели скрипт (`setprop(objid, \"script\", …)`) компилируется и начинает исполняться только после `reinitsubmodel(objid)`"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.1"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-29
+  evidence: "Без третьего шага присвоенный скрипт не исполняется ни телом, ни секцией `finalization` — файла-маркера нет и сообщений нет (три прогона, в том числе с `runproject` и без него). С `reinitsubmodel` тело исполняется на каждом шаге расчёта. Ограничения там же: `floattostr(time)` записи не даёт, `finalization` не срабатывает при остановке расчёта извне"
+  tests: []
+
+- id: initsubmodelports-makes-ports-immediately-visible
+  claim: "`initsubmodelports(sub)` делает внешние порты субмодели видимыми сразу, в `initialization` — без ожидания первого шага расчёта"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.2"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-29
+  evidence: "Замер: после создания субмодели и добавления на её страницу «Порт входа» и «Порт выхода» `getblockportcount(sub)` = 0; после `initsubmodelports(sub)` (вернула 1) — 2. Отменяет прежнее наблюдение из `submodel-ports-are-created-on-its-page` («видны только с первого шага расчёта»)"
+  tests: []
+
+- id: removeprimitiv-breaks-calculation-start
+  claim: "`removeprimitiv(id)` удаляет объект из контейнера, но следующий старт расчёта падает: `ProjectStart` возвращает access violation в `mbtylib.dll`"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.3"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-29
+  evidence: "Изоляция 2×2 «удаление × выгрузка модели»: с удалением — падение (в том числе когда сначала удалён провод), без удаления — расчёт идёт. Скрипт при этом отрабатывает целиком: лог дописан до последней строки. Объекты создавались `createmodel` в `initialization`. Воспроизводитель отправлен вендору 2026-09-29"
+  tests: []
+
+- id: model-text-quote-is-chr34
+  claim: "В тексте модели кавычка внутри строкового литерала задаётся `chr(34)`: удвоение `\"\"` даёт пустую строку, а обратный слэш не экранирует"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.4"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-29
+  evidence: "Текст с `chr(34)` принимается и создаёт объекты; тот же текст, собранный удвоением, не создаёт ничего и сообщений не оставляет — именно это дало наш прежний отрицательный результат по `createmodelfromfile`"
+  tests: []
+
+- id: model-text-loading-creates-objects
+  claim: "`createmodel` и `createmodelfromfile` создают объекты: пять демонстрационных проектов поставки проходят, приросты совпадают с ручными прогонами"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.4"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-29
+  evidence: "`Demo/Язык программирования/Функции/Создание схем из скрипта createmodel`: `createmodel` (модель в скрипте), `createmodelfromfile`, `createmodel` через `eval` из файла, `loadtextfromfile`, `savemodeltofile`. BOM файлу не нужен, а вклейке через `eval` мешает"
+  tests: []
+
+- id: dot-syntax-belongs-to-model-text
+  claim: "`object.property = value` — синтаксис декларативного текста модели; в языке скрипта точка в выражении недопустима"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.5"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-29
+  evidence: "В скрипте компилятор отвечает «В имени локальной переменной точка недопустима: dblock.a», работа продолжается, а присваивание не происходит. В тексте модели точка работает: `a.formula = 10`. Из скрипта параметры пишут `setprop`/`setpropasstring`"
+  tests: []
+
+- id: container-traversal-functions-are-used-by-vendor
+  claim: "Обход контейнеров вендор делает функциями `getobj` (индекс с единицы), `getobjcount`, `getsubmodelid`, `getownercontainer`, `submodelbypageid`, `findstartport`, `getportblockid`, `getfullname`"
+  status: measured
+  source:
+    type: xprt-observation
+    ref: "docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.6"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-29
+  evidence: "Скрипты прочитаны в демонстрационных проектах поставки: «Конечные автоматы» (`Пример 0.prt` — обход вниз) и `Demo/Приёмы работы/Получение данных, доступа и т. п./Получение имени субмодели через уровень при помощи submodelbypageid` (подъём на уровень). Все имена есть в срезе справки, v15.05.2026. Живым вызовом мы их не проверяли"
   tests: []
