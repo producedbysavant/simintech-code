@@ -482,3 +482,17 @@
     - file: tests/unit/test_model_operations.py
       id: test_literal_escapes_quotes_and_newlines_the_measured_way
       kind: unit
+
+- id: page-script-readable-without-calculation
+  claim: "Скрипт текущей страницы читается снимком выгрузки: страница опознаётся по единственной изменившейся записи с меткой, а расчёт при чтении не запускается"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/superpowers/specs/2026-09-29-language-contour.md §4"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-29
+  evidence: "`GetPageScript` в COM API нет вовсе (`docs/reference/com_api_inventory.md`), `SetPageScript` о прежнем содержимом не сообщает. Живой прогон 2026-09-29: поставленный скрипт прочитан дословно, модельное время до и после совпало, состояние проекта осталось нулевым — `tests/integration/test_language_contour_live.py`, 2 passed"
+  tests:
+    - file: tests/integration/test_language_contour_live.py
+      id: test_read_page_script_returns_script_and_keeps_model_time
+      kind: live
