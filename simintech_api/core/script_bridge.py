@@ -32,9 +32,12 @@ from typing import TYPE_CHECKING, List, NamedTuple, Optional, Tuple
 from ..catalog import decode_xprt
 from ..exceptions import ScriptBridgeError, ScriptBridgeUnsafeStateError
 from ..script_probe import (
+    ContourOutcome,
     ProbeResult,
     TARGET_TOKEN_PREFIX,
+    build_page_script,
     build_probe_script,
+    classify_page_result,
     decode_xprt_value,
     find_changed_script_record,
     leftover_of,
@@ -57,6 +60,18 @@ class InstalledRun(NamedTuple):
     """
 
     text: str
+    restored_script: str
+
+
+class PageRunResult(NamedTuple):
+    """Результат прогона тела в секции `initialization`.
+
+    `outcome` — исход (`ContourOutcome`), `restored_script` — прежний скрипт
+    страницы, возвращённый на место. Оба поля обязательны: контур обещает и
+    диагностику, и возврат.
+    """
+
+    outcome: ContourOutcome
     restored_script: str
 
 
@@ -250,6 +265,33 @@ class ScriptBridge:
         run = self._execute_installed(script, result_path, token,
                                       target_page_id, before)
         return self._require_marker_pair(run.text)
+
+    def run_page_script(self, body: str, result_path: Path) -> PageRunResult:
+        """Выполнить `body` в секции `initialization` и классифицировать исход.
+
+        Отличие от `run_probe` — где исполняется тело. Проба идёт под
+        `if firststep then`, потому что на инициализации порты субмоделей могут
+        быть ещё не установлены; здесь тело идёт **в `initialization`**, потому
+        что только там разрешено создавать объекты (`createmodel`,
+        `createprimitiv`).
+
+        Неподвижное время — не отказ, а исход: мост на нём останавливался,
+        потому что не умел отличить «скрипт не собрался» от «модель не
+        считает»; контур отличает их по маркерам и сообщает, что именно
+        увидел.
+
+        Уборка — та же, что у пробы: расчёт останавливается, прежний скрипт
+        возвращается в ту самую страницу, снимки сверяются. Отказ уборки
+        (`ScriptBridgeUnsafeStateError`) выходит наружу вместо исхода: он
+        означает, что проект остался не в том состоянии, каким был.
+        """
+        target_page_id, before, token = self._prepare()
+        script = build_page_script(body, str(result_path), token=token)
+        run = self._execute_installed(script, result_path, token,
+                                      target_page_id, before,
+                                      time_growth_is_an_error=False)
+        outcome = classify_page_result(run.text, time_grew=self._last_time_grew)
+        return PageRunResult(outcome=outcome, restored_script=run.restored_script)
 
     def _execute_installed(self, script: str, result_path: Path, token: str,
                            target_page_id: int, before: List[str], *,
