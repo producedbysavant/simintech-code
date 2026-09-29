@@ -43,6 +43,20 @@ def test_import_body_declares_model_as_const_and_calls_createmodel():
     assert "createmodel(getcurrentprojectid, model);" in body
 
 
+def test_import_body_does_not_wrap_text_that_is_already_wrapped():
+    """Выгрузка приходит со своей скобкой — вторая не добавляется.
+
+    Замер 2026-09-29: текст из `savemodeltofile` — это `( … )` целиком, и
+    двойная обёртка (`const model : ( ( … ) );`) не компилируется, причём среда
+    об этом молчит: собирался только текст без внешней скобки.
+    """
+    body = build_import_model_text_body('(\n  block0: (type = "Ступенька")\n)')
+
+    assert body.startswith("const model : (")
+    assert "( (" not in body, "текст обёрнут второй раз"
+    assert "createmodel(getcurrentprojectid, model);" in body
+
+
 def test_inject_body_creates_submodel_assigns_script_and_reinits():
     """Рецепт измерен 2026-09-29: без reinitsubmodel скрипт не компилируется."""
     body = build_inject_submodel_script_body(
