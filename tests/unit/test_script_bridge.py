@@ -28,7 +28,17 @@ from simintech_api.exceptions import (  # noqa: E402
     ScriptBridgeUnsafeStateError,
     SimInTechError,
 )
-from simintech_api.script_probe import BEGIN_MARKER, END_MARKER  # noqa: E402
+from simintech_api.script_probe import (  # noqa: E402
+    BEGIN_MARKER,
+    END_MARKER,
+    OUTCOME_ABORTED,
+    OUTCOME_MODEL_NOT_RUNNING,
+    OUTCOME_NOT_COMPILED,
+    OUTCOME_OK,
+    OUTCOME_SECTION_NOT_RUN,
+    PAGE_BEGIN_MARKER,
+    PAGE_END_MARKER,
+)
 
 MAIN = r"C:\work\model.prt"
 
@@ -81,7 +91,7 @@ class FakeEnv:
                  stop_raises=None, stop_is_ignored=False,
                  state_read_raises_after_stop=None,
                  current_page_raises=False,
-                 dump_fails_before_install=False):
+                 dump_fails_before_install=False, raw_result=None):
         #: Имена страниц — как их пишет выгрузка; первая всегда главная.
         self.pages = list(pages)
         #: Скрипты страниц. Имя `installed` сохранено намеренно: на нём стоят
@@ -164,6 +174,10 @@ class FakeEnv:
         #: там обязан выходить ошибкой моста, а не сбоем клиента.
         self.current_page_raises = current_page_raises
         self.dump_fails_before_install = dump_fails_before_install
+        #: Текст, которым подделка **дословно** заполняет файл результата.
+        #: Нужен контуру: его маркеры (`CTX_*`) пишет сам скрипт, а подделка по
+        #: умолчанию пишет маркеры моста.
+        self.raw_result = raw_result
 
     def call(self, name, *args):
         self.calls.append((name, args))
@@ -273,6 +287,13 @@ class FakeEnv:
     def _maybe_write_result(self):
         # Пробу исполняет **текущая** страница: скрипт в неё и ставится.
         script = self.scripts[self.current_index]
+        if self.raw_result is not None:
+            if self.writes_result and "createfile(" in script:
+                start = script.index('createfile("') + len('createfile("')
+                end = script.index('"', start)
+                Path(script[start:end]).write_text(
+                    self.raw_result, encoding="utf-8")
+            return
         if not self.writes_result or "createfile(" not in script:
             return
         start = script.index('createfile("') + len('createfile("')
@@ -1016,3 +1037,48 @@ def test_probe_runs_when_project_is_stopped(tmp_path):
     result = bridge.run_probe("", tmp_path / "out.txt")
     assert result.complete
     assert env.state == 0
+
+
+# ─── Контур: прогон тела в initialization ────────────────────────────────────
+
+
+def test_run_page_script_reports_success_and_returns_previous_script(tmp_path):
+    """Успех: маркеры контура и рост времени; прежний скрипт возвращён."""
+    env, bridge = _bridge(
+        raw_result=f"{PAGE_BEGIN_MARKER}\nСТРОКА\n{PAGE_END_MARKER}\n")
+    result = bridge.run_page_script("seterrorflag(0);", tmp_path / "r.txt")
+
+    assert result.outcome.kind == OUTCOME_OK
+    assert result.outcome.lines == ["СТРОКА"]
+    assert result.restored_script == "seterrorflag(0);"
+
+
+def test_run_page_script_distinguishes_not_compiled_from_stuck_model(tmp_path):
+    """Без начального маркера: время стоит — «не собрался», растёт — «секция не шла»."""
+    env, bridge = _bridge(time_grows=False, raw_result="")
+    assert bridge.run_page_script(
+        "x();", tmp_path / "a.txt").outcome.kind == OUTCOME_NOT_COMPILED
+
+    env, bridge = _bridge(time_grows=True, raw_result="")
+    assert bridge.run_page_script(
+        "x();", tmp_path / "b.txt").outcome.kind == OUTCOME_SECTION_NOT_RUN
+
+
+def test_run_page_script_reports_abort_with_what_was_written(tmp_path):
+    """Обрыв: начальный маркер есть, конечного нет — видны успевшие строки."""
+    env, bridge = _bridge(raw_result=f"{PAGE_BEGIN_MARKER}\nУСПЕЛО\n")
+    result = bridge.run_page_script("x();", tmp_path / "c.txt")
+
+    assert result.outcome.kind == OUTCOME_ABORTED
+    assert result.outcome.lines == ["УСПЕЛО"]
+
+
+def test_run_page_script_keeps_model_stuck_separate_from_success(tmp_path):
+    """Маркеры на месте, время стоит — «модель не считает», а не успех."""
+    env, bridge = _bridge(
+        time_grows=False,
+        raw_result=f"{PAGE_BEGIN_MARKER}\nA\n{PAGE_END_MARKER}\n")
+    result = bridge.run_page_script("x();", tmp_path / "d.txt")
+
+    assert result.outcome.kind == OUTCOME_MODEL_NOT_RUNNING
+    assert result.outcome.lines == ["A"]

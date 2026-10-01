@@ -305,6 +305,61 @@ print(result.lines)              # ['objects=7']
 решения названа прямо: «сначала `run`, затем чтение топологии» требует явной
 остановки расчёта между ними.
 
+### run_page_script
+
+`ScriptBridge.run_page_script(body, result_path) -> PageRunResult` — выполнить
+тело в секции `initialization` скрипта текущей страницы и классифицировать
+исход. Отличие от `run_probe`: проба идёт под `if firststep then` (там порты
+субмоделей уже установлены), а этот режим — в `initialization`, потому что
+только там разрешено создавать объекты: во время расчёта среда отвечает
+«Установка блока на схему в процессе моделирования запрещена», а `createblock`
+возвращает 0.
+
+```python
+from pathlib import Path
+
+from simintech_api import COMClient, Project, ScriptBridge
+
+client = COMClient().connect()
+project = Project.from_template(client)
+bridge = ScriptBridge(client, project.id)
+
+result = bridge.run_page_script(
+    'f = createfile("C:/Temp/model.txt", -1);\n'
+    'writelnutf8(f, "МОДЕЛЬ СОБРАНА");\n'
+    "freeobject(f);",
+    Path("C:/Temp/result.txt"))
+
+print(result.outcome.kind)      # ok | model-not-running | aborted
+                                # | not-compiled | section-not-run
+print(result.outcome.lines)     # строки тела между маркерами контура
+print(result.restored_script)   # прежний скрипт страницы, возвращённый на место
+```
+
+**Уборка та же, что у пробы**: расчёт останавливается, прежний скрипт
+возвращается в ту самую страницу, снимки сверяются. Отказ уборки
+(`ScriptBridgeUnsafeStateError`) выходит наружу вместо исхода.
+
+**Неподвижное время здесь — не отказ, а исход.** Мост на нём отказывался
+(`ScriptBridgeError`), потому что не умел отличить «скрипт не собрался» от
+«модель не считает»; контур отличает их по маркерам, которые пишет сам скрипт
+(`CTX_BEGIN` до тела, `CTX_END` после), и сообщает, что именно увидел:
+
+| Что видно | `outcome.kind` | Что это значит |
+|---|---|---|
+| оба маркера, время растёт | `ok` | тело дошло до конца, расчёт идёт |
+| оба маркера, время стоит | `model-not-running` | скрипт собрался и отработал; вероятная причина — неподключённый вход |
+| начальный есть, конечного нет | `aborted` | обрыв на исполнении; в `lines` — то, что успело записаться |
+| начального нет, время стоит | `not-compiled` | скрипт не собрался (ошибки компиляции через COM не читаются) |
+| начального нет, время растёт | `section-not-run` | секция не выполнилась — сообщается как есть, без догадки о причине |
+
+Маркеры контура (`CTX_*`) намеренно не совпадают с маркерами моста
+(`SCRIPT_BRIDGE_*`): у моста «нет конечного маркера» — отказ, у контура — один
+из четырёх различимых исходов. Сборщик скрипта — `script_probe.build_page_script`,
+классификатор — `script_probe.classify_page_result`; тела операций (выгрузка
+модели текстом, загрузка, инжектирование субмодели) собирает
+`simintech_api.model_operations`.
+
 
 ---
 

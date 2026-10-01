@@ -27,14 +27,17 @@ import tempfile
 import time
 import warnings
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING, List, NamedTuple, Optional, Tuple
 
 from ..catalog import decode_xprt
 from ..exceptions import ScriptBridgeError, ScriptBridgeUnsafeStateError
 from ..script_probe import (
+    ContourOutcome,
     ProbeResult,
     TARGET_TOKEN_PREFIX,
+    build_page_script,
     build_probe_script,
+    classify_page_result,
     decode_xprt_value,
     find_changed_script_record,
     leftover_of,
@@ -46,6 +49,30 @@ from ..script_probe import (
 
 if TYPE_CHECKING:
     from .com_client import COMClient
+
+
+class InstalledRun(NamedTuple):
+    """Результат установки и прогона готового скрипта.
+
+    `text` — сырой текст файла результата (разбор у вызывающего: мосту нужна
+    пара маркеров как признак, контуру — маркеры контура и частичные данные
+    обрыва). `restored_script` — прежний скрипт страницы, возвращённый на место.
+    """
+
+    text: str
+    restored_script: str
+
+
+class PageRunResult(NamedTuple):
+    """Результат прогона тела в секции `initialization`.
+
+    `outcome` — исход (`ContourOutcome`), `restored_script` — прежний скрипт
+    страницы, возвращённый на место. Оба поля обязательны: контур обещает и
+    диагностику, и возврат.
+    """
+
+    outcome: ContourOutcome
+    restored_script: str
 
 
 class ScriptBridge:
@@ -76,6 +103,13 @@ class ScriptBridge:
         self._client = client
         self._project_id = project_id
         self._time_growth_timeout_s = time_growth_timeout_s
+        #: Выросло ли модельное время в последнем прогоне. Заполняет
+        #: `_execute_installed`, читает контур (`run_page_script`) сразу после
+        #: вызова — там, где неподвижное время не отказ, а исход. Объявлено в
+        #: конструкторе не для порядка: без этого mypy (strict) не пропускает
+        #: обращение к атрибуту, а поле, заведённое «когда понадобится», —
+        #: приглашение читать его до записи.
+        self._last_time_grew = False
 
     def _dump_records(self) -> List[str]:
         """Снять скриптовые записи проекта выгрузкой `.xprt`.
@@ -162,34 +196,26 @@ class ScriptBridge:
         """Поставить скрипт страницы. Прежний при этом теряется."""
         self._client.call("SetPageScript", self._project_id, script, 1)
 
-    def run_probe(self, body: str, result_path: Path) -> ProbeResult:
-        """Выполнить `body` в проекте и вернуть разобранный результат.
+    def _prepare(self) -> Tuple[int, List[str], str]:
+        """Преамбула: отказ на идущем расчёте, страница, снимок, метка.
 
-        Порядок продиктован замерами (спецификация 2026-09-22):
+        Стоит до любых изменений в проекте, и это её главное свойство: сбой
+        здесь означает «проба не начата, проект не тронут» — утверждение,
+        которое обязано дойти до вызывающего дословно.
 
-        1. запомнить **COM ID текущей страницы** и снять снимок скриптовых
-           записей проекта;
-        2. сгенерировать метку цели и убедиться, что её нет в снимке;
-        3. поставить пробу с меткой; снять второй снимок и найти запись,
-           которую изменила установка, — только она и есть цель;
-        4. удалить прежний файл результата и запустить расчёт;
-        5. вернуть прежний скрипт **в ту страницу, которую изменили**, и
-           сверить снимки;
-        6. если цель не установлена — не угадывать: `ScriptBridgeUnsafeStateError`
-           прямо говорит, что в проекте остался пробный скрипт.
+        Инвариант моста («наружу выходят только ошибки своей иерархии»)
+        назывался в `_dump_records`, но здесь не выполнялся: `GetCurentPage`
+        и первый снимок выпускали `ComCallError`, `ValueError` и `OSError`
+        как есть. Вызывающему — в том числе MCP-слою — это не давало отличить
+        отказ моста от отказа среды по типу, а разбирать текст вместо типа он
+        не должен. `_refuse_if_calculating` выше этой беды не знал: он и
+        раньше поднимал `ScriptBridgeUnsafeStateError`.
+
+        Возвращает «COM ID текущей страницы, снимок скриптовых записей,
+        метку запуска» — то, без чего не обходится ни один из режимов моста:
+        и проба (`run_probe`), и контур (`run_page_script`).
         """
         self._refuse_if_calculating()
-        # Преамбула стоит до любых изменений в проекте, и это её главное
-        # свойство: сбой здесь означает «проба не начата, проект не тронут» —
-        # утверждение, которое обязано дойти до вызывающего дословно.
-        #
-        # Инвариант моста («наружу выходят только ошибки своей иерархии»)
-        # назывался в `_dump_records`, но здесь не выполнялся: `GetCurentPage`
-        # и первый снимок выпускали `ComCallError`, `ValueError` и `OSError`
-        # как есть. Вызывающему — в том числе MCP-слою — это не давало отличить
-        # отказ моста от отказа среды по типу, а разбирать текст вместо типа он
-        # не должен. `_refuse_if_calculating` выше этой беды не знал: он и
-        # раньше поднимал `ScriptBridgeUnsafeStateError`.
         try:
             target_page_id = int(self._client.call("GetCurentPage",
                                                    self._project_id))
@@ -216,14 +242,83 @@ class ScriptBridge:
                 "проект не тронут. Номеров страниц в выгрузке нет, поэтому "
                 "какой именно странице принадлежит метка — по ней не "
                 "определить: проверьте скрипты страниц проекта.")
-        script = build_probe_script(body, str(result_path), token=token)
+        return target_page_id, before, token
 
+    def run_probe(self, body: str, result_path: Path) -> ProbeResult:
+        """Выполнить `body` в проекте и вернуть разобранный результат.
+
+        Порядок продиктован замерами (спецификация 2026-09-22):
+
+        1. запомнить **COM ID текущей страницы** и снять снимок скриптовых
+           записей проекта;
+        2. сгенерировать метку цели и убедиться, что её нет в снимке;
+        3. поставить пробу с меткой; снять второй снимок и найти запись,
+           которую изменила установка, — только она и есть цель;
+        4. удалить прежний файл результата и запустить расчёт;
+        5. вернуть прежний скрипт **в ту страницу, которую изменили**, и
+           сверить снимки;
+        6. если цель не установлена — не угадывать: `ScriptBridgeUnsafeStateError`
+           прямо говорит, что в проекте остался пробный скрипт.
+        """
+        target_page_id, before, token = self._prepare()
+        script = build_probe_script(body, str(result_path), token=token)
+        run = self._execute_installed(script, result_path, token,
+                                      target_page_id, before)
+        return self._require_marker_pair(run.text)
+
+    def run_page_script(self, body: str, result_path: Path) -> PageRunResult:
+        """Выполнить `body` в секции `initialization` и классифицировать исход.
+
+        Отличие от `run_probe` — где исполняется тело. Проба идёт под
+        `if firststep then`, потому что на инициализации порты субмоделей могут
+        быть ещё не установлены; здесь тело идёт **в `initialization`**, потому
+        что только там разрешено создавать объекты (`createmodel`,
+        `createprimitiv`).
+
+        Неподвижное время — не отказ, а исход: мост на нём останавливался,
+        потому что не умел отличить «скрипт не собрался» от «модель не
+        считает»; контур отличает их по маркерам и сообщает, что именно
+        увидел.
+
+        Уборка — та же, что у пробы: расчёт останавливается, прежний скрипт
+        возвращается в ту самую страницу, снимки сверяются. Отказ уборки
+        (`ScriptBridgeUnsafeStateError`) выходит наружу вместо исхода: он
+        означает, что проект остался не в том состоянии, каким был.
+        """
+        target_page_id, before, token = self._prepare()
+        script = build_page_script(body, str(result_path), token=token)
+        run = self._execute_installed(script, result_path, token,
+                                      target_page_id, before,
+                                      time_growth_is_an_error=False)
+        outcome = classify_page_result(run.text, time_grew=self._last_time_grew)
+        return PageRunResult(outcome=outcome, restored_script=run.restored_script)
+
+    def _execute_installed(self, script: str, result_path: Path, token: str,
+                           target_page_id: int, before: List[str], *,
+                           time_growth_is_an_error: bool = True) -> InstalledRun:
+        """Поставить готовый скрипт, посчитать, вернуть прежний, прочитать файл.
+
+        `time_growth_is_an_error` — как понимать неподвижное время. Мост
+        (`run_probe`) на нём отказывает: он не умеет отличить «скрипт не
+        собрался» от «модель не считает». Контур передаёт `False` и получает
+        ответ в `self._last_time_grew`, чтобы классифицировать исход по маркерам.
+
+        Уборка (остановка расчёта и возврат прежнего скрипта) идёт в `finally`
+        и не зависит от того, каким путём метод вышел: см. комментарий у
+        `finally`.
+        """
         target = None
         original = None
         probe_error = None
         #: Был ли вызван `ProjectStart` — от этого зависит, обязана ли проба
         #: останавливать расчёт (и обязана, даже если вызов бросил).
         calculation_started = False
+        #: Рост времени — данные для контура, а не только признак успеха:
+        #: сбрасывается здесь, чтобы значение не пережило свой прогон.
+        self._last_time_grew = False
+        #: Сырой текст результата; до чтения — пусто. Пустым он наружу не
+        #: уходит: чтение либо отдаёт текст, либо бросает.
+        text = ""
         try:
             try:
                 self.install_script(script)
@@ -281,8 +376,12 @@ class ScriptBridge:
             # ProjectStart бросил (тогда состояние неизвестно, но остановка
             # безвредна в любом измеренном состоянии).
             calculation_started = True
-            self._start_and_wait()
-            result = self._read_result(result_path)
+            if time_growth_is_an_error:
+                self._start_and_wait()
+                self._last_time_grew = True
+            else:
+                self._last_time_grew = self._try_start_and_wait()
+            text = self._read_result_text(result_path)
         except BaseException as exc:
             probe_error = exc
             raise
@@ -312,7 +411,9 @@ class ScriptBridge:
             if stop_problem is not None:
                 raise self._unsafe(stop_problem, self._records_or_none(), token,
                                    probe_error=probe_error)
-        return result
+        return InstalledRun(
+            text=text,
+            restored_script=original if original is not None else "")
 
     def _refuse_if_calculating(self) -> None:
         """Отказать, если проект не остановлен: проба уничтожит расчёт.
@@ -393,8 +494,12 @@ class ScriptBridge:
                     "инициализирован, добавление блока отвергается.")
         return None
 
-    def _read_result(self, result_path: Path) -> ProbeResult:
-        """Прочитать файл результата и проверить пару маркеров."""
+    def _read_result_text(self, result_path: Path) -> str:
+        """Прочитать файл результата **сырым** текстом.
+
+        Разбор у вызывающего: мосту нужна пара маркеров как признак, контуру —
+        маркеры контура и то, что успело записаться при обрыве.
+        """
         if not result_path.exists():
             raise ScriptBridgeError(
                 "скрипт не создал файл результата: расчёт шёл, но скрипт "
@@ -402,12 +507,20 @@ class ScriptBridge:
                 "выполнения прерывает скрипт молча, поэтому причину придётся "
                 "искать по телу пробы.")
         try:
-            text = result_path.read_text(encoding="utf-8")
+            return result_path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
             raise ScriptBridgeError(
                 f"файл результата не читается как UTF-8: {exc}. Скрипт пишет "
                 "через writelnutf8, поэтому испорченный файл означает потерю "
                 "данных — подставлять замены вместо символов нельзя.") from exc
+
+    @staticmethod
+    def _require_marker_pair(text: str) -> ProbeResult:
+        """Потребовать ровно одну пару маркеров моста — прежнее поведение.
+
+        Текст отказа обязан совпасть с прежним дословно: на нём стоят тесты и
+        обещания вызывающему.
+        """
         result = parse_probe_result(text)
         if not result.complete:
             raise ScriptBridgeError(
@@ -479,10 +592,12 @@ class ScriptBridge:
         if warning is None:
             return
         try:
-            # stacklevel=4 — кадр вызывающего `run_probe`: warn → этот помощник
-            # → `_restore_script` → `run_probe` → вызывающий. Проверено
+            # stacklevel=5 — кадр вызывающего: warn → этот помощник →
+            # `_restore_script` → `_execute_installed` → `run_probe` (или
+            # `run_page_script`) → вызывающий. Обе точки входа лежат на одной
+            # глубине от уборки, поэтому число одно на обе. Проверено
             # захватом (`catch_warnings(record=True)`), а не на глаз.
-            warnings.warn(warning, stacklevel=4)
+            warnings.warn(warning, stacklevel=5)
         except Warning:  # noqa: BLE001
             pass
 
@@ -557,23 +672,17 @@ class ScriptBridge:
                     "невозможно, сверка выполнена по наличию текста записи цели и "
                     "отсутствию метки пробы")
 
-    def _start_and_wait(self) -> None:
-        """Запустить расчёт и дождаться, пока модельное время сдвинется.
+    def _try_start_and_wait(self) -> bool:
+        """Запустить расчёт и вернуть, сдвинулось ли модельное время.
 
-        Неподвижное время — **признак, а не диагноз.** Так выглядят по
-        меньшей мере два разных состояния, и различить их мост не умеет:
-
-        * скрипт не собрался — `ProjectStart` и `ProjectStep` сообщают об
-          успехе, среда об ошибке молчит;
-        * модель структурно не считает — блок с неподключённым входом молча
-          останавливает расчёт всей модели, модельное время стоит.
+        `False` — **признак, а не диагноз**: так выглядят и скрипт, который не
+        собрался (среда молчит), и модель, которая структурно не считает
+        (неподключённый вход останавливает расчёт всей модели). Мост на этом
+        отказывает (`_start_and_wait`), контур — различает по маркерам.
 
         Второе измерено 2026-09-23 живым прогоном пробы топологии: скрипт был
         синтаксически верен, а время не росло
-        (`docs/superpowers/archive/2026-09-21-topology-probe-design.md`). Поэтому
-        отказ называет **состояние**, а не причину: независимого признака
-        причины у моста нет, а выбирать между версиями по одному и тому же
-        симптому — значит выдать догадку за измерение.
+        (`docs/superpowers/archive/2026-09-21-topology-probe-design.md`).
         """
         self._client.call("ProjectStart", self._project_id)
         initial_time = float(self._client.call("GetProjectTime", self._project_id))
@@ -582,14 +691,25 @@ class ScriptBridge:
             self._client.call("ProjectStep", self._project_id)
             current_time = float(self._client.call("GetProjectTime", self._project_id))
             if current_time > initial_time:
-                return
+                return True
             if time.monotonic() >= deadline:
-                raise ScriptBridgeError(
-                    "расчёт не подтвердил рост модельного времени за "
-                    f"{self._time_growth_timeout_s:g} с. По этому признаку "
-                    "причину определить нельзя: так выглядят и скрипт, "
-                    "который не собрался (среда об этом молчит), и модель, "
-                    "которая структурно не считает — например, блок с "
-                    "неподключённым входом останавливает расчёт всей модели. "
-                    "Проверьте и скрипт, и соединения модели.")
+                return False
             time.sleep(0.05)
+
+    def _start_and_wait(self) -> None:
+        """То же, но неподвижное время — отказ (поведение моста до контура).
+
+        Отказ называет **состояние**, а не причину: независимого признака
+        причины у моста нет, а выбирать между версиями по одному и тому же
+        симптому — значит выдать догадку за измерение.
+        """
+        if self._try_start_and_wait():
+            return
+        raise ScriptBridgeError(
+            "расчёт не подтвердил рост модельного времени за "
+            f"{self._time_growth_timeout_s:g} с. По этому признаку "
+            "причину определить нельзя: так выглядят и скрипт, "
+            "который не собрался (среда об этом молчит), и модель, "
+            "которая структурно не считает — например, блок с "
+            "неподключённым входом останавливает расчёт всей модели. "
+            "Проверьте и скрипт, и соединения модели.")

@@ -173,6 +173,116 @@ def build_probe_script(body: str, result_path: str, token: str) -> str:
     )
 
 
+#: Маркеры контура языкового слоя. От маркеров моста (`SCRIPT_BRIDGE_*`)
+#: отличаются намеренно: там границу держит **проба**, здесь — скрипт страницы,
+#: и по маркерам контур различает пять исходов
+#: (`docs/superpowers/specs/2026-09-29-language-contour.md` §3). Смешать их
+#: значило бы потерять это различие: у моста «нет конечного маркера» — отказ,
+#: у контура — один из четырёх различимых исходов.
+PAGE_BEGIN_MARKER = "CTX_BEGIN"
+PAGE_END_MARKER = "CTX_END"
+
+
+def build_page_script(body: str, result_path: str, token: str) -> str:
+    """Собрать скрипт страницы: `initialization`, маркеры контура и тело.
+
+    Тело исполняется в секции `initialization`, потому что создавать объекты
+    разрешено только там (измерено 2026-09-28: во время расчёта среда отвечает
+    «Установка блока на схему в процессе моделирования запрещена», а
+    `createblock` возвращает 0).
+
+    Метка (`token`) ставится **первой строкой**, до секции: она остаётся в
+    скрипте, даже если тело не скомпилировалось, — а именно по ней мост
+    опознаёт в выгрузке ту запись, которую изменил он сам, чтобы вернуть
+    прежний скрипт (`find_changed_script_record`).
+
+    Дескриптор результата недоступен телу по имени: он назван случайной частью
+    метки (`bridge_descriptor_name`), а `fid` — приманка. Причина та же, что у
+    `build_probe_script`: чужой код внутри тела (вендорская
+    `export_1layer_topology`) присваивает `fid = createfile(...)` и увёл бы
+    дескриптор контура вместе с его маркерами.
+
+    Путь переводится в прямые слэши и не может содержать кавычку или перевод
+    строки — он подставляется в литерал встроенного языка.
+    """
+    if '"' in result_path or "\n" in result_path or "\r" in result_path:
+        raise ValueError(
+            "путь результата не может содержать кавычку или перевод строки: "
+            f"{result_path!r} — он подставляется в литерал встроенного языка")
+    literal_path = result_path.replace("\\", "/")
+    name = bridge_descriptor_name(token)
+    indented = "".join(
+        f"  {line}\n" for line in body.splitlines() if line.strip())
+    return (
+        f"{token}\n"
+        "initialization\n"
+        f"  var {name}: integer;\n"
+        f"  var {DECOY_DESCRIPTOR_NAME}: integer;\n"
+        f'  {name} = createfile("{literal_path}", -1);\n'
+        f'  writelnutf8({name}, "{PAGE_BEGIN_MARKER}");\n'
+        f"  {DECOY_DESCRIPTOR_NAME} = {name};\n"
+        f"{indented}"
+        f'  writelnutf8({name}, "{PAGE_END_MARKER}");\n'
+        f"  freeobject({name});\n"
+        "end;\n"
+    )
+
+
+#: Исходы контура. Строки, а не перечисление: значение уходит в тексты ответов
+#: и в тесты, где перечисление пришлось бы разворачивать обратно.
+OUTCOME_OK = "ok"
+OUTCOME_MODEL_NOT_RUNNING = "model-not-running"
+OUTCOME_ABORTED = "aborted"
+OUTCOME_NOT_COMPILED = "not-compiled"
+OUTCOME_SECTION_NOT_RUN = "section-not-run"
+
+
+class ContourOutcome(NamedTuple):
+    """Разобранный исход контура.
+
+    `kind` — один из `OUTCOME_*`; `lines` — строки тела между маркерами (у
+    обрыва — то, что успело записаться; у «не собрался» и «секция не шла» —
+    пусто: данных нет, а хранить их рядом с исходом — приглашение однажды ими
+    воспользоваться).
+    """
+
+    kind: str
+    lines: List[str]
+
+
+def classify_page_result(text: str, *, time_grew: bool) -> ContourOutcome:
+    """Классифицировать исход по файлу результата и росту времени.
+
+    До этой функции мост различал только «есть ровно одна пара маркеров» или
+    отказ, и два разных состояния — «скрипт не собрался» и «скрипт собрался, а
+    модель не считает» — выглядели одинаково.
+
+    Маркеры пишет **сам** скрипт страницы (`build_page_script`), поэтому:
+
+    * начального маркера нет — секция `initialization` до исполнения не дошла.
+      Если при этом время росло, расчёт шёл, а секция не выполнилась (редкий
+      случай: сообщаем как есть); если не росло — вероятнее всего скрипт не
+      скомпилировался, и это единственный различимый признак, потому что
+      ошибок компиляции через COM не видно;
+    * начальный есть, конечного нет — тело оборвалось на исполнении (ошибка
+      времени выполнения молча прекращает скрипт);
+    * оба есть — тело дошло до конца; исход зависит от того, пошёл ли расчёт.
+    """
+    lines = text.splitlines()
+    begins = [index for index, line in enumerate(lines)
+              if line == PAGE_BEGIN_MARKER]
+    if not begins:
+        kind = OUTCOME_SECTION_NOT_RUN if time_grew else OUTCOME_NOT_COMPILED
+        return ContourOutcome(kind=kind, lines=[])
+    start = begins[0]
+    ends = [index for index, line in enumerate(lines)
+            if line == PAGE_END_MARKER and index > start]
+    if not ends:
+        return ContourOutcome(kind=OUTCOME_ABORTED, lines=lines[start + 1:])
+    kind = OUTCOME_OK if time_grew else OUTCOME_MODEL_NOT_RUNNING
+    return ContourOutcome(kind=kind, lines=lines[start + 1:ends[0]])
+
+
 def parse_probe_result(text: str) -> ProbeResult:
     """Разобрать файл результата.
 

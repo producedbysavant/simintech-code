@@ -22,9 +22,17 @@ from .core.port import Port
 from .core.wire import Wire
 from .core.signal import Signal
 from .core.simulation import Simulation
-from .core.script_bridge import ScriptBridge
+from .core.script_bridge import ScriptBridge, PageRunResult
 from .core.pack import Pack
 from .core.topology import read_topology
+from .script_probe import (
+    OUTCOME_ABORTED,
+    OUTCOME_MODEL_NOT_RUNNING,
+    OUTCOME_NOT_COMPILED,
+    OUTCOME_OK,
+    OUTCOME_SECTION_NOT_RUN,
+    classify_page_result,
+)
 from .topology import Connection, ObjectRow, PortRow, Topology
 from .constants import DataType, PortSide
 from .exceptions import (
@@ -56,6 +64,13 @@ __all__ = [
     "Signal",
     "Simulation",
     "ScriptBridge",
+    "PageRunResult",
+    "classify_page_result",
+    "OUTCOME_OK",
+    "OUTCOME_MODEL_NOT_RUNNING",
+    "OUTCOME_ABORTED",
+    "OUTCOME_NOT_COMPILED",
+    "OUTCOME_SECTION_NOT_RUN",
     "Pack",
     "DataType",
     "PortSide",
@@ -84,6 +99,18 @@ __all__ = [
 
 #: Источник истины для версии: `pyproject.toml` объявляет её динамической и
 #: читает отсюда. Прописывать её ещё и там — значит однажды снова разойтись.
+#:
+#: 0.9.0: минорный — контур языкового слоя: `ScriptBridge.run_page_script`,
+#: `PageRunResult`, пять исходов (`OUTCOME_*`) и классификатор
+#: `classify_page_result`; тела операций — `model_operations`. Существующие
+#: методы и тексты их отказов не изменились.
+#:
+#: Отличие от пробы — секция, в которой исполняется тело: `run_probe` идёт под
+#: `if firststep then`, а этот режим — в `initialization`, потому что только
+#: там разрешено создавать объекты. Неподвижное время здесь не отказ, а исход:
+#: маркеры `CTX_*` пишет сам скрипт, и по ним «не собрался» отличается от
+#: «модель не считает» — то, чего мост различить не мог. Уборка (остановка
+#: расчёта, возврат прежнего скрипта, сверка снимков) — общая с пробой.
 #:
 #: 0.8.0: минорный — запрос связей пары: `query_connections`, `ConnectionQuery`,
 #: `connection_query_to_dict` (`simintech_api.semantic`). Отвечает на вопрос
@@ -160,4 +187,4 @@ __all__ = [
 #: `.pak`/`.dbconf`, разделение линий и блоков страницы, поддержка FSM и
 #: маркер PEP 561. Тег `v0.2.0` указывал на код 0.1.0 (47 коммитов назад),
 #: поэтому имя тега новее содержимого; этот выпуск ловушку снимает.
-__version__ = "0.8.0"
+__version__ = "0.9.0"

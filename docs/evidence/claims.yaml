@@ -455,6 +455,33 @@
   evidence: "Второй ответ технической поддержки вендора, 2026-09-28 — официальное описание того же механизма, который мы измерили вторым аргументом `traceallports` (запись `traceallports-second-arg-crosses-container`): обход с `1` приносит порты чужого контейнера"
   tests: []
 
+- id: page-script-runs-in-initialization
+  claim: "Тело, поставленное скриптом страницы, исполняется в секции `initialization`, и по маркерам `CTX_BEGIN`/`CTX_END` исход различается на пять состояний"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/superpowers/specs/2026-09-29-language-contour.md §3"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-29
+  evidence: "Маркер `CTX_BEGIN` пишется до тела, `CTX_END` — после: наличие первого без второго означает обрыв на исполнении, отсутствие обоих при неподвижном времени — что скрипт не скомпилировался. Живой прогон 2026-09-29, поставка 2.26.6.23: тело исполнилось в `initialization`, прежний (пустой) скрипт страницы возвращён, метки в выгрузке не осталось, проект остановлен — `tests/integration/test_language_contour_live.py`, 1 passed"
+  tests:
+    - file: tests/integration/test_language_contour_live.py
+      id: test_body_runs_in_initialization_and_previous_script_returns
+      kind: live
+
+- id: language-literal-uses-chr34-and-clrf
+  claim: "Строковый литерал встроенного языка собирается через `chr(34)` для кавычки и `CLRF` для перевода строки; удвоение кавычки даёт пустую строку, обратный слэш не экранирует"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/superpowers/specs/2026-09-29-language-contour.md §3"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-29
+  evidence: "Замеры 2026-09-28/29: текст модели с `chr(34)` принимается, тот же текст с удвоением — нет; в пробах инжектирования литерал собирался этой же формой и исполнялся"
+  tests:
+    - file: tests/unit/test_model_operations.py
+      id: test_literal_escapes_quotes_and_newlines_the_measured_way
+      kind: unit
 # Замеры 2026-09-29: субмодель со скриптом, семейство текста модели, удаление
 # объектов и обход контейнеров (спецификация 2026-09-29-submodel-script-and-model-text.md).
 
