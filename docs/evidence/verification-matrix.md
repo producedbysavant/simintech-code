@@ -33,7 +33,7 @@
 | `tab-is-a-predefined-constant` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
 | `script-compile-errors-are-silent-via-com` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
 | `savemodeltofile-understands-absolute-path` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
-| `createmodelfromfile-did-not-create-objects` | unknown | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `createmodelfromfile-did-not-create-objects` | refuted | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
 | `traceallports-order-is-not-a-contract` | verified | official-doc | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
 | `branch-point-is-not-a-separate-object` | verified | official-doc | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
 | `getparentwire-functions-describe-branching` | verified | official-doc | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
@@ -47,3 +47,10 @@
 | `page-script-runs-in-initialization` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | `tests/integration/test_language_contour_live.py::test_body_runs_in_initialization_and_previous_script_returns` (live) |
 | `language-literal-uses-chr34-and-clrf` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | `tests/unit/test_model_operations.py::test_literal_escapes_quotes_and_newlines_the_measured_way` (unit) |
 | `page-script-readable-without-calculation` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | `tests/integration/test_language_contour_live.py::test_read_page_script_returns_script_and_keeps_model_time` (live) |
+| `submodel-script-injection-needs-reinitsubmodel` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
+| `initsubmodelports-makes-ports-immediately-visible` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
+| `removeprimitiv-breaks-calculation-start` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
+| `model-text-quote-is-chr34` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
+| `model-text-loading-creates-objects` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
+| `dot-syntax-belongs-to-model-text` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
+| `container-traversal-functions-are-used-by-vendor` | measured | xprt-observation | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
