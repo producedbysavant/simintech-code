@@ -33,7 +33,7 @@
 | `tab-is-a-predefined-constant` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
 | `script-compile-errors-are-silent-via-com` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
 | `savemodeltofile-understands-absolute-path` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
-| `createmodelfromfile-did-not-create-objects` | unknown | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `createmodelfromfile-did-not-create-objects` | refuted | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
 | `traceallports-order-is-not-a-contract` | verified | official-doc | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
 | `branch-point-is-not-a-separate-object` | verified | official-doc | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
 | `getparentwire-functions-describe-branching` | verified | official-doc | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
@@ -44,3 +44,10 @@
 | `model-text-function-family-has-four-names` | verified | official-doc | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
 | `savemodeltotext-missing-from-distribution` | unknown | source-code | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
 | `tracestartportwires-walks-service-blocks` | verified | official-doc | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `submodel-script-injection-needs-reinitsubmodel` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
+| `initsubmodelports-makes-ports-immediately-visible` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
+| `removeprimitiv-breaks-calculation-start` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
+| `model-text-quote-is-chr34` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
+| `model-text-loading-creates-objects` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
+| `dot-syntax-belongs-to-model-text` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
+| `container-traversal-functions-are-used-by-vendor` | measured | xprt-observation | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
