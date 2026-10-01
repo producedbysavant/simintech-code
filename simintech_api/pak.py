@@ -546,3 +546,133 @@ def load_packs(root: Path) -> List[ProjectPack]:
     пакеты лежат вперемешку с проектами и библиотеками.
     """
     return [load_pack(p) for p in sorted(root.rglob("*.pak"))]
+
+
+# ─── Запись ───────────────────────────────────────────────────────
+
+#: Значения `[Form]` по умолчанию — нейтральная геометрия окна пакета.
+#: Секция есть у всех 63 файлов поставки: её пишет сама среда, и выбрасывать
+#: её — отклоняться от формата, даже если составу пакета значения и не важны.
+_FORM_DEFAULTS: Tuple[Tuple[str, str], ...] = (
+    ("Rect.L", "0"), ("Rect.T", "0"), ("Rect.R", "800"), ("Rect.B", "600"),
+    ("ConsoleHeight", "0"), ("WindowState", "0"), ("ColCount", "7"),
+    ("ColWidth0", "301"), ("ColWidth1", "110"), ("ColWidth2", "90"),
+    ("ColWidth3", "70"), ("ColWidth4", "60"), ("ColWidth5", "58"),
+    ("ColWidth6", "65"),
+)
+
+
+def _flag(value: bool) -> str:
+    """Флаг так, как его пишет среда: `1`/`0`, а не `True`/`False`."""
+    return "1" if value else "0"
+
+
+@dataclass(frozen=True)
+class PackEntry:
+    """Проект для записи в пакет.
+
+    Args:
+        path: путь так, как он **будет записан** в файл. Когда `.pak` и
+            `.prt` лежат в одном каталоге, среда пишет просто имя файла
+            (`cbu.prt`) — так же стоит писать и здесь: относительные записи
+            раскрываются относительно каталога пакета (см. читатель,
+            `_resolve_in`).
+        active: флаг ``[Active]`` — участие проекта в расчёте пакета
+            (``aActive`` у ``AddProject``).
+        time_sync: флаг ``[TimeSync]`` — пер-проектная синхронизация с
+            реальным временем (``SetProjectRealTimeDelay``); от ``active``
+            не зависит — среда пишет их независимо.
+    """
+
+    path: str
+    active: bool = True
+    time_sync: bool = True
+
+
+def _pack_entries(entries: Sequence[PackEntry | str]) -> List[PackEntry]:
+    """Записи состава: строки — проекты по умолчанию (активные, синхронные)."""
+    out: List[PackEntry] = []
+    for entry in entries:
+        item = entry if isinstance(entry, PackEntry) else PackEntry(entry)
+        if "\n" in item.path or "\r" in item.path:
+            raise PackError(
+                f"путь проекта не может содержать перевод строки: "
+                f"{item.path!r} — он подставляется в строку файла")
+        if not item.path.strip():
+            raise PackError("пустой путь проекта в составе пакета")
+        out.append(item)
+    return out
+
+
+def build_pack_text(entries: Sequence[PackEntry | str], *,
+                    synchronize: bool = True,
+                    relative: bool = True,
+                    real_time: bool = False,
+                    time_mash: float = 1.0,
+                    restart_name: str = "") -> str:
+    """Собрать текст пакета: пять секций в порядке среды, строки CRLF.
+
+    Значения по умолчанию ``[Common]``: ``Synchronize`` включён (объединение
+    списков сигналов проектов), ``RelativePath`` включён (имена файлов рядом
+    с пакетом пишутся без каталога — так пишет и сама среда), синхронизация
+    с реальным временем выключена.
+
+    Кодировку накладывает запись: `write_pack` пишет UTF-8 с BOM — так
+    записаны 62 файла из 63 в поставке. Текст — формат, который разбирает
+    `parse_pack`: имена секций и ключей у писателя и читателя общие, а связь
+    между ними проверяет round-trip в `write_pack`.
+    """
+    items = _pack_entries(entries)
+    lines: List[str] = ["[Form]"]
+    lines.extend(f"{key}={value}" for key, value in _FORM_DEFAULTS)
+    lines.extend([
+        "[Common]",
+        f"Synchronize={_flag(synchronize)}",
+        f"RelativePath={_flag(relative)}",
+        f"IsRealTime={_flag(real_time)}",
+        f"TimeMash={time_mash:g}",
+        "fSimpleSignalLoad=0",
+        "formstyle=0",
+        f"restartname={restart_name}",
+        "notqueryremoveforall=0",
+        "[Files]",
+        f"Count={len(items)}",
+    ])
+    lines.extend(f"{index}={item.path}" for index, item in enumerate(items))
+    lines.append("[Active]")
+    lines.extend(f"{index}={_flag(item.active)}"
+                 for index, item in enumerate(items))
+    lines.append("[TimeSync]")
+    lines.extend(f"{index}={_flag(item.time_sync)}"
+                 for index, item in enumerate(items))
+    return "\r\n".join(lines) + "\r\n"
+
+
+def write_pack(path: Path, entries: Sequence[PackEntry | str], *,
+               synchronize: bool = True,
+               relative: bool = True,
+               real_time: bool = False,
+               time_mash: float = 1.0,
+               restart_name: str = "") -> ProjectPack:
+    """Записать пакет текстом и вернуть его же — перечитанным разборщиком.
+
+    COM не нужен вовсе: `.pak` — плоский INI-файл (это доказывает читатель),
+    и собрать его — файловая операция. Запись — UTF-8 с BOM и CRLF, как файлы
+    поставки.
+
+    Возвращается **разбор записанного**: вызывающий получает состав, каким
+    его увидит `load_pack`, и рассинхронизация писателя с читателем
+    становится отказом здесь, а не молчаливым пакетом чужого формата в среде
+    (тем же приёмом `export_signal_db` разбирает выгруженную базу).
+
+    Raises:
+        PackError: путь записи не выводится из записи состава (перевод
+            строки, пустая строка) — либо записанный текст не разбирается
+            читателем.
+    """
+    text = build_pack_text(entries, synchronize=synchronize,
+                           relative=relative, real_time=real_time,
+                           time_mash=time_mash, restart_name=restart_name)
+    path = Path(path)
+    path.write_bytes(_BOM + text.encode("utf-8"))
+    return load_pack(path)

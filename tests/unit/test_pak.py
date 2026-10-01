@@ -596,3 +596,90 @@ def test_distribution_restart_names_and_time_mash():
     assert sorted({p.time_mash for p in packs}) == [
         0.003, 0.005, 1.0, 2.0, 5.0, 20.0, 100.0]
     assert sum(1 for p in packs if p.relative_path is True) == DISTRIBUTION_PACKS
+
+
+# ─── Запись (сборка пакета текстом) ───────────────────────────────
+
+
+def test_write_pack_round_trips_through_reader(tmp_path):
+    """Записанный пакет читается своим же разборщиком — без отклонений.
+
+    Писатель и читатель делят имена секций и ключей; round-trip — проверка
+    этой связи: расхождение всплыло бы у среды, а не здесь.
+    """
+    from simintech_api.pak import write_pack
+
+    target = tmp_path / "Сборка.pak"
+    pack = write_pack(target, ["a.prt", "b.prt"])
+
+    assert pack.project_count == 2
+    assert [p.path for p in pack.projects] == ["a.prt", "b.prt"]
+    assert pack.count == 2
+    assert pack.relative_path is True
+    assert pack.synchronize is True
+    assert pack.problems == (), pack.problems
+
+
+def test_write_pack_bytes_like_distribution(tmp_path):
+    """Байты — UTF-8 с BOM и CRLF: так записаны 62 файла из 63 в поставке."""
+    from simintech_api.pak import write_pack
+
+    target = tmp_path / "Сборка.pak"
+    write_pack(target, ["a.prt"])
+    data = target.read_bytes()
+
+    assert data.startswith(b"\xef\xbb\xbf")
+    assert data.count(b"\n") == data.count(b"\r\n")
+
+
+def test_write_pack_flags_are_independent(tmp_path):
+    """[Active] и [TimeSync] независимы и доезжают до разбора по номерам."""
+    from simintech_api.pak import PackEntry, write_pack
+
+    pack = write_pack(tmp_path / "Сборка.pak", [
+        PackEntry("a.prt"),
+        PackEntry("b.prt", active=False, time_sync=False),
+        PackEntry("c.prt", time_sync=False),
+    ])
+
+    assert [(p.active, p.time_sync) for p in pack.projects] == [
+        (True, True), (False, False), (True, False)]
+
+
+def test_write_pack_keeps_recorded_paths(tmp_path):
+    """Пути пишутся как переданы: голое имя рядом с пакетом — штатный режим."""
+    from simintech_api.pak import write_pack
+
+    pack = write_pack(tmp_path / "Сборка.pak", [r"D:\prj\a.prt", "b.prt"])
+
+    assert [p.path for p in pack.projects] == [r"D:\prj\a.prt", "b.prt"]
+    assert [p.absolute for p in pack.projects] == [True, False]
+
+
+def test_write_pack_rejects_unwritable_entries(tmp_path):
+    """Перевод строки и пустое имя — отказ до записи файла."""
+    from simintech_api.pak import write_pack
+
+    target = tmp_path / "Сборка.pak"
+
+    with pytest.raises(PackError):
+        write_pack(target, ["a\n.prt"])
+    with pytest.raises(PackError):
+        write_pack(target, ["   "])
+
+    assert not target.exists(), "файл не создаётся, если состав невалиден"
+
+
+def test_write_pack_option_values_reach_reader(tmp_path):
+    """Значения [Common] доезжают: TimeMash — double, флаги — как заданы."""
+    from simintech_api.pak import write_pack
+
+    pack = write_pack(tmp_path / "Сборка.pak", ["a.prt"],
+                      synchronize=False, relative=False, real_time=True,
+                      time_mash=0.003, restart_name="rst")
+
+    assert pack.time_mash == 0.003
+    assert pack.synchronize is False
+    assert pack.relative_path is False
+    assert pack.real_time is True
+    assert pack.restart_name == "rst"
