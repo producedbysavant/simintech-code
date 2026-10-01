@@ -581,8 +581,8 @@
   status: verified
   source:
     type: official-doc
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.1"
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.10"
     product_version: "SimInTech64, поставка 2.26.6.23"
     observed_at: 2026-09-28
-  evidence: "Исходник функции (`GetPortAllConnections_run`), полученный от технической поддержки вендора, 2026-09-28: `aWithCoPorts:=True;`, далее `if Length(Args) > 1 then aWithCoPorts:=Boolean(Args[1].Data^);` — значение переопределяет только переданный аргумент. Это не замер: измерены формы с `0` и `1` (запись `traceallports-second-arg-crosses-container`), одноаргументную форму живым прогоном не звали (прогон трёх форм предложен в simintech-code#13)"
+  evidence: "Исходник функции (`GetPortAllConnections_run`), полученный от технической поддержки вендора, 2026-09-28: `aWithCoPorts:=True;`, далее `if Length(Args) > 1 then aWithCoPorts:=Boolean(Args[1].Data^);` — значение переопределяет только переданный второй аргумент. Это не замер: измерены формы с `0` и `1` (запись `traceallports-second-arg-crosses-container`), одноаргументную форму живым прогоном не звали; листинг переписан в спецификацию (§2.10)"
   tests: []
