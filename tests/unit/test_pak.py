@@ -647,17 +647,32 @@ def test_write_pack_flags_are_independent(tmp_path):
 
 
 def test_write_pack_keeps_recorded_paths(tmp_path):
-    """Пути пишутся как переданы: голое имя рядом с пакетом — штатный режим."""
+    """Пути пишутся как переданы: голое имя рядом с пакетом — штатный режим.
+
+    Абсолютная запись — законная форма (за каталогом пакета так пишет и
+    среда), но читатель обязан пометить её неразворачиваемой: round-trip
+    пропускает ровно это расхождение и ничего больше.
+    """
     from simintech_api.pak import write_pack
 
     pack = write_pack(tmp_path / "Сборка.pak", [r"D:\prj\a.prt", "b.prt"])
 
     assert [p.path for p in pack.projects] == [r"D:\prj\a.prt", "b.prt"]
     assert [p.absolute for p in pack.projects] == [True, False]
+    assert any(p.startswith("абсолютные пути") for p in pack.problems), (
+        "абсолютная запись должна быть помечена читателем — именно это "
+        "расхождение разрешено писателю")
 
 
 def test_write_pack_rejects_unwritable_entries(tmp_path):
-    """Перевод строки и пустое имя — отказ до записи файла."""
+    """Невалидный вход — отказ до записи файла.
+
+    Проверяются все четыре формы: перевод строки и пустое имя в записи
+    (guard `_pack_entries`), относительный путь за каталогом пакета
+    (`_reject_escaping_entries`) и перевод строки в имени рестарта (тот же
+    guard, что у записей, — раньше его не было, и имя вставляло в файл
+    произвольные ключи и секции).
+    """
     from simintech_api.pak import write_pack
 
     target = tmp_path / "Сборка.pak"
@@ -666,8 +681,30 @@ def test_write_pack_rejects_unwritable_entries(tmp_path):
         write_pack(target, ["a\n.prt"])
     with pytest.raises(PackError):
         write_pack(target, ["   "])
+    with pytest.raises(PackError):
+        write_pack(target, ["../b.prt"])
+    with pytest.raises(PackError):
+        write_pack(target, ["a.prt"], restart_name="x\r\n[Files]")
 
     assert not target.exists(), "файл не создаётся, если состав невалиден"
+
+
+def test_write_pack_refuses_writer_reader_desync(tmp_path, monkeypatch):
+    """Расхождение писателя с читателем — отказ, а не молчаливый файл.
+
+    Вход писателем проверен, поэтому расхождение на разборе означает дефект
+    писателя; подмена `load_pack` приносит такое расхождение, и `write_pack`
+    обязан отказать, а не ответить «пакет собран» (обещание докстринга,
+    которое раньше не выполнялось: `problems` никто не смотрел).
+    """
+    import simintech_api.pak as pak
+
+    class _Broken:
+        problems = ("Count=1 не совпадает с числом записей [Files] (2)",)
+
+    monkeypatch.setattr(pak, "load_pack", lambda path: _Broken())
+    with pytest.raises(PackError):
+        pak.write_pack(tmp_path / "Сборка.pak", ["a.prt"])
 
 
 def test_write_pack_option_values_reach_reader(tmp_path):
@@ -675,11 +712,13 @@ def test_write_pack_option_values_reach_reader(tmp_path):
     from simintech_api.pak import write_pack
 
     pack = write_pack(tmp_path / "Сборка.pak", ["a.prt"],
-                      synchronize=False, relative=False, real_time=True,
+                      synchronize=False, real_time=True,
                       time_mash=0.003, restart_name="rst")
 
     assert pack.time_mash == 0.003
     assert pack.synchronize is False
-    assert pack.relative_path is False
+    assert pack.relative_path is True, (
+        "писатель обязан писать RelativePath=1: флаг 0 — форма с абсолютными "
+        "путями, которой в поставке нет (63 файла из 63 — единица)")
     assert pack.real_time is True
     assert pack.restart_name == "rst"
