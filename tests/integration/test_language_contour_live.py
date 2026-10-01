@@ -71,6 +71,37 @@ def test_body_runs_in_initialization_and_previous_script_returns(
         project.close()
 
 
+def test_read_page_script_returns_script_and_keeps_model_time(client, tmp_path):
+    """Чтение возвращает поставленный скрипт и **не сдвигает** модельное время.
+
+    COM чтения скрипта страницы не отдаёт (`GetPageScript` в интерфейсе нет),
+    поэтому страница опознаётся снимком выгрузки — и это обязано быть безопасно
+    для чужого расчёта: `ProjectStart` обнулил бы время.
+    """
+    project = Project.from_template(client)
+    script = "// ПРИМЕТА_ЧТЕНИЯ\nseterrorflag(0);\n"
+    try:
+        bridge = ScriptBridge(client, project.id)
+        bridge.install_script(script)
+        time_before = float(client.call("GetProjectTime", project.id))
+
+        restored = bridge.read_page_script()
+
+        assert restored == script, "прочитан не тот скрипт, что стоял в странице"
+        time_after = float(client.call("GetProjectTime", project.id))
+        assert time_after == time_before, (
+            f"чтение сдвинуло модельное время ({time_before} -> {time_after}): "
+            "значит, был ProjectStart")
+        assert int(client.call("GetProjectStateFlag", project.id)) == 0, (
+            "после чтения проект остался инициализированным")
+    finally:
+        try:
+            client.call("ProjectStop", project.id)
+        except Exception:                                             # noqa: BLE001
+            pass
+        project.close()
+
+
 def _records(client, project, path: Path) -> list:
     """Сырые скриптовые записи выгрузки — независимо от средств моста."""
     client.call("SaveProjectXML", project.id, str(path))

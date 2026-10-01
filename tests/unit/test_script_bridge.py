@@ -1082,3 +1082,79 @@ def test_run_page_script_keeps_model_stuck_separate_from_success(tmp_path):
 
     assert result.outcome.kind == OUTCOME_MODEL_NOT_RUNNING
     assert result.outcome.lines == ["A"]
+
+
+# ─── Чтение скрипта страницы ─────────────────────────────────────────────────
+
+
+def test_read_page_script_returns_text_without_touching_calculation(tmp_path):
+    """Чтение скрипта: текст возвращён, расчёт НЕ запускался.
+
+    Через `run_page_script` читать нельзя: он запускает `ProjectStart`, а тот
+    обнуляет модельное время — читающий инструмент уничтожил бы результаты
+    расчёта вызывающего. Проверка сторожит именно это.
+    """
+    env, bridge = _bridge(installed="// прежний скрипт\nseterrorflag(0);")
+
+    text = bridge.read_page_script()
+
+    assert text == "// прежний скрипт\nseterrorflag(0);"
+    assert env.scripts[0] == "// прежний скрипт\nseterrorflag(0);", (
+        "прежний скрипт не вернулся на место")
+    called = [name for name, _ in env.calls]
+    assert "ProjectStart" not in called, "чтение запустило расчёт"
+    assert "ProjectStep" not in called
+
+
+def test_read_page_script_returns_empty_string_for_page_without_script(tmp_path):
+    """Пустой скрипт — это скрипт, а не «нечего читать» и не отказ."""
+    env, bridge = _bridge(installed="")
+
+    assert bridge.read_page_script() == ""
+    assert env.scripts[0] == ""
+
+
+def test_read_page_script_refuses_on_calculating_project(tmp_path):
+    """Идущий расчёт — отказ до всякой работы: чтение не смеет его сломать."""
+    env, bridge = _bridge()
+    env.state = 7  # расчёт уже идёт: значение из измеренной маски
+
+    with pytest.raises(ScriptBridgeUnsafeStateError):
+        bridge.read_page_script()
+
+    assert env.set_page_script_calls() == [], "проект тронут при идущем расчёте"
+
+
+def test_run_page_script_reports_not_compiled_when_file_absent(tmp_path):
+    """Файла нет вовсе — это исход «не собрался», а не отказ.
+
+    Живой замер 2026-09-29: у **не собравшегося** скрипта файл результата не
+    создаётся совсем (в отличие от оборвавшегося — тот успевает записать
+    начальный маркер). Пока это было отказом «файл не создан», контур терял
+    ровно то различие, ради которого он делался.
+    """
+    env, bridge = _bridge(writes_result=False, time_grows=False)
+
+    result = bridge.run_page_script("x();", tmp_path / "r.txt")
+
+    assert result.outcome.kind == OUTCOME_NOT_COMPILED
+    assert result.outcome.lines == []
+
+
+def test_run_page_script_reports_section_not_run_when_file_absent(tmp_path):
+    """Тот же случай, но время росло: секция не выполнилась — и это отдельный исход."""
+    env, bridge = _bridge(writes_result=False, time_grows=True)
+
+    result = bridge.run_page_script("x();", tmp_path / "r.txt")
+
+    assert result.outcome.kind == OUTCOME_SECTION_NOT_RUN
+
+
+def test_run_probe_still_refuses_when_file_absent(tmp_path):
+    """Мост на отсутствии файла по-прежнему отказывает: у него это признак обрыва."""
+    env, bridge = _bridge(writes_result=False)
+
+    with pytest.raises(ScriptBridgeError) as exc:
+        bridge.run_probe("", tmp_path / "out.txt")
+
+    assert "файл результата" in str(exc.value)

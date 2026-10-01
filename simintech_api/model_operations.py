@@ -48,10 +48,21 @@ def build_export_model_text_body(artifact_path: str) -> str:
 def build_import_model_text_body(model_text: str) -> str:
     """Тело загрузки модели: объявление кортежа и `createmodel`.
 
-    Форма взята из демонстрационных проектов вендора (`const model : ( … );`) —
+    Форма взята из демонстрационных проектов вендора: `const model : ( … );` —
     это не строка, а запись языка, введённая в текст скрипта.
+
+    **Текст из `savemodeltofile` приходит уже обёрнутым** в `( … )` — это
+    выгрузка контейнера целиком. Двойная обёртка (`const model : ( ( … ) );`)
+    не компилируется, причём среда об этом молчит: замер 2026-09-29 показал
+    именно это — выгрузка как есть не собиралась, а она же без внешней скобки
+    собиралась и создавала объекты. Поэтому внешняя скобка распознаётся и
+    повторно не добавляется.
     """
-    return (f"const model : (\n{model_text}\n);\n"
+    text = model_text.strip()
+    if text.startswith("(") and text.endswith(")"):
+        return (f"const model : {text};\n"
+                "createmodel(getcurrentprojectid, model);")
+    return (f"const model : (\n{text}\n);\n"
             "createmodel(getcurrentprojectid, model);")
 
 
