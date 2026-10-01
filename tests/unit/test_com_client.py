@@ -14,7 +14,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 import pytest
 
-from simintech_api.exceptions import ComCallError, ComConnectionError
+from simintech_api.exceptions import (ComCallError, ComConnectionError,
+                                      PackError)
 from simintech_api.model import TDataDescriptor
 
 
@@ -60,6 +61,9 @@ class FakeServer:
 
     def CloseProject(self, project_id):
         self.calls.append(("CloseProject", project_id))
+
+    def ClosePack(self, pack_id):
+        self.calls.append(("ClosePack", pack_id))
 
     def OpenTemplate(self, template):
         self.calls.append(("OpenTemplate", template))
@@ -192,6 +196,37 @@ def test_connect_platform_restricted(monkeypatch):
     client = COMClient()
     with pytest.raises(ComConnectionError):
         client.connect()
+
+
+def test_close_pack_refuses_invalid_id(monkeypatch):
+    """`ClosePack` с id ≤ 0 не доходит до COM: он роняет mmain (замер 01.10.2026).
+
+    `-1` — достижимое значение: столько возвращает `GetPackIdByFileName` для
+    неоткрытого пакета. Защита стоит здесь, где id попадает в COM (ревью
+    code#23), а не только этажом выше, в `Pack.close`.
+    """
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+    client.connect()
+
+    with pytest.raises(PackError):
+        client.close_pack(-1)
+    with pytest.raises(PackError):
+        client.close_pack(0)
+
+    assert ("ClosePack", -1) not in fake.calls
+    assert ("ClosePack", 0) not in fake.calls
+
+
+def test_close_pack_passes_valid_id(monkeypatch):
+    """Положительный id уходит в COM как есть."""
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+    client.connect()
+
+    client.close_pack(42)
+
+    assert ("ClosePack", 42) in fake.calls
 
 
 def test_open_project(monkeypatch):

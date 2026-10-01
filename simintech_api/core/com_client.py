@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from typing import Any, List, Optional
 
-from ..exceptions import ComConnectionError, ComCallError
+from ..exceptions import ComCallError, ComConnectionError, PackError
 from ..model import TDataDescriptor
 
 
@@ -223,8 +223,18 @@ class COMClient:
         Идентификатор должен быть **положительным**: `ClosePack(-1)` роняет
         `mmain.exe` (Access violation, живой замер 01.10.2026), а `-1` —
         достижимое значение (`GetPackIdByFileName` для неоткрытого пакета).
-        Не подавайте сюда id ≤ 0; у `Pack.close` защита стоит.
+
+        Отказ стоит **здесь**, а не только этажом выше (`Pack.close`): через
+        этот метод проходит каждый путь закрытия пакета, и защита обязана
+        стоять там, где id попадает в COM, — докстринг не защищает
+        (ревью code#23).
         """
+        if pack_id <= 0:
+            raise PackError(
+                f"ClosePack: идентификатор пакета {pack_id} недействителен — "
+                f"неположительный id роняет mmain.exe (Access violation, замер "
+                f"01.10.2026). Проверьте источник id: у неоткрытого пакета "
+                f"`GetPackIdByFileName` возвращает -1.")
         self.call("ClosePack", pack_id)
 
     def get_pack_count(self) -> int:
