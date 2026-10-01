@@ -13,6 +13,7 @@
 """
 
 import os
+import shutil
 import sys
 import tempfile
 import warnings
@@ -321,6 +322,51 @@ def test_dump_records_uses_temporary_directory_and_removes_it():
     exported = args[1]
     assert exported.startswith(tempfile.gettempdir())
     assert not os.path.exists(exported)
+
+
+class _LockedTemporaryDirectory:
+    """Модель неустранимого сбоя очистки: каталог держит среда (issue #18).
+
+    На Windows `rmtree` не может удалить каталог выгрузки (WinError 32), и
+    правами это не лечится — stdlib в ветке `repeated` своей `TemporaryDirectory.
+    _rmtree` поднимает `PermissionError` наружу, если очистка не объявлена
+    best-effort (`ignore_cleanup_errors`). Модель ведёт себя так же.
+    """
+
+    created = []
+
+    def __init__(self, prefix="", ignore_cleanup_errors=False):
+        self._dir = tempfile.mkdtemp(prefix=prefix)
+        self._ignore = ignore_cleanup_errors
+        type(self).created.append(self._dir)
+
+    def __enter__(self):
+        return self._dir
+
+    def __exit__(self, exc_type, exc, tb):
+        if not self._ignore:
+            raise PermissionError(32, "Процесс не может получить доступ к файлу")
+        return False  # best-effort: каталог остаётся, как у stdlib при сбое
+
+
+def test_dump_records_survives_failed_cleanup(monkeypatch):
+    """Неустранимый сбой очистки каталога не валит уже снятый снимок (issue #18).
+
+    На Windows каталог выгрузки ещё держит среда, и `rmtree` падает WinError 32
+    **после** успешного чтения. Исключение из `TemporaryDirectory.__exit__`
+    подменяло результат: мост отказывал при фактически снятом снимке — и на
+    этом стояли все контурные инструменты.
+    """
+    monkeypatch.setattr(tempfile, "TemporaryDirectory", _LockedTemporaryDirectory)
+    env, bridge = _bridge()
+    try:
+        records = bridge._dump_records()
+    finally:
+        for locked in _LockedTemporaryDirectory.created:
+            shutil.rmtree(locked, ignore_errors=True)
+        _LockedTemporaryDirectory.created.clear()
+
+    assert records
 
 
 def test_run_probe_does_not_touch_project_when_token_already_present(tmp_path):
