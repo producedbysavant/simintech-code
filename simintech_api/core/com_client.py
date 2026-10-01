@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from typing import Any, List, Optional
 
-from ..exceptions import ComConnectionError, ComCallError
+from ..exceptions import ComCallError, ComConnectionError, PackError
 from ..model import TDataDescriptor
 
 
@@ -210,11 +210,31 @@ class COMClient:
         оно равно минимуму времён проектов, а обмен идёт через общую базу
         сигналов. Состав дают `Pack.project_ids()`. Возвращает 0, если пакет
         открыть не удалось.
+
+        Повторное открытие **того же файла** создаёт второй пакет, а не
+        возвращает прежний (живой замер 01.10.2026): один файл в двух
+        пакетах — это два независимых состава, и закрывать надо оба.
         """
         return _as_int(self.call("OpenPack", path))
 
     def close_pack(self, pack_id: int) -> None:
-        """Закрыть пакет."""
+        """Закрыть пакет.
+
+        Идентификатор должен быть **положительным**: `ClosePack(-1)` роняет
+        `mmain.exe` (Access violation, живой замер 01.10.2026), а `-1` —
+        достижимое значение (`GetPackIdByFileName` для неоткрытого пакета).
+
+        Отказ стоит **здесь**, а не только этажом выше (`Pack.close`): через
+        этот метод проходит каждый путь закрытия пакета, и защита обязана
+        стоять там, где id попадает в COM, — докстринг не защищает
+        (ревью code#23).
+        """
+        if pack_id <= 0:
+            raise PackError(
+                f"ClosePack: идентификатор пакета {pack_id} недействителен — "
+                f"неположительный id роняет mmain.exe (Access violation, замер "
+                f"01.10.2026). Проверьте источник id: у неоткрытого пакета "
+                f"`GetPackIdByFileName` возвращает -1.")
         self.call("ClosePack", pack_id)
 
     def get_pack_count(self) -> int:
@@ -292,9 +312,11 @@ class COMClient:
     def get_opened_file_name(self, project_id: int) -> str:
         """Путь к файлу, из которого открыт проект (`GetOpenedFileName`).
 
-        Пустая строка означает, что проект не связан с файлом (например,
-        создан через `NewProject`) — это предположение: и оно, и то, полный
-        это путь или короткое имя, на живом SimInTech не подтверждены.
+        **Полный путь** — подтверждено живым замером 01.10.2026 на участниках
+        пакета (`C:\\…\\pak-demo\\Непрерывная часть.prt`). Пустая строка
+        означает, что проект не связан с файлом (например, создан через
+        `NewProject`) — это по-прежнему предположение, живым прогоном не
+        проверялось.
         """
         return _as_str(_out_values(
             self.call("GetOpenedFileName", int(project_id)),

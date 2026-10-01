@@ -55,3 +55,10 @@
 | `dot-syntax-belongs-to-model-text` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
 | `container-traversal-functions-are-used-by-vendor` | measured | xprt-observation | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
 | `traceallports-second-arg-defaults-true` | verified | official-doc | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |
+| `pack-members-are-open-projects` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | — |
+| `pack-step-advances-member-time` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | — |
+| `packrun-does-not-advance-in-embedding` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | — |
+| `pack-member-close-removes-from-pack` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | — |
+| `closepack-invalid-id-crashes-server` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | `tests/unit/test_pack.py::test_pack_close_refuses_invalid_id` (unit) |
+| `pack-double-open-creates-second-pack` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | — |
+| `pack-member-ids-are-unstable` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | — |

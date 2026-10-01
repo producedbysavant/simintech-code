@@ -72,9 +72,74 @@ def test_pack_run_to_returns_wait_result():
     assert ("WaitForTimePack", 42, 5.0) in client.calls
 
 
-def test_pack_require_open_refuses_closed_pack():
+@pytest.mark.parametrize("pack_id", [0, -1])
+def test_pack_require_open_refuses_closed_pack(pack_id):
+    """«Не открыт» — это и ноль, и -1 (`GetPackIdByFileName` неоткрытого)."""
     with pytest.raises(PackError):
-        Pack(FakeClient(), 0).require_open()
+        Pack(FakeClient(), pack_id).require_open()
+
+
+@pytest.mark.parametrize("pack_id", [0, -1])
+def test_pack_close_refuses_invalid_id(pack_id):
+    """`ClosePack` с id ≤ 0 не зовётся: `ClosePack(-1)` роняет mmain.
+
+    Живой замер 01.10.2026: `ClosePack(-1)` — Access violation в mmain.exe
+    (RPC_E_SERVERFAULT). Поэтому `close` проверяет идентификатор до COM, и в
+    клиент не уходит ни одного вызова.
+    """
+    client = FakeClient()
+
+    with pytest.raises(PackError):
+        Pack(client, pack_id).close()
+
+    assert client.calls == [], "ClosePack с недействительным id не вызывается"
+
+
+def test_pack_close_invalidates_id():
+    """Повторное закрытие — отказ, а не второй ClosePack по тому же id.
+
+    Обнуление идентификатора после удачного закрытия — ровно та защита от
+    повторного `ClosePack`, от которой зависит замер 01.10.2026 (ревью
+    code#23).
+    """
+    client = FakeClient()
+    pack = Pack(client, 42)
+
+    pack.close()
+
+    assert pack.id == 0
+    with pytest.raises(PackError):
+        pack.close()
+    assert client.calls == [("ClosePack", 42)]
+
+
+@pytest.mark.parametrize("pack_id", [0, -1])
+@pytest.mark.parametrize("method", ["project_ids", "start", "run", "step",
+                                    "pause", "stop"])
+def test_pack_operations_refuse_invalid_id(pack_id, method):
+    """Операции с недействительным id до COM не доходят вовсе.
+
+    Проверка живёт в единственной точке, где id попадает в COM (`Pack._call`),
+    поэтому контракт общий для всех операций, а не только для закрытия.
+    """
+    client = FakeClient()
+
+    with pytest.raises(PackError):
+        getattr(Pack(client, pack_id), method)()
+
+    assert client.calls == []
+
+
+@pytest.mark.parametrize("pack_id", [0, -1])
+def test_pack_run_to_refuses_invalid_id(pack_id):
+    """`run_to` — тоже операция: недействительный id до COM не доходит."""
+
+    client = FakeClient()
+
+    with pytest.raises(PackError):
+        Pack(client, pack_id).run_to(5.0)
+
+    assert client.calls == []
 
 
 @pytest.mark.parametrize("method", ["pack_start", "pack_run", "pack_step",
