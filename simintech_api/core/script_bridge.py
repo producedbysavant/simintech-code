@@ -126,7 +126,13 @@ class ScriptBridge:
         не `FileNotFoundError` из недр: наружу из моста обязаны выходить только
         ошибки своей иерархии.
         """
-        with tempfile.TemporaryDirectory(prefix="simintech-bridge-") as tmp:
+        # Очистка — best-effort, а не часть контракта: на Windows каталог ещё
+        # держит среда, и rmtree падает WinError 32 уже после чтения снимка
+        # (issue simintech-code#18; в TEMP остаются пустые simintech-bridge-*).
+        # Иначе исключение из `__exit__` подменило бы успешный результат.
+        with tempfile.TemporaryDirectory(
+                prefix="simintech-bridge-",
+                ignore_cleanup_errors=True) as tmp:
             path = Path(tmp) / "page.xprt"
             self._client.call("SaveProjectXML", self._project_id, str(path))
             try:
