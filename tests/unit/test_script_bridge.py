@@ -89,6 +89,7 @@ class FakeEnv:
                  page_scripts_not_serialized=False,
                  pages_added_by_run=0,
                  state_read_raises=None, run_raises=None,
+                 run_completes_instantly=False, instant_final_time=2.0,
                  stop_raises=None, stop_is_ignored=False,
                  state_read_raises_after_stop=None,
                  current_page_raises=False,
@@ -167,6 +168,12 @@ class FakeEnv:
         self._stop_called = False
         #: Модель «ProjectRun упал»: был ли он применён — неизвестно.
         self.run_raises = run_raises
+        #: Модель «прогон досчитал весь остаток до endtime между ProjectRun и
+        #: первым чтением времени» — замер 01.10.2026: 2 с модельного времени
+        #: за ≈70 мс. Без неё фейк считает рост гарантированным и не может
+        #: опровергнуть оракул, снявший базовое время после запуска.
+        self.run_completes_instantly = run_completes_instantly
+        self.instant_final_time = instant_final_time
         #: Модель «ProjectStop упал»: отказ, а не молчание.
         self.stop_raises = stop_raises
         #: Модель молчаливого ProjectStop: вызов проходит, состояние не меняется.
@@ -236,12 +243,29 @@ class FakeEnv:
             if not self.set_current_page_is_ignored:
                 self.current_index = int(args[1]) - 1000
             return 1
+        if name == "ProjectStart":
+            # На переходе из остановленного состояния среда исполняет
+            # `initialization` страницы и сбрасывает время (замер 01.10.2026:
+            # 2.0 → 0.0, тело исполнено). Фейк моделирует переход: сброс и
+            # состояние «инициализирован». Какая секция исполняется телом
+            # (проба — `firststep`, контур — `initialization`), здесь не
+            # моделируется: этот фейк проверяет протокол вызовов и переходы.
+            self._time = 0.0
+            self.state = 1
+            return 1
         if name == "ProjectRun":
             if self.run_raises is not None:
                 raise self.run_raises
             self._running = True
             self.state = 7
             self._maybe_write_result()
+            if self.run_completes_instantly:
+                # Прогон досчитал весь остаток до первого чтения: время уже на
+                # конце, и рост наблюдаем только относительно базы ДО запуска.
+                self._running = False
+                self.state = 0
+                if self.time_grows:
+                    self._time = self.instant_final_time
             if self.page_moves_on_run:
                 # Страница уходит ПОСЛЕ записи результата: иначе проба не
                 # записала бы файл, и отказ пришёл бы раньше возврата.
@@ -809,6 +833,58 @@ def test_wait_protocol_is_one_run_and_poll(tmp_path):
     called = [name for name, _ in env.calls]
     assert called.count("ProjectRun") == 1
     assert "ProjectStep" not in called
+    assert "ProjectStart" not in called, (
+        "контур зовёт ProjectStart, а на несчитающей модели он возвращает "
+        "проект в остановленное состояние, и следующий ProjectRun "
+        "переисполнил бы initialization — тело исполнилось бы дважды "
+        "(замер 01.10.2026: каждый переход из остановленного состояния "
+        "исполняет initialization страницы)")
+
+
+def test_wait_reads_baseline_before_run(tmp_path):
+    """Гонка оракула: прогон досчитал до конца — рост всё равно подтверждён.
+
+    Замер 01.10.2026: считающая модель проходит 2 с модельного времени за
+    ≈70 мс, и первое чтение времени **после** `ProjectRun` уже видит endtime.
+    Оракул, снявший базу после запуска, на свежем проекте отвечал «не
+    выросло», хотя время прошло 0 → 2. Фейк моделирует именно этот переход,
+    поэтому база обязана читаться **до** `ProjectRun`.
+    """
+    env, bridge = _bridge(run_completes_instantly=True, instant_final_time=2.0,
+                          script_result=(f"{PAGE_BEGIN_MARKER}\nтело\n"
+                                         f"{PAGE_END_MARKER}\n"))
+    run = bridge.run_page_script("", tmp_path / "out.txt")
+
+    assert run.outcome.kind == OUTCOME_OK, (
+        f"рост не подтверждён на досчитавшем прогоне: {run.outcome.kind!r} — "
+        "база времени снята не до ProjectRun")
+    names = [name for name, _ in env.calls]
+    assert names.index("GetProjectTime") < names.index("ProjectRun"), (
+        "первое чтение времени идёт после ProjectRun: база, снятая после "
+        "запуска, уже видит endtime, и рост не наблюдаем")
+
+
+def test_probe_starts_before_run_and_only_once(tmp_path):
+    """Проба начинается с `ProjectStart` — один раз и до `ProjectRun`.
+
+    Зачем Start: он сбрасывает модельное время (замер 01.10.2026: 2.0 → 0.0),
+    а без сброса проект, уже дошедший до endtime, не двигает время, и проба
+    отказывала бы ложно — хотя тело исполнилось бы полностью (на конце
+    расчёта голый `ProjectRun` исполняет initialization, время стоит).
+
+    Почему это не удваивает тело: тело пробы стоит под `if firststep then`, а
+    на инициализации `firststep` ложен; у считающей модели Start оставляет
+    `state` 1, и следующий `ProjectRun` страницу не переинициализирует
+    (замер: исполнений тела ровно одно — на первом шаге), у несчитающей тело
+    не исполняется ни разу.
+    """
+    env, bridge = _bridge()
+    bridge.run_probe("", tmp_path / "out.txt")
+
+    names = [name for name, _ in env.calls]
+    assert names.count("ProjectStart") == 1
+    assert names.count("ProjectRun") == 1
+    assert names.index("ProjectStart") < names.index("ProjectRun")
 
 
 def test_run_probe_reports_frozen_model_time(tmp_path):
@@ -859,10 +935,12 @@ def test_frozen_time_message_does_not_claim_compile_failure(tmp_path):
 
 
 def test_run_probe_requires_growth_from_existing_time(tmp_path):
-    """Положительное, но неподвижное время не считается успехом.
+    """Неподвижное время — отказ и после сброса `ProjectStart`-ом.
 
-    Сравнение с нулём вместо времени до запуска пропускало бы этот случай:
-    проект, стоящий на 5.0 с неработающим скриптом, выглядел бы успешным.
+    `ProjectStart` сбрасывает время к нулю (замер 01.10.2026), поэтому
+    прежнее положительное время проекта не маскирует отказ: если и после
+    сброса время не растёт, считать нечего — модель структурно не считает
+    либо скрипт не собрался, и проба отказывает.
     """
     env, bridge = _bridge(time_grows=False, initial_time=5.0)
     with pytest.raises(ScriptBridgeError) as exc:

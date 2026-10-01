@@ -34,7 +34,7 @@ IID: `{145848B3-2BE8-4497-9A6B-8A42DA658844}`
 
 | Метод | Сигнатура | Статус | Описание |
 |-------|-----------|--------|----------|
-| `ProjectStart` | `(__int64 ProjectId)` | ✅ | Активировать солвер (обязательно перед Run/Step) |
+| `ProjectStart` | `(__int64 ProjectId)` | ✅ | Активировать солвер; исполняет `initialization` и сбрасывает модельное время (замер 01.10.2026). Перед `Run` не обязателен: голый `ProjectRun` из остановленного состояния тоже исполняет `initialization` и считает |
 | `ProjectRun` | `(__int64 ProjectId)` | ✅ | Запустить симуляцию (неблокирующий) |
 | `ProjectStop` | `(__int64 ProjectId)` | ✅ | Остановить симуляцию |
 | `ProjectPause` | `(__int64 ProjectId)` | ✅ | Поставить на паузу |
@@ -43,7 +43,11 @@ IID: `{145848B3-2BE8-4497-9A6B-8A42DA658844}`
 | `WaitForTime` | `(__int64 ProjectId, double TargetTime) → __int64` | ➖ | Ожидать target time во время Run. В этой сборке возвращает 0 немедленно |
 | `GetProjectTime` | `(__int64 ProjectId) → double` | ✅ | Текущее модельное время |
 
-**Порядок:** `ProjectStart` → `ProjectRun` (или `RunTo`, или `ProjectStep`) → `ProjectStop`
+**Порядок:** `ProjectStart` → `ProjectRun` (или `RunTo`, или `ProjectStep`) → `ProjectStop`.
+`ProjectStart` сбрасывает модельное время и исполняет `initialization`; если
+сброс не нужен, голый `ProjectRun` из остановленного состояния работает и без
+него (замер 01.10.2026) — именно так ждёт контур `run_page_script`, а проба
+начинается со `ProjectStart`.
 
 **`RunTo` не блокирует.** Проверено на SimInTech64 (2026-09-15): сразу после
 `RunTo(0.5)` модельное время 0.240 с, через мгновение — уже 0.5 с. Код возврата
