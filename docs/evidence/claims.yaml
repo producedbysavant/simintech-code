@@ -677,3 +677,17 @@
     observed_at: 2026-10-01
   evidence: "Писатель положил `.pak` с голыми именами рядом с двумя настоящими `.prt` (копия демо-пакета в Temp); `OpenPack` вернул ненулевой id, `Pack.project_count()` — 2. Самодостаточный живой тест `tests/integration/test_pack_writer_live.py` добавлен, но на момент записи НЕ исполнен: фикстура владения процессом отказалась работать при чужом `mmain.exe` (активная чужая сессия; убивать её нельзя). Статус поднимется до verified после первого прогона теста"
   tests: []
+
+- id: page-init-reruns-on-each-step
+  claim: "На НЕсчитающей модели каждый `ProjectStep` переисполняет секцию `initialization` скрипта страницы: тело исполняется заново на каждом шаге"
+  status: measured
+  source:
+    type: live-com
+    ref: "simintech_api/core/script_bridge.py, `_try_start_and_wait`; замер 01.10.2026"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-10-01
+  evidence: "Тело с одним `createblock` на модели с висячим входом: 663 объекта за 331 шаг цикла ожидания (цикл в продакшене идёт до таймаута 60 с). Вендорский скрипт ПИД (7 объектов на проход) дал 1302. Один голый `ProjectRun` без шагов даёт ровно один проход и на считающей модели (модельное время растёт), и на несчитающей (стоит): опрос `GetProjectTime` ничего не переинициализирует — этим ждёт контур с 01.10.2026"
+  tests:
+    - file: tests/unit/test_script_bridge.py
+      id: test_wait_protocol_is_one_run_and_poll
+      kind: unit

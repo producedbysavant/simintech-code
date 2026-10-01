@@ -63,3 +63,4 @@
 | `pack-double-open-creates-second-pack` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | — |
 | `pack-member-ids-are-unstable` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | — |
 | `written-pack-opens-in-simintech` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | — |
+| `page-init-reruns-on-each-step` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | `tests/unit/test_script_bridge.py::test_wait_protocol_is_one_run_and_poll` (unit) |
