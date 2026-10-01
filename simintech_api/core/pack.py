@@ -41,7 +41,15 @@ class Pack:
         return self._client
 
     def close(self) -> None:
-        """Закрыть пакет."""
+        """Закрыть пакет.
+
+        Идентификатор ≤ 0 не подаётся в COM: `ClosePack(-1)` роняет
+        `mmain.exe` (Access violation, живой замер 01.10.2026), а `-1` — не
+        выдумка: столько возвращает `GetPackIdByFileName` для неоткрытого
+        пакета. Поэтому закрытие проверяет идентификатор тем же `require_open`,
+        что и остальные операции.
+        """
+        self.require_open()
         self._client.close_pack(self._id)
 
     # ─── Состав ─────────────────────────────────────────────────────
@@ -100,11 +108,19 @@ class Pack:
     def require_open(self) -> "Pack":
         """Проверить, что пакет открыт, и вернуть себя.
 
+        Проверка `<= 0`, а не `не _id`: в COM идентификаторы пакета
+        положительны, но у неоткрытого пакета `GetPackIdByFileName` возвращает
+        `-1` (живой замер 01.10.2026), а `ClosePack(-1)` роняет `mmain.exe`
+        (Access violation, там же). Ноль при этом тоже отвергается — им
+        помечен «не открылся» у `OpenPack`.
+
         Raises:
-            PackError: пакет уже закрыт (идентификатор обнулён).
+            PackError: пакет закрыт или идентификатор недействителен
+                (обнулён либо отрицателен).
         """
-        if not self._id:
-            raise PackError("пакет закрыт или не был открыт")
+        if self._id <= 0:
+            raise PackError(
+                f"пакет закрыт или не был открыт (идентификатор {self._id})")
         return self
 
     def __repr__(self) -> str:  # pragma: no cover

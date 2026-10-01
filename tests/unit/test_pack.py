@@ -72,9 +72,27 @@ def test_pack_run_to_returns_wait_result():
     assert ("WaitForTimePack", 42, 5.0) in client.calls
 
 
-def test_pack_require_open_refuses_closed_pack():
+@pytest.mark.parametrize("pack_id", [0, -1])
+def test_pack_require_open_refuses_closed_pack(pack_id):
+    """«Не открыт» — это и ноль, и -1 (`GetPackIdByFileName` неоткрытого)."""
     with pytest.raises(PackError):
-        Pack(FakeClient(), 0).require_open()
+        Pack(FakeClient(), pack_id).require_open()
+
+
+@pytest.mark.parametrize("pack_id", [0, -1])
+def test_pack_close_refuses_invalid_id(pack_id):
+    """`ClosePack` с id ≤ 0 не зовётся: `ClosePack(-1)` роняет mmain.
+
+    Живой замер 01.10.2026: `ClosePack(-1)` — Access violation в mmain.exe
+    (RPC_E_SERVERFAULT). Поэтому `close` проверяет идентификатор до COM, и в
+    клиент не уходит ни одного вызова.
+    """
+    client = FakeClient()
+
+    with pytest.raises(PackError):
+        Pack(client, pack_id).close()
+
+    assert client.calls == [], "ClosePack с недействительным id не вызывается"
 
 
 @pytest.mark.parametrize("method", ["pack_start", "pack_run", "pack_step",

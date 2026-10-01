@@ -586,3 +586,83 @@
     observed_at: 2026-09-28
   evidence: "Исходник функции (`GetPortAllConnections_run`), полученный от технической поддержки вендора, 2026-09-28: `aWithCoPorts:=True;`, далее `if Length(Args) > 1 then aWithCoPorts:=Boolean(Args[1].Data^);` — значение переопределяет только переданный второй аргумент. Это не замер: измерены формы с `0` и `1` (запись `traceallports-second-arg-crosses-container`), одноаргументную форму живым прогоном не звали; листинг переписан в спецификацию (§2.10)"
   tests: []
+
+- id: pack-members-are-open-projects
+  claim: "После `OpenPack` участники пакета видны как открытые проекты: `GetProjectCount` растёт, `GetOpenedFileName` участника — полный путь к `.prt`, а операции `Project` по id участника работают"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/roadmap-agentic-ecosystem.md §10.21"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-10-01
+  evidence: "Копия демо-пакета поставки: `GetProjectCount` 0 → 2; `GetActiveProject` — один из участников; `Project`-обёртка участника отвечает страницей и настройками слоя (83 ключа)"
+  tests: []
+
+- id: pack-step-advances-member-time
+  claim: "`PackStep` продвигает модельное время участников пакета; время читается по id участника (`GetProjectTime`), а время пакета — минимум по участникам"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/roadmap-agentic-ecosystem.md §10.21"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-10-01
+  evidence: "5 шагов: время участников 0/0 → 6e-05/0.001 с; 25 шагов → 0.0003/0.001. Шаги подтверждаются ростом минимума — на этом стоит `pack_step`"
+  tests: []
+
+- id: packrun-does-not-advance-in-embedding
+  claim: "`PackStart`+`PackRun` в COM-инстансе поднимает время пакета до первого синхрошага и дальше не продвигает; `WaitForTimePack` (внутри `Pack.run_to`) ожидания не завершает"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/roadmap-agentic-ecosystem.md §10.21"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-10-01
+  evidence: "Плато на 0.0099/0.01 за ≥2 с наблюдения, и после повторного `PackStart`+`PackRun` — тоже; `RunToPack` без PackRun-цикла даёт тот же стоп-кадр; `WaitForTimePack` не вернулся за ~4 минуты (проба снята внешним таймаутом). Непрерывное продвижение, возможно, требует условий GUI — не проверялось; в инструментах продвижение идёт `pack_step`"
+  tests: []
+
+- id: pack-member-close-removes-from-pack
+  claim: "`CloseProject` участника пакета исключает проект из состава: `PackGetProjCount` уменьшается (2 → 1)"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/roadmap-agentic-ecosystem.md §10.21"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-10-01
+  evidence: "После закрытия участника состав перечисляется заново и содержит одного; id оставшегося отличается от прежнего. Поэтому смена текущего проекта между участниками их не закрывает, а `close_project` участнику отказывает"
+  tests: []
+
+- id: closepack-invalid-id-crashes-server
+  claim: "`ClosePack(-1)` роняет `mmain.exe` (Access violation); `-1` возвращает `GetPackIdByFileName` для неоткрытого пакета"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/roadmap-agentic-ecosystem.md §10.21"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-10-01
+  evidence: "`GetPackIdByFileName` неоткрытого файла вернул `-1`; подача этого id в `ClosePack` — RPC_E_SERVERFAULT с Access violation в mmain.exe. Защита: `Pack.close`/`require_open` отвергают id ≤ 0 до COM и не подают такой id вовсе"
+  tests:
+    - file: tests/unit/test_pack.py
+      id: test_pack_close_refuses_invalid_id
+      kind: unit
+
+- id: pack-double-open-creates-second-pack
+  claim: "Открытие одного `.pak` дважды создаёт второй пакет: `OpenPack` не дедуплицирует по файлу"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/roadmap-agentic-ecosystem.md §10.21"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-10-01
+  evidence: "Повторный `OpenPack` того же файла вернул другой id; после закрытия первого `GetPackCount` остался 1 — второй пакет жив. Поэтому повторное открытие закрывает прежний пакет сессии"
+  tests: []
+
+- id: pack-member-ids-are-unstable
+  claim: "Идентификаторы участников пакета нестабильны: после изменений состава среда выдаёт их заново; мёртвые id продолжают отвечать старым `GetProjectTime`"
+  status: measured
+  source:
+    type: live-com
+    ref: "docs/roadmap-agentic-ecosystem.md §10.21"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-10-01
+  evidence: "После close участника id оставшегося не совпал с прежним; после `ClosePack` мёртвые id всё ещё отдают время — признак живости по чтению времени не построить. Поэтому адресация участников — по индексу состава"
+  tests: []
