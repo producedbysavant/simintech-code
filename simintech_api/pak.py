@@ -606,16 +606,20 @@ def _pack_entries(entries: Sequence[PackEntry | str]) -> List[PackEntry]:
 
 def build_pack_text(entries: Sequence[PackEntry | str], *,
                     synchronize: bool = True,
-                    relative: bool = True,
                     real_time: bool = False,
                     time_mash: float = 1.0,
                     restart_name: str = "") -> str:
     """Собрать текст пакета: пять секций в порядке среды, строки CRLF.
 
     Значения по умолчанию ``[Common]``: ``Synchronize`` включён (объединение
-    списков сигналов проектов), ``RelativePath`` включён (имена файлов рядом
-    с пакетом пишутся без каталога — так пишет и сама среда), синхронизация
-    с реальным временем выключена.
+    списков сигналов проектов), синхронизация с реальным временем выключена.
+
+    **`RelativePath` — всегда `1`, и это не умолчание.** Во всей поставке
+    (63 файла) флаг равен 1; файл с `RelativePath=0` несёт абсолютные пути, а
+    относительные записи в нём читатель разворачивать не берётся — разбор
+    помечает их расхождением. Форму, которой в поставке нет и которую наш же
+    читатель считает спорной, писатель не производит: такой пакет можно
+    собрать только текстом вручную.
 
     Кодировку накладывает запись: `write_pack` пишет UTF-8 с BOM — так
     записаны 62 файла из 63 в поставке. Текст — формат, который разбирает
@@ -623,12 +627,20 @@ def build_pack_text(entries: Sequence[PackEntry | str], *,
     между ними проверяет round-trip в `write_pack`.
     """
     items = _pack_entries(entries)
+    # Имя рестарта подставляется в строку файла так же, как пути записей,
+    # поэтому и проверка та же: перевод строки дописал бы в файл произвольные
+    # ключи и секции. Промах был однотипным с `_pack_entries` — там guard
+    # стоял, здесь нет.
+    if "\n" in restart_name or "\r" in restart_name:
+        raise PackError(
+            f"имя рестарта не может содержать перевод строки: {restart_name!r} "
+            "— оно подставляется в строку файла")
     lines: List[str] = ["[Form]"]
     lines.extend(f"{key}={value}" for key, value in _FORM_DEFAULTS)
     lines.extend([
         "[Common]",
         f"Synchronize={_flag(synchronize)}",
-        f"RelativePath={_flag(relative)}",
+        "RelativePath=1",
         f"IsRealTime={_flag(real_time)}",
         f"TimeMash={time_mash:g}",
         "fSimpleSignalLoad=0",
@@ -648,9 +660,52 @@ def build_pack_text(entries: Sequence[PackEntry | str], *,
     return "\r\n".join(lines) + "\r\n"
 
 
+#: Расхождение разбора, порождаемое писателем **осознанно**: абсолютная
+#: запись — законная форма (за каталогом пакета среда пишет именно так, и в
+#: поставке такая запись есть), и читатель помечает её лишь как
+#: неразворачиваемую. Всё остальное после нашей записи — рассинхронизация
+#: писателя с читателем, и молчать о ней нельзя (обещание докстринга).
+_ALLOWED_ROUND_TRIP_PROBLEMS = ("абсолютные пути",)
+
+
+def _reject_escaping_entries(path: Path, entries: Sequence[PackEntry]) -> None:
+    """Отказ на относительной записи, уводящей за каталог пакета.
+
+    При `RelativePath=1` среда раскрывает относительные записи от каталога
+    пакета, поэтому запись ``..\\b.prt`` указывала бы мимо пакета — формы,
+    которой в поставке нет: все 63 файла обходятся внутри своих каталогов, а
+    за их пределами среда пишет **абсолютный** путь (так записан один файл
+    поставки). Абсолютные записи поэтому проходят как есть, а `..` — отказ:
+    этот путь писатель породить осознанно не может, а читатель такие записи
+    не выдаёт (`_resolve_in` вернул бы `None` — и раньше это всплывало только
+    расхождением в `problems`).
+    """
+    base = path.parent
+    for index, item in enumerate(entries):
+        if _is_absolute(item.path):
+            continue
+        if _resolve_in(base, PackProject(index=index, path=item.path)) is None:
+            raise PackError(
+                f"относительный путь {item.path!r} (запись {index}) выходит за "
+                f"каталог пакета «{base}»: среда развернула бы его мимо "
+                f"пакета, а читатель такие записи не выдаёт. Проект за "
+                f"каталогом указывается абсолютным путём — так пишет и среда.")
+
+
+def _check_round_trip(pack: ProjectPack) -> None:
+    """Отказ, если разбор записанного нашёл расхождение сверх разрешённого."""
+    leftovers = [problem for problem in pack.problems
+                 if not problem.startswith(_ALLOWED_ROUND_TRIP_PROBLEMS)]
+    if leftovers:
+        raise PackError(
+            "записанный пакет не сошёлся с читателем: "
+            + "; ".join(leftovers)
+            + ". Вход писателем проверен, поэтому это дефект писателя, а не "
+              "повод править файл руками; сообщите о нём.")
+
+
 def write_pack(path: Path, entries: Sequence[PackEntry | str], *,
                synchronize: bool = True,
-               relative: bool = True,
                real_time: bool = False,
                time_mash: float = 1.0,
                restart_name: str = "") -> ProjectPack:
@@ -660,19 +715,28 @@ def write_pack(path: Path, entries: Sequence[PackEntry | str], *,
     и собрать его — файловая операция. Запись — UTF-8 с BOM и CRLF, как файлы
     поставки.
 
-    Возвращается **разбор записанного**: вызывающий получает состав, каким
-    его увидит `load_pack`, и рассинхронизация писателя с читателем
-    становится отказом здесь, а не молчаливым пакетом чужого формата в среде
-    (тем же приёмом `export_signal_db` разбирает выгруженную базу).
+    Записи проверяются **до** записи файла: уводящая вверх относительная
+    запись — отказ (`_reject_escaping_entries`), абсолютная — разрешена как
+    есть (так пишет и среда за каталогом пакета). Возвращается **разбор
+    записанного**: вызывающий получает состав, каким его увидит `load_pack`,
+    а рассинхронизация писателя с читателем становится отказом здесь, а не
+    молчаливым пакетом чужого формата в среде (тем же приёмом
+    `export_signal_db` разбирает выгруженную базу; единственное разрешённое
+    расхождение — примечание об абсолютных записях, см.
+    `_ALLOWED_ROUND_TRIP_PROBLEMS`).
 
     Raises:
-        PackError: путь записи не выводится из записи состава (перевод
-            строки, пустая строка) — либо записанный текст не разбирается
-            читателем.
+        PackError: запись состава невалидна (перевод строки, пустая строка,
+            относительный путь за каталогом пакета), имя рестарта содержит
+            перевод строки — либо записанный текст не разбирается читателем
+            или расходится с ним сверх разрешённого.
     """
     text = build_pack_text(entries, synchronize=synchronize,
-                           relative=relative, real_time=real_time,
+                           real_time=real_time,
                            time_mash=time_mash, restart_name=restart_name)
     path = Path(path)
+    _reject_escaping_entries(path, _pack_entries(entries))
     path.write_bytes(_BOM + text.encode("utf-8"))
-    return load_pack(path)
+    pack = load_pack(path)
+    _check_round_trip(pack)
+    return pack
