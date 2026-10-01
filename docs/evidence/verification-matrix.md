@@ -54,3 +54,4 @@
 | `model-text-loading-creates-objects` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
 | `dot-syntax-belongs-to-model-text` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
 | `container-traversal-functions-are-used-by-vendor` | measured | xprt-observation | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
+| `traceallports-second-arg-defaults-true` | verified | official-doc | SimInTech64, поставка 2.26.6.23 | 2026-09-28 | — |

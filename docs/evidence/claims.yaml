@@ -575,3 +575,14 @@
     observed_at: 2026-09-29
   evidence: "Скрипты прочитаны в демонстрационных проектах поставки: «Конечные автоматы» (`Пример 0.prt` — обход вниз) и `Demo/Приёмы работы/Получение данных, доступа и т. п./Получение имени субмодели через уровень при помощи submodelbypageid` (подъём на уровень). Все имена есть в срезе справки, v15.05.2026. Живым вызовом мы их не проверяли"
   tests: []
+
+- id: traceallports-second-arg-defaults-true
+  claim: "Второй аргумент `traceallports` по умолчанию включён: вызов без второго аргумента обходит сопряжённые порты, как с явной `1`; явный `0` оставляет только внешнего соседа"
+  status: verified
+  source:
+    type: official-doc
+    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.10"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-09-28
+  evidence: "Исходник функции (`GetPortAllConnections_run`), полученный от технической поддержки вендора, 2026-09-28: `aWithCoPorts:=True;`, далее `if Length(Args) > 1 then aWithCoPorts:=Boolean(Args[1].Data^);` — значение переопределяет только переданный второй аргумент. Это не замер: измерены формы с `0` и `1` (запись `traceallports-second-arg-crosses-container`), одноаргументную форму живым прогоном не звали; листинг переписан в спецификацию (§2.10)"
+  tests: []
