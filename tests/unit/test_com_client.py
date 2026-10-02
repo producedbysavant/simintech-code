@@ -345,6 +345,42 @@ def test_shutdown_kills_explicit_pids(monkeypatch):
     assert ["taskkill", "/F", "/PID", "888"] in killed
 
 
+def test_process_scanners_survive_undecodable_output(monkeypatch):
+    """Скан процессов переживает недекодируемый вывод (cp866 под PYTHONUTF8).
+
+    Живой случай 01.10.2026: под `PYTHONUTF8=1` текстовый режим `subprocess`
+    декодирует вывод как UTF-8, а `tasklist`/`wmic` на русской консоли пишут
+    в cp866 — поток-читатель падал `UnicodeDecodeError`, и фикстура владения
+    процессами срывалась в setup. Лечение — `errors="replace"` у всех трёх
+    сканеров; тест держит флаг (находка ревью: ветка была без сторожа).
+    """
+    import sys
+
+    from simintech_api.utils import processes as proc
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    seen = []
+
+    def fake_run(argv, **kwargs):
+        seen.append(kwargs)
+        payload = "Имя образа: mmain.exe 1234\r\n".encode("cp866")
+        # Строгий декодер на этом выводе падает — как падал поток-читатель.
+        text = payload.decode(kwargs.get("encoding") or "utf-8",
+                              errors=kwargs.get("errors", "strict"))
+
+        class _Completed:
+            stdout = text
+
+        return _Completed()
+
+    monkeypatch.setattr(proc.subprocess, "run", fake_run)
+    pids = proc.get_mmain_pids()
+
+    assert len(seen) == 3, "опрошены не все три сканера"
+    assert pids == set(), (
+        "подделка не изображает mmain — проверяется только устойчивость кода")
+
+
 def test_open_template_passes_path_and_returns_id(monkeypatch):
     """open_template() — тонкая обёртка: путь уходит в COM как есть."""
     fake = FakeServer()
