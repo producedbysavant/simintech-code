@@ -351,13 +351,15 @@ def test_connect_classifies_preexisting_pid_as_external(monkeypatch):
 
 
 def test_connect_classifies_unobserved_pid_as_unknown(monkeypatch):
-    """Без before/after подтверждения ownership остаётся неизвестным."""
+    """Без подтверждения снимками (после перепроверки) владение неизвестно."""
     from simintech_api.core.com_client import SessionOwnership
 
     fake = FakeServer()
     client = _make_client(monkeypatch, fake)
 
-    snapshots = [set(), set()]
+    # Третий снимок — перепроверка после промаха первого (см. connect):
+    # все три пусты, подтверждения нет.
+    snapshots = [set(), set(), set()]
     monkeypatch.setattr(
         "simintech_api.core.com_client.get_mmain_pids",
         lambda: snapshots.pop(0),
@@ -367,6 +369,28 @@ def test_connect_classifies_unobserved_pid_as_unknown(monkeypatch):
 
     assert client.session_pid == 12345
     assert client.ownership is SessionOwnership.UNKNOWN
+
+
+def test_connect_retries_snapshot_for_fresh_pid(monkeypatch):
+    """Промах снимка «после» перепроверяется — без ложного UNKNOWN.
+
+    Сканеры процессов читают таблицу не мгновенно, и свежий экземпляр мог
+    не попасть в первый снимок. Перепроверка не меняет критерий: отсутствие
+    PID ДО подключения и присутствие ПОСЛЕ (находка ревью simintech-mcp#41).
+    """
+    from simintech_api.core import com_client as cc
+    from simintech_api.core.com_client import SessionOwnership
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+
+    snapshots = [set(), set(), {12345}]
+    monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
+
+    client.connect()
+
+    assert client.session_pid == 12345
+    assert client.ownership is SessionOwnership.OWNED
 
 
 def test_shutdown_owned_session_waits_then_kills_exact_pid(monkeypatch):
@@ -467,7 +491,7 @@ def test_shutdown_unknown_session_does_not_kill_by_default(monkeypatch):
 
     fake = FakeServer()
     client = _make_client(monkeypatch, fake)
-    snapshots = [set(), set()]
+    snapshots = [set(), set(), set()]
     monkeypatch.setattr(
         "simintech_api.core.com_client.get_mmain_pids",
         lambda: snapshots.pop(0),
