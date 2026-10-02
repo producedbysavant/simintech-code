@@ -183,6 +183,13 @@ def _make_client(monkeypatch, fake: FakeServer):
 def test_connect_success(monkeypatch):
     fake = FakeServer()
     client = _make_client(monkeypatch, fake)
+
+    snapshots = [set(), {12345}]
+    monkeypatch.setattr(
+        "simintech_api.core.com_client.get_mmain_pids",
+        lambda: snapshots.pop(0),
+    )
+
     client.connect()
     assert client.connected
     assert ("SetNoCloseAppFlag", 1) in fake.calls
@@ -332,6 +339,8 @@ def test_connect_classifies_preexisting_pid_as_external(monkeypatch):
 
     assert client.session_pid == 12345
     assert client.ownership is SessionOwnership.EXTERNAL
+    assert ("SetNoCloseAppFlag", 1) not in fake.calls
+    assert ("SetSilentMode", 1) not in fake.calls
 
 
 def test_connect_classifies_unobserved_pid_as_unknown(monkeypatch):
