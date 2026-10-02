@@ -413,7 +413,7 @@ def test_shutdown_owned_session_does_not_kill_after_graceful_exit(monkeypatch):
     )
 
     killed = []
-    monkeypatch.setattr(cc, "kill_pids", lambda pids: killed.append(list(pids)))
+    monkeypatch.setattr(cc, "_kill_pids", lambda pids: killed.append(list(pids)))
 
     client.connect()
     assert client.ownership is SessionOwnership.OWNED

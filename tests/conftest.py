@@ -72,7 +72,7 @@ def simintech_available(pytestconfig) -> bool:
         from simintech_api import COMClient
         client = COMClient(silent_mode=True)
         client.connect()
-        client.disconnect()
+        client.shutdown()
         return True
     except Exception as exc:
         print(f"\n[simintech] COM недоступен: {exc}", file=sys.stderr)
@@ -200,14 +200,18 @@ def client(simintech_available):
         pytest.fail(
             f"клиент назвал своим PID {owned}, который жил до подключения: "
             "владение определено неверно, и завершать этот процесс нельзя")
+    if c.ownership.value != "owned":
+        c.disconnect()
+        pytest.fail(
+            f"COMClient не подтвердил владение PID {owned}: "
+            f"ownership={c.ownership.value}")
     try:
         yield c
     finally:
         try:
-            c.disconnect()
+            c.shutdown()
         except Exception:                                        # noqa: BLE001
             pass
-        kill_pids([owned])
         time.sleep(0.5)
         if owned in set(get_mmain_pids()):
             print(f"[simintech] свой процесс {owned} завершить не удалось",

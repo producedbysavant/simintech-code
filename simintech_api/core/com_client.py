@@ -12,7 +12,7 @@ from typing import Any, List, Optional
 
 from ..exceptions import ComCallError, ComConnectionError, PackError
 from ..model import TDataDescriptor
-from ..utils.processes import get_mmain_pids, kill_pids, wait_for_pid_exit
+from ..utils.processes import get_mmain_pids, kill_pids as _kill_pids, wait_for_pid_exit
 
 
 class SessionOwnership(str, Enum):
@@ -188,8 +188,7 @@ class COMClient:
 
         if kill_pids is not None:
             if kill_pids:
-                from ..utils.processes import kill_pids as _kill
-                _kill(kill_pids)
+                _kill_pids(kill_pids)
             self._reset_session_state()
             return
 
@@ -198,8 +197,7 @@ class COMClient:
             return
 
         if not wait_for_pid_exit(pid, timeout=5.0):
-            from ..utils.processes import kill_pids as _kill
-            _kill([pid])
+            _kill_pids([pid])
 
         self._reset_session_state()
 
