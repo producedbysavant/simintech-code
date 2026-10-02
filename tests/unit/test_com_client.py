@@ -183,6 +183,13 @@ def _make_client(monkeypatch, fake: FakeServer):
 def test_connect_success(monkeypatch):
     fake = FakeServer()
     client = _make_client(monkeypatch, fake)
+
+    snapshots = [set(), {12345}]
+    monkeypatch.setattr(
+        "simintech_api.core.com_client.get_mmain_pids",
+        lambda: snapshots.pop(0),
+    )
+
     client.connect()
     assert client.connected
     assert ("SetNoCloseAppFlag", 1) in fake.calls
@@ -296,30 +303,182 @@ def test_typed_read_write_via_signal(monkeypatch):
     assert ("WriteAsFloat", 1000, 0, 3.0) in fake.calls
 
 
-def test_owned_pid_records_client_pid(monkeypatch):
-    """_owned_pid запоминает PID процесса, к которому подключился клиент."""
+def test_connect_classifies_new_pid_as_owned(monkeypatch):
+    """PID, появившийся между snapshots, классифицируется как owned."""
+    from simintech_api.core.com_client import SessionOwnership
+
     fake = FakeServer()
     client = _make_client(monkeypatch, fake)
+
+    snapshots = [set(), {12345}]
+    monkeypatch.setattr(
+        "simintech_api.core.com_client.get_mmain_pids",
+        lambda: snapshots.pop(0),
+    )
+
     client.connect()
-    # FakeServer.GetProcessID возвращает 12345
-    assert client._owned_pid == 12345
+
+    assert client.session_pid == 12345
+    assert client.ownership is SessionOwnership.OWNED
 
 
-def test_shutdown_no_kill_by_default(monkeypatch):
-    """shutdown() по умолчанию НЕ завершает процессы (только disconnect)."""
+def test_connect_classifies_preexisting_pid_as_external(monkeypatch):
+    """PID, существовавший до connect, не может быть убит клиентом."""
+    from simintech_api.core.com_client import SessionOwnership
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+
+    snapshots = [{12345}, {12345}]
+    monkeypatch.setattr(
+        "simintech_api.core.com_client.get_mmain_pids",
+        lambda: snapshots.pop(0),
+    )
+
+    client.connect()
+
+    assert client.session_pid == 12345
+    assert client.ownership is SessionOwnership.EXTERNAL
+    assert ("SetNoCloseAppFlag", 1) not in fake.calls
+    assert ("SetSilentMode", 1) not in fake.calls
+
+
+def test_connect_classifies_unobserved_pid_as_unknown(monkeypatch):
+    """Без before/after подтверждения ownership остаётся неизвестным."""
+    from simintech_api.core.com_client import SessionOwnership
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+
+    snapshots = [set(), set()]
+    monkeypatch.setattr(
+        "simintech_api.core.com_client.get_mmain_pids",
+        lambda: snapshots.pop(0),
+    )
+
+    client.connect()
+
+    assert client.session_pid == 12345
+    assert client.ownership is SessionOwnership.UNKNOWN
+
+
+def test_shutdown_owned_session_waits_then_kills_exact_pid(monkeypatch):
+    """Managed shutdown ждёт PID и убивает его, если он всё ещё жив."""
+    from simintech_api.core import com_client as cc
+    from simintech_api.core.com_client import SessionOwnership
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+
+    snapshots = [set(), {12345}]
+    monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
+
+    waited = []
+    monkeypatch.setattr(
+        cc,
+        "wait_for_pid_exit",
+        lambda pid, timeout=5.0: waited.append((pid, timeout)) or False,
+    )
+    killed = []
+    monkeypatch.setattr(
+        cc,
+        "_kill_pids",
+        lambda pids: killed.append(list(pids)),
+    )
+
+    client.connect()
+    assert client.ownership is SessionOwnership.OWNED
+
+    client.shutdown()
+
+    assert waited == [(12345, 5.0)]
+    assert killed == [[12345]]
+    assert not client.connected
+
+
+def test_shutdown_owned_session_does_not_kill_after_graceful_exit(monkeypatch):
+    """Если exact PID ушёл после release, fallback terminate не вызывается."""
+    from simintech_api.core import com_client as cc
+    from simintech_api.core.com_client import SessionOwnership
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+
+    snapshots = [set(), {12345}]
+    monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
+    monkeypatch.setattr(
+        cc,
+        "wait_for_pid_exit",
+        lambda pid, timeout=5.0: True,
+    )
+
+    killed = []
+    monkeypatch.setattr(cc, "_kill_pids", lambda pids: killed.append(list(pids)))
+
+    client.connect()
+    assert client.ownership is SessionOwnership.OWNED
+
+    client.shutdown()
+
+    assert killed == []
+
+
+def test_shutdown_external_session_never_kills(monkeypatch):
+    """Attached/external session не завершается managed shutdown."""
+    from simintech_api.core import com_client as cc
+    from simintech_api.core.com_client import SessionOwnership
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+
+    snapshots = [{12345}, {12345}]
+    monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
+
+    waited = []
+    monkeypatch.setattr(
+        cc,
+        "wait_for_pid_exit",
+        lambda pid, timeout=5.0: waited.append((pid, timeout)) or False,
+    )
+    killed = []
+    monkeypatch.setattr(cc, "_kill_pids", lambda pids: killed.append(list(pids)))
+
+    client.connect()
+    assert client.ownership is SessionOwnership.EXTERNAL
+
+    client.shutdown()
+
+    assert waited == []
+    assert killed == []
+    assert not client.connected
+
+
+def test_shutdown_unknown_session_does_not_kill_by_default(monkeypatch):
+    """UNKNOWN-сессия не даёт shutdown права завершать процесс."""
+    from simintech_api.core.com_client import SessionOwnership
     from simintech_api.utils import processes as proc
 
     fake = FakeServer()
     client = _make_client(monkeypatch, fake)
+    snapshots = [set(), set()]
+    monkeypatch.setattr(
+        "simintech_api.core.com_client.get_mmain_pids",
+        lambda: snapshots.pop(0),
+    )
     client.connect()
+    assert client.ownership is SessionOwnership.UNKNOWN
 
     killed = []
     monkeypatch.setattr(proc, "_pids_wmic", lambda: set())
     monkeypatch.setattr(proc, "_pids_tasklist", lambda: set())
     monkeypatch.setattr(proc, "_pids_powershell", lambda: set())
-    monkeypatch.setattr(proc.subprocess, "run",
-                        lambda *a, **k: killed.append(a[0]) or None)
-    client.shutdown()          # без kill_pids — не убивать
+    monkeypatch.setattr(
+        proc.subprocess,
+        "run",
+        lambda *a, **k: killed.append(a[0]) or None,
+    )
+
+    client.shutdown()
     assert killed == []
 
 

@@ -15,7 +15,8 @@ from simintech_api import COMClient
 
 client = COMClient(silent_mode=True).connect()   # скрытый UI
 client.get_process_id()                          # PID mmain.exe
-client.disconnect()
+client.session_pid, client.ownership             # PID сессии и владение ею
+client.shutdown()                                # отпустить COM и убрать свой процесс
 ```
 
 ### Методы
@@ -23,19 +24,26 @@ client.disconnect()
 |---|---|
 | `connect() -> COMClient` | Подключиться (требует `mmain.exe /regserver`). Бросает `ComConnectionError` вне Windows. |
 | `disconnect()` | Отсоединиться (приложение не закрывается). |
-| `shutdown(kill_pids=None)` | Отсоединиться и, если передан `kill_pids`, завершить **только** эти процессы `mmain.exe`. По умолчанию процессы не завершаются. |
+| `shutdown(kill_pids=None)` | Управляемое завершение: отпустить COM, подождать уход процесса сессии (до 5 с) и завершить **только его** — при подтверждённом владении. С `kill_pids` — завершить ровно перечисленные PID'ы. |
 | `call(method, *args) -> Any` | Вызвать любой метод `IMVTU_Server`. |
 | `open_project(path) -> int` | Открыть проект, вернуть ProjectId. |
 | `new_project() -> int` | Создать новый проект, вернуть ProjectId. |
 | `get_process_id() -> int` | PID процесса SimInTech. |
 | `find_signal(name, project_id) -> TDataDescriptor` | Найти сигнал. |
 | `connected`, `is_available` | Свойства состояния. |
+| `session_pid`, `ownership` | PID процесса сессии и владение им: `SessionOwnership.OWNED` / `EXTERNAL` / `UNKNOWN`. |
 
-> **`shutdown()` по умолчанию процессы не завершает.** Библиотека не решает за
-> вызывающего, какие `mmain.exe` можно убивать: она не трогает процессы,
-> запущенные пользователем. PID передаёт вызывающий — свой берётся из
-> `get_process_id()`, а чужие — из списка «появившихся после начала работы»
-> (так делает `tests/conftest.py`): `client.shutdown(kill_pids=[pid])`.
+> **Завершается только свой процесс — и только по подтверждённому владению.**
+> `shutdown()` без `kill_pids` отпускает COM, ждёт уход процесса сессии (до
+> 5 секунд) и при необходимости завершает ровно его PID. Своим
+> (`SessionOwnership.OWNED`) процесс считается, только если он появился между
+> снимками `get_mmain_pids()` до и после `connect()`: `CreateObject` умеет
+> подключаться к уже запущенному экземпляру — например, открытому человеком, —
+> и такой процесс не завершается никогда; session-wide флаги
+> (`SetNoCloseAppFlag`, `SetSilentMode`) ему тоже не выставляются. Явный
+> список — для вызывающих с собственной политикой:
+> `client.shutdown(kill_pids=[pid])`. Замеры, на которых это построено, —
+> `automation/com-api.md`, «Жизненный цикл процесса».
 
 ---
 

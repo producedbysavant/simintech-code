@@ -49,7 +49,30 @@ def kill_pids(pids: Iterable[int]) -> None:
             pass
 
 
+def wait_for_pid_exit(
+    pid: int, timeout: float = 5.0, poll_interval: float = 0.1
+) -> bool:
+    """Ждать исчезновения exact mmain.exe PID.
+
+    Возвращает True, если PID отсутствует среди mmain.exe в пределах timeout.
+    Используется перед аварийным fallback kill после COM release.
+    """
+    if sys.platform != "win32" or pid <= 0:
+        return True
+
+    import time
+
+    deadline = time.monotonic() + timeout
+    while True:
+        if pid not in get_mmain_pids():
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(poll_interval)
+
+
 # ─── Внутренние методы ─────────────────────────────────────────────
+
 
 def _pids_wmic() -> Set[int]:
     try:
