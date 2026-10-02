@@ -67,3 +67,4 @@
 | `run-outruns-the-first-time-read` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | `tests/unit/test_script_bridge.py::test_wait_reads_baseline_before_run` (unit) |
 | `projectstart-executes-init-and-resets-time` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | `tests/unit/test_script_bridge.py::test_probe_starts_before_run_and_only_once` (unit) |
 | `endtime-run-executes-init-without-growth` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | — |
+| `langblock-port-array-without-size` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
