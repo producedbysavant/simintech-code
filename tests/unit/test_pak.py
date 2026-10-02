@@ -621,7 +621,12 @@ def test_write_pack_round_trips_through_reader(tmp_path):
 
 
 def test_write_pack_bytes_like_distribution(tmp_path):
-    """Байты — UTF-8 с BOM и CRLF: так записаны 62 файла из 63 в поставке."""
+    """Байты — UTF-8 с BOM и CRLF.
+
+    BOM — как у 62 файлов поставки из 63; CRLF — сознательный выбор писателя
+    (в поставке так у 39 из 63, у прочих другой разделитель; читатель
+    принимает любой). Два разных счёта не сливаются в один (находка ревью).
+    """
     from simintech_api.pak import write_pack
 
     target = tmp_path / "Сборка.pak"
@@ -667,12 +672,15 @@ def test_write_pack_keeps_recorded_paths(tmp_path):
 def test_write_pack_rejects_unwritable_entries(tmp_path):
     """Невалидный вход — отказ до записи файла.
 
-    Проверяются все четыре формы: перевод строки и пустое имя в записи
-    (guard `_pack_entries`), относительный путь за каталогом пакета
-    (`_reject_escaping_entries`) и перевод строки в имени рестарта (тот же
-    guard, что у записей, — раньше его не было, и имя вставляло в файл
-    произвольные ключи и секции).
+    Формы: разделитель строк в записи и пустое имя (`_pack_entries`), причём
+    ЛЮБАЯ граница `splitlines`, а не только CR/LF (находка ревью: `\\x85`
+    дописывал в файл целый ключ), пробелы по краям пути (читатель их снимает
+    — запись вернулась бы другим путём), элемент не-строка (отказ с именем
+    типа, а не TypeError), относительный путь за каталогом пакета
+    (`_reject_escaping_entries`) и разделитель строк в имени рестарта.
     """
+    from pathlib import Path
+
     from simintech_api.pak import write_pack
 
     target = tmp_path / "Сборка.pak"
@@ -680,31 +688,89 @@ def test_write_pack_rejects_unwritable_entries(tmp_path):
     with pytest.raises(PackError):
         write_pack(target, ["a\n.prt"])
     with pytest.raises(PackError):
+        write_pack(target, ["alpha.prt\x85Count=2"])
+    with pytest.raises(PackError):
         write_pack(target, ["   "])
+    with pytest.raises(PackError):
+        write_pack(target, [" ../b.prt"])
+    with pytest.raises(PackError):
+        write_pack(target, [Path("a.prt")])
     with pytest.raises(PackError):
         write_pack(target, ["../b.prt"])
     with pytest.raises(PackError):
         write_pack(target, ["a.prt"], restart_name="x\r\n[Files]")
+    with pytest.raises(PackError):
+        write_pack(target, ["a.prt"], restart_name="x\x85Synchronize=0")
 
     assert not target.exists(), "файл не создаётся, если состав невалиден"
 
 
+def test_write_pack_single_string_is_one_entry(tmp_path):
+    """Строка вместо списка — ОДНА запись, а не последовательность букв.
+
+    `str` сам является `Sequence`; без развилки `write_pack(p, "a.prt")`
+    разложился бы на проекты из одной буквы (находка ревью).
+    """
+    from simintech_api.pak import write_pack
+
+    pack = write_pack(tmp_path / "Сборка.pak", "alpha.prt")
+
+    assert pack.project_count == 1
+    assert [p.path for p in pack.projects] == ["alpha.prt"]
+
+
+def test_write_pack_preserves_time_mash_precision(tmp_path):
+    """TimeMash пишется как есть: `:g` округлял бы до шести значащих цифр."""
+    from simintech_api.pak import write_pack
+
+    pack = write_pack(tmp_path / "Сборка.pak", ["a.prt"],
+                      time_mash=0.123456789)
+
+    assert pack.time_mash == 0.123456789, (
+        "коэффициент в файле отличается от аргумента — писатель молча округлил")
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf")])
+def test_write_pack_refuses_nonfinite_time_mash(tmp_path, bad):
+    """nan/inf в TimeMash — отказ: в поставке значение всегда конечный double."""
+    from simintech_api.pak import write_pack
+
+    with pytest.raises(PackError):
+        write_pack(tmp_path / "Сборка.pak", ["a.prt"], time_mash=bad)
+
+
+def test_write_pack_simple_signal_load_matches_distribution(tmp_path):
+    """fSimpleSignalLoad по умолчанию — 2 (как в 55 файлах из 63), с override."""
+    from simintech_api.pak import write_pack
+
+    target = tmp_path / "Сборка.pak"
+    write_pack(target, ["a.prt"])
+    assert "fSimpleSignalLoad=2" in target.read_text(encoding="utf-8")
+
+    write_pack(target, ["a.prt"], simple_signal_load=0)
+    assert "fSimpleSignalLoad=0" in target.read_text(encoding="utf-8")
+
+
 def test_write_pack_refuses_writer_reader_desync(tmp_path, monkeypatch):
-    """Расхождение писателя с читателем — отказ, а не молчаливый файл.
+    """Расхождение писателя с читателем — отказ, и файла после него нет.
 
     Вход писателем проверен, поэтому расхождение на разборе означает дефект
-    писателя; подмена `load_pack` приносит такое расхождение, и `write_pack`
+    писателя; подмена `parse_pack` приносит такое расхождение, и `write_pack`
     обязан отказать, а не ответить «пакет собран» (обещание докстринга,
-    которое раньше не выполнялось: `problems` никто не смотрел).
+    которое раньше не выполнялось: `problems` никто не смотрел; заодно
+    находка ревью — отказ оставлял уже записанный файл на диске).
     """
     import simintech_api.pak as pak
 
     class _Broken:
         problems = ("Count=1 не совпадает с числом записей [Files] (2)",)
 
-    monkeypatch.setattr(pak, "load_pack", lambda path: _Broken())
+    target = tmp_path / "Сборка.pak"
+    monkeypatch.setattr(pak, "parse_pack", lambda text, path: _Broken())
     with pytest.raises(PackError):
-        pak.write_pack(tmp_path / "Сборка.pak", ["a.prt"])
+        pak.write_pack(target, ["a.prt"])
+    assert not target.exists(), (
+        "отказ round-trip оставил файл на диске: проверки обязаны идти до записи")
 
 
 def test_write_pack_option_values_reach_reader(tmp_path):

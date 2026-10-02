@@ -97,6 +97,7 @@ COM (`COMClient.open_project`) или выгрузить в `.xprt`.
 """
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -567,6 +568,46 @@ def _flag(value: bool) -> str:
     return "1" if value else "0"
 
 
+def _time_mash_text(value: float) -> str:
+    """`TimeMash` без потери точности: `repr` double, а не `:g`.
+
+    `{:g}` округляет до шести значащих цифр: 0.123456789 стал бы 0.123457 —
+    писатель сообщал бы «собрано», а коэффициент в файле отличался бы от
+    аргумента (находка ревью). Нечисловое значение — отказ: `TimeMash` —
+    обычный double, и писать в него `nan` нечем.
+    """
+    if not math.isfinite(value):
+        raise PackError(
+            f"TimeMash должен быть конечным числом, получено {value!r}")
+    return repr(float(value))
+
+
+#: Символы, на которых `str.splitlines` — а им режет файл и читатель
+#: (`_split_sections`) — делит строки. Одного `\n`/`\r` мало: вертикальная
+#: табуляция, `\f`, разделители `\x1c`–`\x1e`, `\x85`, U+2028/U+2029 тоже
+#: границы строк, и значение с любым из них читатель увидит как НЕСКОЛЬКО
+#: строк (находка ревью: «alpha.prt\x85Count=2» разбиралось как путь плюс
+#: дописанный ключ, а round-trip молчал).
+_LINE_SEPARATORS = ("\n", "\r", "\v", "\f", "\x1c", "\x1d", "\x1e", "\x85",
+                    "\u2028", "\u2029")
+
+
+def _reject_line_separators(value: str, what: str) -> None:
+    """Отказ, если значение содержит любую границу строки.
+
+    Значения подставляются в строки файла как есть, поэтому границей строки
+    обязана считаться не только пара CR/LF: любую из `_LINE_SEPARATORS`
+    читатель принял бы за конец строки и разобрал бы то, чего писатель не
+    замышлял.
+    """
+    for separator in _LINE_SEPARATORS:
+        if separator in value:
+            raise PackError(
+                f"{what} не может содержать разделитель строк "
+                f"{separator!r}: {value!r} — он подставляется в строку файла, "
+                "а читатель режет файл по всем границам `splitlines`")
+
+
 @dataclass(frozen=True)
 class PackEntry:
     """Проект для записи в пакет.
@@ -590,16 +631,37 @@ class PackEntry:
 
 
 def _pack_entries(entries: Sequence[PackEntry | str]) -> List[PackEntry]:
-    """Записи состава: строки — проекты по умолчанию (активные, синхронные)."""
+    """Записи состава: строки — проекты по умолчанию (активные, синхронные).
+
+    Одиночная строка — это **одна** запись, а не последовательность символов:
+    `str` сам является `Sequence`, и без этой развилки `write_pack(p, "a.prt")`
+    разложил бы имя на пять пакетов — `a`, `.`, `p`, `r`, `t` (находка ревью).
+    Элемент другого типа — отказ с именем типа: контракт обещает `PackError`,
+    а не `TypeError` из недр.
+    """
+    if isinstance(entries, str):
+        entries = [entries]
     out: List[PackEntry] = []
     for entry in entries:
-        item = entry if isinstance(entry, PackEntry) else PackEntry(entry)
-        if "\n" in item.path or "\r" in item.path:
+        if isinstance(entry, PackEntry):
+            item = entry
+        elif isinstance(entry, str):
+            item = PackEntry(entry)
+        else:
             raise PackError(
-                f"путь проекта не может содержать перевод строки: "
-                f"{item.path!r} — он подставляется в строку файла")
+                f"запись состава — строка пути или PackEntry, а получено "
+                f"{type(entry).__name__}: {entry!r}")
         if not item.path.strip():
             raise PackError("пустой путь проекта в составе пакета")
+        # Пробелы по краям снимает и читатель (`_pairs` → `.strip()`): запись
+        # « ../b.prt» вернулась бы из разбора ДРУГИМ путём, чем записана, —
+        # молчаливое расхождение, а не «имя с пробелом».
+        if item.path != item.path.strip():
+            raise PackError(
+                f"путь проекта не может начинаться или кончаться пробелами: "
+                f"{item.path!r} — читатель снимает их, и запись вернулась бы "
+                "другим путём, чем записана")
+        _reject_line_separators(item.path, f"путь проекта {item.path!r}")
         out.append(item)
     return out
 
@@ -608,11 +670,15 @@ def build_pack_text(entries: Sequence[PackEntry | str], *,
                     synchronize: bool = True,
                     real_time: bool = False,
                     time_mash: float = 1.0,
-                    restart_name: str = "") -> str:
+                    restart_name: str = "",
+                    simple_signal_load: int = 2) -> str:
     """Собрать текст пакета: пять секций в порядке среды, строки CRLF.
 
-    Значения по умолчанию ``[Common]``: ``Synchronize`` включён (объединение
-    списков сигналов проектов), синхронизация с реальным временем выключена.
+    Значения по умолчанию ``[Common]``: ``Synchronize`` включён (так во всех
+    63 файлах поставки, скан 02.10.2026), ``fSimpleSignalLoad`` — `2` (как в
+    55 файлах из 63; `0` — в восьми; что именно значит каждый — из поставки
+    не выводится, писатель повторяет форму большинства), синхронизация с
+    реальным временем выключена.
 
     **`RelativePath` — всегда `1`, и это не умолчание.** Во всей поставке
     (63 файла) флаг равен 1; файл с `RelativePath=0` несёт абсолютные пути, а
@@ -621,20 +687,19 @@ def build_pack_text(entries: Sequence[PackEntry | str], *,
     читатель считает спорной, писатель не производит: такой пакет можно
     собрать только текстом вручную.
 
-    Кодировку накладывает запись: `write_pack` пишет UTF-8 с BOM — так
-    записаны 62 файла из 63 в поставке. Текст — формат, который разбирает
-    `parse_pack`: имена секций и ключей у писателя и читателя общие, а связь
-    между ними проверяет round-trip в `write_pack`.
+    Кодировку и разделитель накладывает запись: `write_pack` пишет UTF-8 с
+    BOM — так записаны 62 файла из 63 в поставке — и строки CRLF, как у 39
+    файлов из 63 (у прочих разделитель другой; читатель принимает любой).
+    Текст — формат, который разбирает `parse_pack`: имена секций и ключей у
+    писателя и читателя общие, а связь между ними проверяет round-trip в
+    `write_pack`.
     """
     items = _pack_entries(entries)
     # Имя рестарта подставляется в строку файла так же, как пути записей,
-    # поэтому и проверка та же: перевод строки дописал бы в файл произвольные
-    # ключи и секции. Промах был однотипным с `_pack_entries` — там guard
-    # стоял, здесь нет.
-    if "\n" in restart_name or "\r" in restart_name:
-        raise PackError(
-            f"имя рестарта не может содержать перевод строки: {restart_name!r} "
-            "— оно подставляется в строку файла")
+    # поэтому и проверка та же — на ВСЕ границы строк, а не только на CR/LF
+    # (находка ревью: `x\x85Synchronize=0` дописывало ключ). Промах был
+    # однотипным с `_pack_entries` — там guard стоял, здесь нет.
+    _reject_line_separators(restart_name, "имя рестарта")
     lines: List[str] = ["[Form]"]
     lines.extend(f"{key}={value}" for key, value in _FORM_DEFAULTS)
     lines.extend([
@@ -642,8 +707,8 @@ def build_pack_text(entries: Sequence[PackEntry | str], *,
         f"Synchronize={_flag(synchronize)}",
         "RelativePath=1",
         f"IsRealTime={_flag(real_time)}",
-        f"TimeMash={time_mash:g}",
-        "fSimpleSignalLoad=0",
+        f"TimeMash={_time_mash_text(time_mash)}",
+        f"fSimpleSignalLoad={simple_signal_load}",
         "formstyle=0",
         f"restartname={restart_name}",
         "notqueryremoveforall=0",
@@ -708,35 +773,39 @@ def write_pack(path: Path, entries: Sequence[PackEntry | str], *,
                synchronize: bool = True,
                real_time: bool = False,
                time_mash: float = 1.0,
-               restart_name: str = "") -> ProjectPack:
-    """Записать пакет текстом и вернуть его же — перечитанным разборщиком.
+               restart_name: str = "",
+               simple_signal_load: int = 2) -> ProjectPack:
+    """Записать пакет текстом и вернуть разбор того, что записано.
 
     COM не нужен вовсе: `.pak` — плоский INI-файл (это доказывает читатель),
-    и собрать его — файловая операция. Запись — UTF-8 с BOM и CRLF, как файлы
-    поставки.
+    и собрать его — файловая операция. Запись — UTF-8 с BOM (так записаны
+    62 файла из 63 в поставке) и строки CRLF (как у 39; читатель принимает
+    любой разделитель).
 
-    Записи проверяются **до** записи файла: уводящая вверх относительная
-    запись — отказ (`_reject_escaping_entries`), абсолютная — разрешена как
-    есть (так пишет и среда за каталогом пакета). Возвращается **разбор
-    записанного**: вызывающий получает состав, каким его увидит `load_pack`,
-    а рассинхронизация писателя с читателем становится отказом здесь, а не
-    молчаливым пакетом чужого формата в среде (тем же приёмом
-    `export_signal_db` разбирает выгруженную базу; единственное разрешённое
-    расхождение — примечание об абсолютных записях, см.
-    `_ALLOWED_ROUND_TRIP_PROBLEMS`).
+    **Проверки идут до записи файла.** Невалидная запись (разделитель строк,
+    пустая строка, пробелы по краям, относительный путь за каталог пакета) —
+    отказ ещё до сборки; затем тот же текст, что уйдёт на диск, разбирается
+    `parse_pack` и сверяется с писателем (`_check_round_trip`) — расхождение
+    тоже отказ, и после отказа файл на диске не появляется (находка ревью:
+    раньше запись шла первой, и «неудачный» пакет оставался лежать).
+    Абсолютная запись — разрешена как есть: так пишет и среда за каталогом
+    пакета; примечание читателя о ней — единственное разрешённое расхождение
+    (`_ALLOWED_ROUND_TRIP_PROBLEMS`).
 
     Raises:
-        PackError: запись состава невалидна (перевод строки, пустая строка,
-            относительный путь за каталогом пакета), имя рестарта содержит
-            перевод строки — либо записанный текст не разбирается читателем
-            или расходится с ним сверх разрешённого.
+        PackError: запись состава невалидна, имя рестарта содержит
+            разделитель строк, `TimeMash` не конечное число — либо записанный
+            текст не разбирается читателем или расходится с ним сверх
+            разрешённого.
     """
-    text = build_pack_text(entries, synchronize=synchronize,
-                           real_time=real_time,
-                           time_mash=time_mash, restart_name=restart_name)
+    items = _pack_entries(entries)
     path = Path(path)
-    _reject_escaping_entries(path, _pack_entries(entries))
-    path.write_bytes(_BOM + text.encode("utf-8"))
-    pack = load_pack(path)
+    _reject_escaping_entries(path, items)
+    text = build_pack_text(items, synchronize=synchronize,
+                           real_time=real_time,
+                           time_mash=time_mash, restart_name=restart_name,
+                           simple_signal_load=simple_signal_load)
+    pack = parse_pack(text, path)
     _check_round_trip(pack)
+    path.write_bytes(_BOM + text.encode("utf-8"))
     return pack
