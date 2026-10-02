@@ -30,9 +30,11 @@ def test_written_pack_opens_in_simintech(client, tmp_path):
     from simintech_api.pak import write_pack
 
     workdir = str(tmp_path)
-    created = [Project.from_template(client) for _ in range(2)]
+    created = []
     try:
-        for project, name in zip(created, ("alpha.prt", "beta.prt")):
+        for name in ("alpha.prt", "beta.prt"):
+            project = Project.from_template(client)
+            created.append(project)
             project.save_binary(os.path.join(workdir, name))
         target = os.path.join(workdir, "Сборка.pak")
 
@@ -48,5 +50,11 @@ def test_written_pack_opens_in_simintech(client, tmp_path):
         finally:
             opened.close()
     finally:
+        # Каждый проект закрывается в своей изоляции: сбой уборки одного не
+        # смеет оставить открытыми остальные (и не смеет подменить исходную
+        # ошибку теста — поэтому не пробрасывается).
         for project in created:
-            project.close()
+            try:
+                project.close()
+            except Exception:                                  # noqa: BLE001
+                pass
