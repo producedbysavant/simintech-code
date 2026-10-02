@@ -296,13 +296,152 @@ def test_typed_read_write_via_signal(monkeypatch):
     assert ("WriteAsFloat", 1000, 0, 3.0) in fake.calls
 
 
-def test_owned_pid_records_client_pid(monkeypatch):
-    """_owned_pid запоминает PID процесса, к которому подключился клиент."""
+def test_connect_classifies_new_pid_as_owned(monkeypatch):
+    """PID, появившийся между snapshots, классифицируется как owned."""
+    from simintech_api.core.com_client import SessionOwnership
+
     fake = FakeServer()
     client = _make_client(monkeypatch, fake)
+
+    snapshots = [set(), {12345}]
+    monkeypatch.setattr(
+        "simintech_api.core.com_client.get_mmain_pids",
+        lambda: snapshots.pop(0),
+    )
+
     client.connect()
-    # FakeServer.GetProcessID возвращает 12345
-    assert client._owned_pid == 12345
+
+    assert client.session_pid == 12345
+    assert client.ownership is SessionOwnership.OWNED
+
+
+def test_connect_classifies_preexisting_pid_as_external(monkeypatch):
+    """PID, существовавший до connect, не может быть убит клиентом."""
+    from simintech_api.core.com_client import SessionOwnership
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+
+    snapshots = [{12345}, {12345}]
+    monkeypatch.setattr(
+        "simintech_api.core.com_client.get_mmain_pids",
+        lambda: snapshots.pop(0),
+    )
+
+    client.connect()
+
+    assert client.session_pid == 12345
+    assert client.ownership is SessionOwnership.EXTERNAL
+
+
+def test_connect_classifies_unobserved_pid_as_unknown(monkeypatch):
+    """Без before/after подтверждения ownership остаётся неизвестным."""
+    from simintech_api.core.com_client import SessionOwnership
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+
+    snapshots = [set(), set()]
+    monkeypatch.setattr(
+        "simintech_api.core.com_client.get_mmain_pids",
+        lambda: snapshots.pop(0),
+    )
+
+    client.connect()
+
+    assert client.session_pid == 12345
+    assert client.ownership is SessionOwnership.UNKNOWN
+
+
+def test_shutdown_owned_session_waits_then_kills_exact_pid(monkeypatch):
+    """Managed shutdown освобождает COM, ждёт PID и убивает только его, если он жив."""
+    from simintech_api.core import com_client as cc
+    from simintech_api.core.com_client import SessionOwnership
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+
+    snapshots = [set(), {12345}]
+    monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
+
+    waited = []
+    monkeypatch.setattr(
+        cc,
+        "wait_for_pid_exit",
+        lambda pid, timeout=5.0: waited.append((pid, timeout)) or False,
+    )
+    killed = []
+    monkeypatch.setattr(
+        cc,
+        "kill_pids",
+        lambda pids: killed.append(list(pids)),
+    )
+
+    client.connect()
+    assert client.ownership is SessionOwnership.OWNED
+
+    client.shutdown()
+
+    assert waited == [(12345, 5.0)]
+    assert killed == [[12345]]
+    assert not client.connected
+
+
+def test_shutdown_owned_session_does_not_kill_after_graceful_exit(monkeypatch):
+    """Если exact PID ушёл после release, fallback terminate не вызывается."""
+    from simintech_api.core import com_client as cc
+    from simintech_api.core.com_client import SessionOwnership
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+
+    snapshots = [set(), {12345}]
+    monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
+    monkeypatch.setattr(
+        cc,
+        "wait_for_pid_exit",
+        lambda pid, timeout=5.0: True,
+    )
+
+    killed = []
+    monkeypatch.setattr(cc, "kill_pids", lambda pids: killed.append(list(pids)))
+
+    client.connect()
+    assert client.ownership is SessionOwnership.OWNED
+
+    client.shutdown()
+
+    assert killed == []
+
+
+def test_shutdown_external_session_never_kills(monkeypatch):
+    """Attached/external session не завершается managed shutdown."""
+    from simintech_api.core import com_client as cc
+    from simintech_api.core.com_client import SessionOwnership
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+
+    snapshots = [{12345}, {12345}]
+    monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
+
+    waited = []
+    monkeypatch.setattr(
+        cc,
+        "wait_for_pid_exit",
+        lambda pid, timeout=5.0: waited.append((pid, timeout)) or False,
+    )
+    killed = []
+    monkeypatch.setattr(cc, "kill_pids", lambda pids: killed.append(list(pids)))
+
+    client.connect()
+    assert client.ownership is SessionOwnership.EXTERNAL
+
+    client.shutdown()
+
+    assert waited == []
+    assert killed == []
+    assert not client.connected
 
 
 def test_shutdown_no_kill_by_default(monkeypatch):
