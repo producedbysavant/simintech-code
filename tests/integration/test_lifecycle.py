@@ -28,37 +28,34 @@ FSM_DEMO = os.environ.get(
 
 
 def test_connect_disconnect():
-    """Подключение/отключение COM-клиента — и завершение **своего** процесса.
+    """Managed shutdown завершает ровно PID процесса этой COM-сессии.
 
-    Клиент поднимает собственный `mmain.exe`, а `disconnect()` его не завершает
-    (измерено), поэтому тест обязан убедиться, что процесс ушёл. Иначе он
-    остаётся висеть, и следующий живой тест либо подключится к чужому
-    экземпляру, либо (по контракту фикстуры `client`) откажется работать —
-    причём отказ сработал бы на ровном месте, из-за этого процесса.
+    Ownership определяется самим COMClient по before/after snapshot, а не
+    предположением, что GetProcessID() означает «процесс, порождённый клиентом».
     """
-    import time
-
     from simintech_api import COMClient
-    from simintech_api.utils.processes import get_mmain_pids, kill_pids
+    from simintech_api.core.com_client import SessionOwnership
+    from simintech_api.utils.processes import get_mmain_pids
+
+    before = set(get_mmain_pids())
+    assert not before, (
+        f"для lifecycle-теста нужен чистый стенд, обнаружены mmain.exe: "
+        f"{sorted(before)}"
+    )
 
     c = COMClient(silent_mode=True)
     c.connect()
     assert c.connected
     pid = c.get_process_id()
     assert pid > 0
-    c.disconnect()
-    assert not c.connected
-    c.shutdown()
-    deadline = time.monotonic() + 5.0
-    while pid in set(get_mmain_pids()) and time.monotonic() < deadline:
-        time.sleep(0.1)
-    if pid in set(get_mmain_pids()):
-        kill_pids([pid])
-        time.sleep(0.5)
-    assert pid not in set(get_mmain_pids()), (
-        f"процесс {pid}, поднятый этим тестом, остался жив: следующий живой тест "
-        "подключился бы к нему как к чужому")
+    assert c.session_pid == pid
+    assert c.ownership is SessionOwnership.OWNED
 
+    c.shutdown()
+    assert not c.connected
+
+    assert pid not in set(get_mmain_pids()), (
+        f"процесс {pid}, поднятый этой COM-сессией, остался жив")
 
 def test_new_project_save_close(client):
     """Создание нового проекта, сохранение в XML, закрытие."""
