@@ -363,7 +363,7 @@ def test_connect_classifies_unobserved_pid_as_unknown(monkeypatch):
 
 
 def test_shutdown_owned_session_waits_then_kills_exact_pid(monkeypatch):
-    """Managed shutdown освобождает COM, ждёт PID и убивает только его, если он жив."""
+    """Managed shutdown ждёт PID и убивает его, если он всё ещё жив."""
     from simintech_api.core import com_client as cc
     from simintech_api.core.com_client import SessionOwnership
 
@@ -453,21 +453,32 @@ def test_shutdown_external_session_never_kills(monkeypatch):
     assert not client.connected
 
 
-def test_shutdown_no_kill_by_default(monkeypatch):
-    """shutdown() по умолчанию НЕ завершает процессы (только disconnect)."""
+def test_shutdown_unknown_session_does_not_kill_by_default(monkeypatch):
+    """UNKNOWN-сессия не даёт shutdown права завершать процесс."""
+    from simintech_api.core.com_client import SessionOwnership
     from simintech_api.utils import processes as proc
 
     fake = FakeServer()
     client = _make_client(monkeypatch, fake)
+    snapshots = [set(), set()]
+    monkeypatch.setattr(
+        "simintech_api.core.com_client.get_mmain_pids",
+        lambda: snapshots.pop(0),
+    )
     client.connect()
+    assert client.ownership is SessionOwnership.UNKNOWN
 
     killed = []
     monkeypatch.setattr(proc, "_pids_wmic", lambda: set())
     monkeypatch.setattr(proc, "_pids_tasklist", lambda: set())
     monkeypatch.setattr(proc, "_pids_powershell", lambda: set())
-    monkeypatch.setattr(proc.subprocess, "run",
-                        lambda *a, **k: killed.append(a[0]) or None)
-    client.shutdown()          # без kill_pids — не убивать
+    monkeypatch.setattr(
+        proc.subprocess,
+        "run",
+        lambda *a, **k: killed.append(a[0]) or None,
+    )
+
+    client.shutdown()
     assert killed == []
 
 

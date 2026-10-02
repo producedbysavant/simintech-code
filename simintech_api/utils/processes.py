@@ -48,6 +48,7 @@ def kill_pids(pids: Iterable[int]) -> None:
         except Exception:
             pass
 
+
 def wait_for_pid_exit(
     pid: int, timeout: float = 5.0, poll_interval: float = 0.1
 ) -> bool:
