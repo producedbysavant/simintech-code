@@ -174,6 +174,13 @@ def _make_client(monkeypatch, fake: FakeServer):
 
     _install_fake_comtypes(monkeypatch, fake)
     monkeypatch.setattr(sys, "platform", "win32")
+    # Job-объект (KILL_ON_JOB_CLOSE) — Win32-путь: на Linux настоящие
+    # функции недоступны, поэтому по умолчанию подменяются фейками
+    # («назначение удалось, процесс мёртв»). Тесты защиты и уборки
+    # подменяют их сами.
+    monkeypatch.setattr(cc, "assign_kill_on_close", lambda pid: (777, 0))
+    monkeypatch.setattr(cc, "close_handle", lambda handle: None)
+    monkeypatch.setattr(cc, "is_process_alive", lambda pid: False)
     return cc.COMClient(silent_mode=True)
 
 
@@ -656,3 +663,130 @@ def test_project_enumeration_refuses_without_out_value(monkeypatch, method, attr
         getattr(client, method)()
 
     assert attr in str(exc.value)
+
+
+# ─── Job-объект: уборка процесса OWNED-сессии ──────────────────────
+#
+# Процесс OWNED-сессии назначается в job с KILL_ON_JOB_CLOSE (живой замер
+# 02.10.2026: назначение существующего -Embedding-процесса и снятие ядром
+# при смерти держателя, n=2). Контракт клиента: OWNED защищается,
+# EXTERNAL/UNKNOWN — никогда; отказ назначения не ломает сессию;
+# disconnect живой процесс не убивает (закрывает хэндл только у мёртвого).
+
+
+def test_connect_owned_assigns_kill_on_close_job(monkeypatch):
+    """OWNED-сессия назначается в job сразу при connect."""
+    from simintech_api.core import com_client as cc
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+    snapshots = [set(), {12345}]
+    monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
+    assigned = []
+    monkeypatch.setattr(cc, "assign_kill_on_close",
+                        lambda pid: assigned.append(pid) or (777, 0))
+
+    client.connect()
+
+    assert assigned == [12345]
+    assert client.job_handle == 777
+    assert client.job_error == 0
+
+
+def test_connect_external_session_never_assigns_job(monkeypatch):
+    """Чужой (EXTERNAL) процесс в job не назначается никогда."""
+    from simintech_api.core import com_client as cc
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+    snapshots = [{12345}, {12345}]
+    monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
+    assigned = []
+    monkeypatch.setattr(cc, "assign_kill_on_close",
+                        lambda pid: assigned.append(pid) or (777, 0))
+
+    client.connect()
+
+    assert assigned == []
+    assert client.job_handle is None
+
+
+def test_connect_survives_job_refusal(monkeypatch):
+    """Отказ назначения не является отказом сессии (работа без уборки)."""
+    from simintech_api.core import com_client as cc
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+    snapshots = [set(), {12345}]
+    monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
+    monkeypatch.setattr(cc, "assign_kill_on_close", lambda pid: (None, 5))
+
+    client.connect()
+
+    assert client.connected
+    assert client.job_handle is None
+    assert client.job_error == 5
+
+
+def test_disconnect_keeps_job_while_process_alive(monkeypatch):
+    """disconnect не завершает живой процесс: хэндл job'а — у клиента."""
+    from simintech_api.core import com_client as cc
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+    snapshots = [set(), {12345}]
+    monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
+    closed = []
+    monkeypatch.setattr(cc, "close_handle",
+                        lambda handle: closed.append(handle))
+    monkeypatch.setattr(cc, "is_process_alive", lambda pid: True)
+
+    client.connect()
+    client.disconnect()
+
+    assert closed == []
+    assert client.job_handle == 777
+
+
+def test_disconnect_closes_job_when_process_dead(monkeypatch):
+    """Мёртвый процесс: хэндл job'а закрывается (закрытие ничего не завершает)."""
+    from simintech_api.core import com_client as cc
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+    snapshots = [set(), {12345}]
+    monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
+    closed = []
+    monkeypatch.setattr(cc, "close_handle",
+                        lambda handle: closed.append(handle))
+    monkeypatch.setattr(cc, "is_process_alive", lambda pid: False)
+
+    client.connect()
+    client.disconnect()
+
+    assert closed == [777]
+    assert client.job_handle is None
+
+
+def test_shutdown_closes_job_after_termination(monkeypatch):
+    """После завершения процесса сессии хэндл job'а закрывается."""
+    from simintech_api.core import com_client as cc
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+    snapshots = [set(), {12345}]
+    monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
+    monkeypatch.setattr(cc, "wait_for_pid_exit", lambda pid, timeout=5.0: True)
+    killed = []
+    monkeypatch.setattr(cc, "_kill_pids", lambda pids: killed.append(list(pids)))
+    closed = []
+    monkeypatch.setattr(cc, "close_handle",
+                        lambda handle: closed.append(handle))
+    monkeypatch.setattr(cc, "is_process_alive", lambda pid: False)
+
+    client.connect()
+    client.shutdown()
+
+    assert killed == []
+    assert closed == [777]
+    assert client.job_handle is None
