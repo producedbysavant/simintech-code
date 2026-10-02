@@ -57,6 +57,7 @@ def test_connect_disconnect():
     assert pid not in set(get_mmain_pids()), (
         f"процесс {pid}, поднятый этой COM-сессией, остался жив")
 
+
 def test_new_project_save_close(client):
     """Создание нового проекта, сохранение в XML, закрытие."""
     from simintech_api import Project
