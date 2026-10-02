@@ -76,3 +76,4 @@
 | `com-shutdown-on-last-release-is-not-a-mechanism` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
 | `com-createobject-attaches-to-manual-instance` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
 | `com-session-ownership-and-managed-shutdown` | verified | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | `tests/integration/test_lifecycle.py::test_connect_disconnect` (live) |
+| `job-object-reaps-owned-process-on-owner-death` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |

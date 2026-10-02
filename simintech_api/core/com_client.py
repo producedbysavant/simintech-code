@@ -12,6 +12,8 @@ from typing import Any, List, Optional
 
 from ..exceptions import ComCallError, ComConnectionError, PackError
 from ..model import TDataDescriptor
+from ..utils.job_object import (assign_kill_on_close, close_handle,
+                                is_process_alive)
 from ..utils.processes import get_mmain_pids, kill_pids as _kill_pids, wait_for_pid_exit
 
 
@@ -51,6 +53,13 @@ class COMClient:
         # доказывает, что процесс был запущен этим клиентом.
         self._session_pid: Optional[int] = None
         self._ownership = SessionOwnership.UNKNOWN
+        # Хэндл job-объекта, удерживающего процесс OWNED-сессии
+        # (`KILL_ON_JOB_CLOSE`): смерть этого процесса-клиента закрывает
+        # хэндл, и ядро снимает сервер. None — защиты нет (сессия не OWNED,
+        # назначение отказало — код в `job_error`, — или не Windows).
+        self._job_handle: Optional[int] = None
+        self._job_pid: Optional[int] = None
+        self._job_error = 0
 
     # ─── Жизненный цикл ─────────────────────────────────────────────
 
@@ -69,6 +78,10 @@ class COMClient:
 
         Вызывает mmain.exe (out-of-proc). Требует зарегистрированного
         COM-объекта: `bin/mmain.exe /regserver`.
+
+        Для OWNED-сессии процесс дополнительно назначается в job-объект с
+        `KILL_ON_JOB_CLOSE` (`job_handle`): смерть процесса-клиента снимает
+        сервер силами ядра. Отказ назначения сессию не ломает (`job_error`).
         """
         if not self.is_available:
             raise ComConnectionError(
@@ -143,6 +156,7 @@ class COMClient:
             self._safe_call("SetNoCloseAppFlag", 1)
             if self._silent_mode:
                 self._safe_call("SetSilentMode", 1)
+            self._attach_job_guard()
 
         self._connected = True
         return self
@@ -157,10 +171,38 @@ class COMClient:
         """Ownership текущей/последней COM-сессии."""
         return self._ownership
 
+    @property
+    def job_handle(self) -> Optional[int]:
+        """Хэндл job-объекта, защищающего процесс OWNED-сессии (None — нет).
+
+        Живой хэндл означает: умрёт процесс этого клиента — ядро снимет
+        процесс сессии, в том числе при аварии клиента. None — защиты нет:
+        сессия не OWNED, назначение отказало (код — `job_error`) или
+        платформа не Windows.
+        """
+        return self._job_handle
+
+    @property
+    def job_error(self) -> int:
+        """Код отказа последнего назначения в job (0 — отказа не было).
+
+        Отказ не является отказом сессии: клиент работает без гарантии
+        уборки, а код остаётся для диагностики (`OpenProcess`,
+        `AssignProcessToJobObject`).
+        """
+        return self._job_error
+
     def disconnect(self) -> None:
-        """Отсоединиться от сервера, не управляя процессом."""
+        """Отсоединиться от сервера, не управляя процессом.
+
+        `disconnect` — не завершение: отпущенный, но живой процесс сессии не
+        трогается. Хэндл job-объекта закрывается, только если процесс уже
+        завершился; у живого он остаётся у клиента — и это механизм уборки:
+        умрёт процесс-клиент, и ядро снимет отпущенный процесс.
+        """
         self._server = None
         self._connected = False
+        self._release_job_if_process_dead()
 
     def shutdown(self, kill_pids=None) -> None:
         """Закрыть управляемую COM-сессию и адресно убрать её процесс.
@@ -172,6 +214,12 @@ class COMClient:
         ``kill_pids`` сохраняет старый escape hatch для вызывающей стороны,
         которая сама отвечает за разрешённые PID'ы.
 
+        Хэндл job-объекта (`job_handle`) закрывается по итогу завершения:
+        закрытие последнего хэндла с `KILL_ON_JOB_CLOSE` само завершает
+        процессы job'а, поэтому в managed-пути он закрывается после ожидания
+        и `kill`, а при ``kill_pids`` — только если процесс уже мёртв (права
+        на завершение здесь определяет вызывающая сторона).
+
         Args:
             kill_pids: необязательная итерация PID'ов, разрешённых вызывающей
                 стороной к завершению. Если не задана, завершение выполняется
@@ -180,6 +228,7 @@ class COMClient:
         pid = self._session_pid
         ownership = self._ownership
 
+        # disconnect попутно закрывает хэндл job'а, если процесс уже мёртв.
         self.disconnect()
 
         if sys.platform != "win32":
@@ -189,6 +238,7 @@ class COMClient:
         if kill_pids is not None:
             if kill_pids:
                 _kill_pids(kill_pids)
+            self._release_job_if_process_dead()
             self._reset_session_state()
             return
 
@@ -199,12 +249,63 @@ class COMClient:
         if not wait_for_pid_exit(pid, timeout=5.0):
             _kill_pids([pid])
 
+        # Процесс завершён (или завершается этой строкой): закрытие job'а
+        # больше ничего живого не задевает — и служит последней мерой.
+        self._close_job()
         self._reset_session_state()
 
     def _reset_session_state(self) -> None:
         """Сбросить идентичность завершённой COM-сессии."""
         self._session_pid = None
         self._ownership = SessionOwnership.UNKNOWN
+
+    # ─── Уборка процесса (job-объект) ───────────────────────────────
+
+    def _attach_job_guard(self) -> None:
+        """Назначить процесс OWNED-сессии в job с `KILL_ON_JOB_CLOSE`.
+
+        Отказ назначения не является отказом сессии: клиент продолжает
+        работать без гарантии уборки, а код отказа виден в `job_error`.
+        Хэндл сессии, отпущенной живой, остаётся открытым до конца процесса
+        клиента: закрыть его — значит завершить тот процесс, чего
+        `disconnect` не делает.
+        """
+        self._release_job_if_process_dead()
+        self._job_error = 0
+        pid = self._session_pid
+        if pid is None or pid <= 0:
+            return
+        handle, error = assign_kill_on_close(pid)
+        self._job_handle = handle
+        self._job_pid = pid if handle is not None else None
+        self._job_error = error
+
+    def _release_job_if_process_dead(self) -> None:
+        """Закрыть хэндл job'а, если его процесс уже завершился.
+
+        Закрытие последнего хэндла с `KILL_ON_JOB_CLOSE` завершает процессы
+        job'а — поэтому живой процесс не трогаем (`disconnect` не является
+        завершением), а мёртвый закрываем, чтобы хэндл не копился. Проба —
+        `is_process_alive` (один `OpenProcess`), а не снимок
+        `get_mmain_pids()` (три сканера процессов): дешевле и точнее.
+        """
+        if self._job_handle is None:
+            return
+        pid = self._job_pid
+        if pid and is_process_alive(pid):
+            return
+        self._close_job()
+
+    def _close_job(self) -> None:
+        """Закрыть хэндл job'а и забыть его.
+
+        Вызывается, когда процессы job'а завершены: тогда закрытие хэндла —
+        чистка, а не завершение.
+        """
+        if self._job_handle is not None:
+            close_handle(self._job_handle)
+        self._job_handle = None
+        self._job_pid = None
 
     # ─── Низкоуровневые вызовы ──────────────────────────────────────
 
