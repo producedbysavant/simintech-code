@@ -83,6 +83,7 @@ files = [
     "simintech_api/semantic.py",
     "simintech_api/tbl.py",
     "simintech_api/topology.py",
+    "simintech_api/utils/job_object.py",
     "simintech_api/utils/processes.py",
     "simintech_api/utils/xprt_signals.py",
 ]
