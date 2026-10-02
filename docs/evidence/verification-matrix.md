@@ -68,3 +68,7 @@
 | `projectstart-executes-init-and-resets-time` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | `tests/unit/test_script_bridge.py::test_probe_starts_before_run_and_only_once` (unit) |
 | `endtime-run-executes-init-without-growth` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | — |
 | `langblock-port-array-without-size` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
+| `com-release-does-not-terminate-server` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
+| `com-shutdown-on-last-release-is-not-a-mechanism` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
+| `com-createobject-attaches-to-manual-instance` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
+| `com-session-ownership-and-managed-shutdown` | verified | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | `tests/integration/test_lifecycle.py::test_connect_disconnect` (live) |
