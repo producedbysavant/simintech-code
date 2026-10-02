@@ -142,6 +142,17 @@ class COMClient:
             self._session_pid = None
 
         after_pids = get_mmain_pids()
+        if (self._session_pid is not None and self._session_pid > 0
+                and self._session_pid not in before_pids
+                and self._session_pid not in after_pids):
+            # Свежий процесс мог не попасть в снимок: сканеры (wmic/
+            # tasklist/powershell) читают таблицу процессов не мгновенно.
+            # Одна перепроверка снимает ложный UNKNOWN, не меняя критерий:
+            # владение доказывается отсутствием PID ДО подключения и
+            # присутствием после — перепроверяется только «после» (находка
+            # ревью simintech-mcp#41: ложный UNKNOWN оставлял жить свой
+            # процесс и отказывал в работе).
+            after_pids = get_mmain_pids()
         if self._session_pid is not None and self._session_pid > 0:
             if self._session_pid in before_pids:
                 self._ownership = SessionOwnership.EXTERNAL
