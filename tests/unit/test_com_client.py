@@ -382,7 +382,7 @@ def test_shutdown_owned_session_waits_then_kills_exact_pid(monkeypatch):
     killed = []
     monkeypatch.setattr(
         cc,
-        "kill_pids",
+        "_kill_pids",
         lambda pids: killed.append(list(pids)),
     )
 
@@ -441,7 +441,7 @@ def test_shutdown_external_session_never_kills(monkeypatch):
         lambda pid, timeout=5.0: waited.append((pid, timeout)) or False,
     )
     killed = []
-    monkeypatch.setattr(cc, "kill_pids", lambda pids: killed.append(list(pids)))
+    monkeypatch.setattr(cc, "_kill_pids", lambda pids: killed.append(list(pids)))
 
     client.connect()
     assert client.ownership is SessionOwnership.EXTERNAL
