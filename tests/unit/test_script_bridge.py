@@ -80,7 +80,7 @@ class FakeEnv:
                  initial_time=0.0, writes_result=True,
                  script_result=END_MARKER + "\n",
                  restore_raises=None, restore_is_ignored=False,
-                 foreign_change_on_restore=False, page_moves_on_step=False,
+                 foreign_change_on_restore=False, page_moves_on_run=False,
                  restore_writes_other_text=False,
                  set_current_page_is_ignored=False,
                  probe_install_raises_after_apply=False,
@@ -88,7 +88,8 @@ class FakeEnv:
                  save_project_xml_writes_nothing=False,
                  page_scripts_not_serialized=False,
                  pages_added_by_run=0,
-                 state_read_raises=None, start_raises=None,
+                 state_read_raises=None, run_raises=None, start_raises=None,
+                 run_completes_instantly=False, instant_final_time=2.0,
                  stop_raises=None, stop_is_ignored=False,
                  state_read_raises_after_stop=None,
                  current_page_raises=False,
@@ -118,7 +119,7 @@ class FakeEnv:
         #: Модель «расчёт увёл текущую страницу»: `gotopage` во встроенном языке
         #: существует, и после пробы страница может быть уже не та, с которой
         #: начинали. Выключено по умолчанию.
-        self.page_moves_on_step = page_moves_on_step
+        self.page_moves_on_run = page_moves_on_run
         #: Модель «возврат записал не тот текст»: страница получает чужой
         #: скрипт, и прежнего текста записи в снимке не оказывается.
         self.restore_writes_other_text = restore_writes_other_text
@@ -150,7 +151,8 @@ class FakeEnv:
         #: такую запись заменяет целиком, поэтому сырость снимается при записи.
         self.raw_scripts = {}
         self.calls = []
-        self._stepped = False
+        self._running = False
+        self._time = float(initial_time)
         # ─── Состояние расчёта ────────────────────────────────────────
         # Флаг моделирует **переход**, а не константу: без перехода фейк не
         # различает «расчёт начали мы» и «он шёл до нас», и любая проверка
@@ -164,8 +166,18 @@ class FakeEnv:
         #: Модель «после ProjectStop состояние стало нечитаемым».
         self.state_read_raises_after_stop = state_read_raises_after_stop
         self._stop_called = False
-        #: Модель «ProjectStart упал»: был ли он применён — неизвестно.
+        #: Модель «ProjectRun упал»: был ли он применён — неизвестно.
+        self.run_raises = run_raises
+        #: Модель «ProjectStart упал»: остановка обязана быть и на этом пути —
+        #: вызов мог примениться и упасть после применения, а инициализированный
+        #: проект отвергает правки модальным окном (замер 2026-09-22).
         self.start_raises = start_raises
+        #: Модель «прогон досчитал весь остаток до endtime между ProjectRun и
+        #: первым чтением времени» — замер 01.10.2026: 2 с модельного времени
+        #: за ≈70 мс. Без неё фейк считает рост гарантированным и не может
+        #: опровергнуть оракул, снявший базовое время после запуска.
+        self.run_completes_instantly = run_completes_instantly
+        self.instant_final_time = instant_final_time
         #: Модель «ProjectStop упал»: отказ, а не молчание.
         self.stop_raises = stop_raises
         #: Модель молчаливого ProjectStop: вызов проходит, состояние не меняется.
@@ -238,28 +250,29 @@ class FakeEnv:
         if name == "ProjectStart":
             if self.start_raises is not None:
                 raise self.start_raises
-            self._stepped = False
+            # На переходе из остановленного состояния среда исполняет
+            # `initialization` страницы и сбрасывает время (замер 01.10.2026:
+            # 2.0 → 0.0, тело исполнено). Фейк моделирует переход: сброс и
+            # состояние «инициализирован». Какая секция исполняется телом
+            # (проба — `firststep`, контур — `initialization`), здесь не
+            # моделируется: этот фейк проверяет протокол вызовов и переходы.
+            self._time = 0.0
             self.state = 1
             return 1
-        if name == "ProjectStop":
-            if self.stop_raises is not None:
-                raise self.stop_raises
-            self._stop_called = True
-            if not self.stop_is_ignored:
-                self.state = 0
-            return 1
-        if name == "GetProjectStateFlag":
-            if self.state_read_raises is not None:
-                raise self.state_read_raises
-            if (self.state_read_raises_after_stop is not None
-                    and self._stop_called):
-                raise self.state_read_raises_after_stop
-            return self.state
-        if name == "ProjectStep":
-            self._stepped = True
+        if name == "ProjectRun":
+            if self.run_raises is not None:
+                raise self.run_raises
+            self._running = True
             self.state = 7
             self._maybe_write_result()
-            if self.page_moves_on_step:
+            if self.run_completes_instantly:
+                # Прогон досчитал весь остаток до первого чтения: время уже на
+                # конце, и рост наблюдаем только относительно базы ДО запуска.
+                self._running = False
+                self.state = 0
+                if self.time_grows:
+                    self._time = self.instant_final_time
+            if self.page_moves_on_run:
                 # Страница уходит ПОСЛЕ записи результата: иначе проба не
                 # записала бы файл, и отказ пришёл бы раньше возврата.
                 self.current_index = 1 - self.current_index
@@ -269,10 +282,35 @@ class FakeEnv:
                 self.pages.append(f"Activated{extra}")
                 self.scripts.append("`активировано`")
             return 1
+        if name == "ProjectStop":
+            if self.stop_raises is not None:
+                raise self.stop_raises
+            self._stop_called = True
+            if not self.stop_is_ignored:
+                self.state = 0
+                # Остановленный проект не «считает»: без этого фейк продолжал
+                # бы растить время ПОСЛЕ ProjectStop — состояние, которого
+                # среда не производит (находка ревью).
+                self._running = False
+            return 1
+        if name == "GetProjectStateFlag":
+            if self.state_read_raises is not None:
+                raise self.state_read_raises
+            if (self.state_read_raises_after_stop is not None
+                    and self._stop_called):
+                raise self.state_read_raises_after_stop
+            return self.state
         if name == "GetProjectTime":
-            if self.time_grows and self._stepped:
-                return self.initial_time + 0.1
-            return self.initial_time
+            if self.time_grows and self._running:
+                # Время растёт по чтениям: опрос роста ничего не
+                # переинициализирует, и фейк моделирует именно чтение.
+                self._time += 0.1
+            return self._time
+        if name == "ProjectStep":
+            raise AssertionError(
+                "шаговый цикл вернулся в ожидание роста: на несчитающей "
+                "модели каждый шаг переинициализирует страницу и тело "
+                "исполняется заново (замер 01.10.2026: 7 объектов -> 1302)")
         return 1
 
     def _probe_installed(self):
@@ -455,7 +493,7 @@ def test_run_probe_returns_script_to_the_page_it_changed(tmp_path):
     то есть потерял бы сразу два скрипта.
     """
     env, bridge = _bridge(installed="// пользовательский",
-                          other_scripts=["чужой"], page_moves_on_step=True)
+                          other_scripts=["чужой"], page_moves_on_run=True)
     bridge.run_probe("", tmp_path / "out.txt")
     assert env.scripts[0] == "// пользовательский", "прежний скрипт не вернулся"
     assert env.scripts[1] == "чужой", "прежний скрипт попал в чужую страницу"
@@ -688,7 +726,7 @@ def test_run_probe_does_not_write_to_a_foreign_page(tmp_path):
     """
     env, bridge = _bridge(installed="// пользовательский",
                           other_scripts=["ЧУЖОЙ"],
-                          page_moves_on_step=True,
+                          page_moves_on_run=True,
                           set_current_page_is_ignored=True)
     with pytest.raises(ScriptBridgeUnsafeStateError) as exc:
         bridge.run_probe("", tmp_path / "out.txt")
@@ -708,7 +746,7 @@ def test_tolerated_length_change_survives_warnings_as_errors(tmp_path):
     «прежний скрипт страницы не восстановлен» — при том что возврат состоялся.
     `pytest.warns` такой случай не поймает: он подменяет фильтры.
     """
-    env, bridge = _bridge(page_moves_on_step=True, pages_added_by_run=1)
+    env, bridge = _bridge(page_moves_on_run=True, pages_added_by_run=1)
     with warnings.catch_warnings():
         warnings.simplefilter("error", UserWarning)
         result = bridge.run_probe('writelnutf8(fid, "x");', tmp_path / "probe.txt")
@@ -725,7 +763,7 @@ def test_tolerated_length_change_warns_at_the_caller_frame(tmp_path):
     `self._restore_script(...)`, где вызывающему делать нечего. Число измерено
     захватом, а не выведено на глаз.
     """
-    env, bridge = _bridge(page_moves_on_step=True, pages_added_by_run=1)
+    env, bridge = _bridge(page_moves_on_run=True, pages_added_by_run=1)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         bridge.run_probe('writelnutf8(fid, "x");', tmp_path / "probe.txt")
@@ -746,7 +784,7 @@ def test_run_probe_tolerates_pages_activated_by_run(tmp_path):
     зависящим от позиций, а о расхождении длин сообщается предупреждением.
     """
     env, bridge = _bridge(installed="// пользовательский",
-                          other_scripts=["ЧУЖОЙ"], page_moves_on_step=True,
+                          other_scripts=["ЧУЖОЙ"], page_moves_on_run=True,
                           pages_added_by_run=1)
     with pytest.warns(UserWarning, match="число скриптовых записей"):
         result = bridge.run_probe("", tmp_path / "out.txt")
@@ -789,11 +827,116 @@ def test_run_probe_refuses_when_marker_survives_grown_snapshot(tmp_path):
     assert "осталась проба" in message
 
 
+def test_wait_protocol_is_one_run_and_poll(tmp_path):
+    """Ожидание роста — один `ProjectRun` и опрос, без шагового цикла.
+
+    Шаговый цикл умножал эффекты тела: на несчитающей модели среда
+    переинициализирует страницу на каждом шаге, и тело в `initialization`
+    исполнялось по разу на шаг (замер 01.10.2026: вендорский скрипт ПИД —
+    7 объектов вместо 1302; висячий сумматор — 2 вместо 663). Фейк на
+    `ProjectStep` теперь отказывает, поэтому «ноль шагов» — свойство
+    протокола, а не соглашение.
+    """
+    env, bridge = _bridge(time_grows=False)
+    bridge.run_page_script("", tmp_path / "out.txt")
+
+    called = [name for name, _ in env.calls]
+    assert called.count("ProjectRun") == 1
+    assert "ProjectStep" not in called
+    assert "ProjectStart" not in called, (
+        "контур зовёт ProjectStart, а на несчитающей модели он возвращает "
+        "проект в остановленное состояние, и следующий ProjectRun "
+        "переисполнил бы initialization — тело исполнилось бы дважды "
+        "(замер 01.10.2026: каждый переход из остановленного состояния "
+        "исполняет initialization страницы)")
+
+
+def test_wait_reads_baseline_before_run(tmp_path):
+    """Гонка оракула: прогон досчитал до конца — рост всё равно подтверждён.
+
+    Замер 01.10.2026: считающая модель проходит 2 с модельного времени за
+    ≈70 мс, и первое чтение времени **после** `ProjectRun` уже видит endtime.
+    Оракул, снявший базу после запуска, на свежем проекте отвечал «не
+    выросло», хотя время прошло 0 → 2. Фейк моделирует именно этот переход,
+    поэтому база обязана читаться **до** `ProjectRun`.
+    """
+    env, bridge = _bridge(run_completes_instantly=True, instant_final_time=2.0,
+                          script_result=(f"{PAGE_BEGIN_MARKER}\nтело\n"
+                                         f"{PAGE_END_MARKER}\n"))
+    run = bridge.run_page_script("", tmp_path / "out.txt")
+
+    assert run.outcome.kind == OUTCOME_OK, (
+        f"рост не подтверждён на досчитавшем прогоне: {run.outcome.kind!r} — "
+        "база времени снята не до ProjectRun")
+    names = [name for name, _ in env.calls]
+    assert names.index("GetProjectTime") < names.index("ProjectRun"), (
+        "первое чтение времени идёт после ProjectRun: база, снятая после "
+        "запуска, уже видит endtime, и рост не наблюдаем")
+
+
+def test_probe_starts_before_run_and_only_once(tmp_path):
+    """Проба начинается с `ProjectStart` — один раз и до `ProjectRun`.
+
+    Зачем Start: он сбрасывает модельное время (замер 01.10.2026: 2.0 → 0.0),
+    а без сброса проект, уже дошедший до endtime, не двигает время, и проба
+    отказывала бы ложно — хотя тело исполнилось бы полностью (на конце
+    расчёта голый `ProjectRun` исполняет initialization, время стоит).
+
+    Почему это не удваивает тело: тело пробы стоит под `if firststep then`, а
+    на инициализации `firststep` ложен; у считающей модели Start оставляет
+    `state` 1, и следующий `ProjectRun` страницу не переинициализирует
+    (замер: исполнений тела ровно одно — на первом шаге), у несчитающей тело
+    не исполняется ни разу.
+    """
+    env, bridge = _bridge()
+    bridge.run_probe("", tmp_path / "out.txt")
+
+    names = [name for name, _ in env.calls]
+    assert names.count("ProjectStart") == 1
+    assert names.count("ProjectRun") == 1
+    assert names.index("ProjectStart") < names.index("ProjectRun")
+
+
+def test_contour_baseline_is_time_before_run_not_zero(tmp_path):
+    """База контура — время проекта ДО запуска, а не ноль.
+
+    Подмена сравнения на `current_time > 0.0` проходит все прочие тесты (у
+    них начальное время нулевое), а здесь краснеет: на проекте, стоящем на
+    5.0 с с несчитающей моделью, «ростом» был бы первый же опрос, и контур
+    выдал бы ok вместо model-not-running (находка ревью).
+    """
+    env, bridge = _bridge(time_grows=False, initial_time=5.0,
+                          script_result=(f"{PAGE_BEGIN_MARKER}\nтело\n"
+                                         f"{PAGE_END_MARKER}\n"))
+    run = bridge.run_page_script("", tmp_path / "out.txt")
+
+    assert run.outcome.kind == OUTCOME_MODEL_NOT_RUNNING, (
+        "неподвижное время на проекте с ненулевым стартом сочтено ростом: "
+        f"{run.outcome.kind!r}")
+
+
+def test_probe_stop_is_attempted_when_start_raises(tmp_path):
+    """Сбой ProjectStart — остановка всё равно предпринимается.
+
+    Новый вызов пробной ветки (`_start_and_wait`) стоит внутри контракта
+    «останови даже если вызов бросил»: исключение могло прийти после
+    применения, а инициализированный проект отвергает правки модальным
+    окном (замер 2026-09-22). Фейк моделирует этот путь (находка ревью).
+    """
+    env, bridge = _bridge(start_raises=OSError("COM недоступен"))
+    with pytest.raises(OSError):
+        bridge.run_probe("", tmp_path / "out.txt")
+
+    assert len(_stop_calls(env)) == 1, (
+        "на пути «ProjectStart упал» остановка не предпринята: состояние "
+        "неизвестно, а проект мог остаться инициализированным")
+
+
 def test_run_probe_reports_frozen_model_time(tmp_path):
     """Неподвижное время — отказ, и он не выдаёт себя за диагноз.
 
-    Синтаксическая ошибка молча останавливает расчёт: `ProjectStart` и
-    `ProjectStep` «успешны», а модельное время стоит. Но это **одна из**
+    Синтаксическая ошибка молча останавливает расчёт: `ProjectRun`
+    «успешен», а модельное время стоит. Но это **одна из**
     причин, а не признак: см. соседний тест про контрпример.
     """
     env, bridge = _bridge(time_grows=False)
@@ -837,10 +980,12 @@ def test_frozen_time_message_does_not_claim_compile_failure(tmp_path):
 
 
 def test_run_probe_requires_growth_from_existing_time(tmp_path):
-    """Положительное, но неподвижное время не считается успехом.
+    """Неподвижное время — отказ и после сброса `ProjectStart`-ом.
 
-    Сравнение с нулём вместо времени до запуска пропускало бы этот случай:
-    проект, стоящий на 5.0 с неработающим скриптом, выглядел бы успешным.
+    `ProjectStart` сбрасывает время к нулю (замер 01.10.2026), поэтому
+    прежнее положительное время проекта не маскирует отказ: если и после
+    сброса время не растёт, считать нечего — модель структурно не считает
+    либо скрипт не собрался, и проба отказывает.
     """
     env, bridge = _bridge(time_grows=False, initial_time=5.0)
     with pytest.raises(ScriptBridgeError) as exc:
@@ -947,18 +1092,18 @@ def test_probe_stops_the_calculation_when_time_does_not_grow(tmp_path):
     assert env.state == 0
 
 
-def test_probe_stops_the_calculation_when_start_raises(tmp_path):
-    """ProjectStart упал — состояние неизвестно, и остановка всё равно нужна.
+def test_probe_stops_the_calculation_when_run_raises(tmp_path):
+    """ProjectRun упал — состояние неизвестно, и остановка всё равно нужна.
 
     Проверить нечего: вызов мог примениться и упасть после применения. Stop
     безвреден в любом измеренном состоянии, поэтому пробуется всегда.
     """
-    env, bridge = _bridge(start_raises=OSError("COM недоступен"))
+    env, bridge = _bridge(run_raises=OSError("COM недоступен"))
     with pytest.raises(OSError):
         bridge.run_probe("", tmp_path / "out.txt")
 
     assert len(_stop_calls(env)) == 1, (
-        "на пути «ProjectStart упал» остановка не предпринята: состояние "
+        "на пути «ProjectRun упал» остановка не предпринята: состояние "
         "расчёта неизвестно, а проект мог остаться инициализированным")
 
 
@@ -1038,7 +1183,9 @@ def test_restore_failure_keeps_its_place_when_stop_also_fails(tmp_path):
 #
 # Проба начинается с инициализации проекта, а та обнуляет модельное время
 # (измерено: 0.02 -> 0.001). Значит на уже считающем проекте проба не
-# «докручивает» расчёт, а уничтожает его — молча и необратимо.
+# «докручивает» расчёт, а уничтожает его — молча и необратимо. Контур
+# времени не сбрасывает (ProjectStart у него нет), но и он уничтожил бы
+# расчёт вызывающего: тело исполняется заново, а уборка его останавливает.
 
 def test_probe_refuses_when_calculation_already_runs(tmp_path):
     """Идёт расчёт — отказ, и проект не тронут ни одним вызовом."""
@@ -1053,8 +1200,8 @@ def test_probe_refuses_when_calculation_already_runs(tmp_path):
         f"отказ не назвал причину: {text!r}")
     assert "не тронут" in text, "отказ не сказал, что проект не изменён"
     assert env.set_page_script_calls() == [], "проект тронут до проверки"
-    assert "ProjectStart" not in [name for name, _ in env.calls], (
-        "на уничтожение чужого расчёта ушёл ProjectStart: отказ обязан "
+    assert "ProjectRun" not in [name for name, _ in env.calls], (
+        "на уничтожение чужого расчёта ушёл ProjectRun: отказ обязан "
         "наступать ДО любых изменений")
     assert env.state == 7, "состояние расчёта изменилось при отказе"
 
@@ -1069,7 +1216,7 @@ def test_probe_refuses_when_state_unreadable_at_entry(tmp_path):
     text = str(exc.value)
     assert "прочитать не удалось" in text, f"причина не названа: {text!r}"
     assert env.set_page_script_calls() == []
-    assert "ProjectStart" not in [name for name, _ in env.calls]
+    assert "ProjectRun" not in [name for name, _ in env.calls]
 
 
 def test_probe_runs_when_project_is_stopped(tmp_path):
@@ -1136,9 +1283,10 @@ def test_run_page_script_keeps_model_stuck_separate_from_success(tmp_path):
 def test_read_page_script_returns_text_without_touching_calculation(tmp_path):
     """Чтение скрипта: текст возвращён, расчёт НЕ запускался.
 
-    Через `run_page_script` читать нельзя: он запускает `ProjectStart`, а тот
-    обнуляет модельное время — читающий инструмент уничтожил бы результаты
-    расчёта вызывающего. Проверка сторожит именно это.
+    Через `run_page_script` читать нельзя: контур запускает расчёт, а уборка
+    его останавливает — читающий инструмент уничтожил бы результаты расчёта
+    вызывающего (проба к тому же сбрасывает время, начиная с `ProjectStart`).
+    Проверка сторожит именно это.
     """
     env, bridge = _bridge(installed="// прежний скрипт\nseterrorflag(0);")
 
@@ -1148,8 +1296,7 @@ def test_read_page_script_returns_text_without_touching_calculation(tmp_path):
     assert env.scripts[0] == "// прежний скрипт\nseterrorflag(0);", (
         "прежний скрипт не вернулся на место")
     called = [name for name, _ in env.calls]
-    assert "ProjectStart" not in called, "чтение запустило расчёт"
-    assert "ProjectStep" not in called
+    assert "ProjectRun" not in called, "чтение запустило расчёт"
 
 
 def test_read_page_script_returns_empty_string_for_page_without_script(tmp_path):

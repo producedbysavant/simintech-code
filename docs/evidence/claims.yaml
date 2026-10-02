@@ -677,3 +677,67 @@
     observed_at: 2026-10-01
   evidence: "Писатель положил `.pak` с голыми именами рядом с двумя настоящими `.prt` (копия демо-пакета в Temp); `OpenPack` вернул ненулевой id, `Pack.project_count()` — 2. Самодостаточный живой тест `tests/integration/test_pack_writer_live.py` добавлен, но на момент записи НЕ исполнен: фикстура владения процессом отказалась работать при чужом `mmain.exe` (активная чужая сессия; убивать её нельзя). Статус поднимется до verified после первого прогона теста"
   tests: []
+
+- id: page-init-reruns-on-each-step
+  claim: "На НЕсчитающей модели каждый `ProjectStep` переисполняет секцию `initialization` скрипта страницы: тело исполняется заново на каждом шаге"
+  status: measured
+  source:
+    type: live-com
+    ref: "simintech_api/core/script_bridge.py, `_try_start_and_wait`; замер 01.10.2026"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-10-01
+  evidence: "Тело с одним `createblock` на модели с висячим входом: 663 объекта за 331 шаг цикла ожидания (цикл в продакшене идёт до таймаута 60 с). Вендорский скрипт ПИД (7 объектов на проход) дал 1302. Один голый `ProjectRun` без шагов даёт ровно один проход и на считающей модели (модельное время растёт), и на несчитающей (стоит): опрос `GetProjectTime` ничего не переинициализирует — этим ждёт контур с 01.10.2026"
+  tests:
+    - file: tests/unit/test_script_bridge.py
+      id: test_wait_protocol_is_one_run_and_poll
+      kind: unit
+
+- id: run-outruns-the-first-time-read
+  claim: "Считающая модель проходит остаток до `endtime` за доли секунды: первое чтение `GetProjectTime` ПОСЛЕ `ProjectRun` уже видит `endtime`, поэтому оракул роста обязан читать базовое время ДО запуска"
+  status: measured
+  source:
+    type: live-com
+    ref: "simintech_api/core/script_bridge.py, `_try_start_and_wait`; живой прогон 01.10.2026"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-10-01
+  evidence: "Свежий проект, endtime=2: 2 с модельного времени пройдены за ≈70 мс (ProjectRun + чтение), первое чтение — уже 2.0000. Оракул с базой после запуска давал на том же проекте «не выросло» при фактическом 0 → 2; база до запуска рост подтверждает"
+  tests:
+    - file: tests/unit/test_script_bridge.py
+      id: test_wait_reads_baseline_before_run
+      kind: unit
+
+- id: projectstart-executes-init-and-resets-time
+  claim: "`ProjectStart` исполняет секцию `initialization` скрипта страницы и сбрасывает модельное время; `ProjectRun` из инициализированного состояния (`state` 1) страницу не переинициализирует"
+  status: measured
+  source:
+    type: live-com
+    ref: "simintech_api/core/script_bridge.py, `_start_and_wait`; живой прогон 01.10.2026"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-10-01
+  evidence: "Проект на 2.0 с: ProjectStart — время 2.0 → 0.0, объектов +2 (тело initialization исполнено), state 1; следующий ProjectRun добавил 0 проходов. Поэтому проба (тело под `firststep`) начинается с ProjectStart без удвоения тела, а контур (тело в `initialization`) его не зовёт: на несчитающей модели Start возвращает state 0, и Run исполнил бы тело второй раз"
+  tests:
+    - file: tests/unit/test_script_bridge.py
+      id: test_probe_starts_before_run_and_only_once
+      kind: unit
+
+- id: endtime-run-executes-init-without-growth
+  claim: "На проекте, дошедшем до `endtime`, голый `ProjectRun` исполняет `initialization` один раз, а модельное время не растёт (2.0 → 2.0)"
+  status: measured
+  source:
+    type: live-com
+    ref: "simintech_api/core/script_bridge.py, `_try_start_and_wait`; живой прогон 01.10.2026"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-10-01
+  evidence: "После прогона до endtime=2 повторный голый ProjectRun: объектов 2 → 4 (тело исполнено), время осталось 2.0000, состояние 0. Неподвижное время на таком проекте — не «модель не считает»: считать нечего; тексты контура называют обе причины"
+  tests: []
+
+- id: langblock-port-array-without-size
+  claim: "У блока «Язык программирования» порт-массив пересобирается формой БЕЗ размера (`a: array`); форма с размером в скобках (`a[3]: array`) дала неполный набор портов (2 входа вместо 3)"
+  status: measured
+  source:
+    type: live-com
+    ref: "контур `setprop(блок, \"script\")` + `reinitlangblock`; живой прогон 02.10.2026 (пересборка проекта в одной сессии)"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-10-02
+  evidence: "Блок с `input u: double, a[3]: array, s: double` дал 2 входа вместо 3 (воспроизведено дважды); с `a: array` — 3 входа, три соединения встали, расчёт дошёл до 2 с: y = u + a[1] + s = 5 + 1 + ступенька, результат 6 → 7. Форма `a: array = 3#0` тоже пересобрала 3 входа, но прогоном не подтверждена. Для intarray в портах замера нет"
+  tests: []
