@@ -17,6 +17,14 @@ def get_mmain_pids() -> Set[int]:
     Использует несколько методов (wmic, tasklist, PowerShell) и объединяет
     результаты — так надёжнее, чем любой один метод (зависит от локали,
     прав, версии Windows). Вне Windows — пустое множество.
+
+    Вывод команд читается с `errors="replace"`, и это не украшение: под
+    `PYTHONUTF8=1` (обязательным для живых прогонов) текстовый режим
+    `subprocess` декодирует вывод как UTF-8, а `tasklist`/`wmic` на русской
+    консоли пишут в cp866 — поток-читатель падал `UnicodeDecodeError`-ом, и
+    фикстура владения процессами срывалась на ровном месте (замер
+    01.10.2026: живой прогон упал в setup с PytestUnhandledThreadException).
+    PID'ы — цифры, и они переживают любую однобайтовую перекодировку.
     """
     if sys.platform != "win32":
         return set()
@@ -47,7 +55,7 @@ def _pids_wmic() -> Set[int]:
     try:
         out = subprocess.run(
             ["wmic", "process", "where", "name='mmain.exe'", "get", "ProcessId"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, errors="replace", timeout=10,
         ).stdout
     except Exception:
         return set()
@@ -64,7 +72,7 @@ def _pids_tasklist() -> Set[int]:
         out = subprocess.run(
             ["tasklist", "/FI", "IMAGENAME eq mmain.exe",
              "/FO", "CSV", "/NH"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, errors="replace", timeout=10,
         ).stdout
     except Exception:
         return set()
@@ -82,7 +90,7 @@ def _pids_powershell() -> Set[int]:
             ["powershell", "-NoProfile", "-Command",
              "Get-Process mmain -ErrorAction SilentlyContinue "
              "| Select-Object -ExpandProperty Id"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True, text=True, errors="replace", timeout=15,
         ).stdout
     except Exception:
         return set()
