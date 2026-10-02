@@ -14,7 +14,7 @@
     prj.save_xml("model.xprt")
 """
 
-from .core.com_client import COMClient
+from .core.com_client import COMClient, SessionOwnership
 from .core.project import Project
 from .core.page import Page
 from .core.block import Block
@@ -56,6 +56,7 @@ from .exceptions import (
 
 __all__ = [
     "COMClient",
+    "SessionOwnership",
     "Project",
     "Page",
     "Block",
@@ -99,6 +100,12 @@ __all__ = [
 
 #: Источник истины для версии: `pyproject.toml` объявляет её динамической и
 #: читает отсюда. Прописывать её ещё и там — значит однажды снова разойтись.
+#:
+#: 0.11.0: минорный — ownership COM-сессии и managed shutdown: `SessionOwnership`,
+#: `COMClient.session_pid`, автоматическая очистка только OWNED PID с ожиданием
+#: и exact-PID fallback. `SetShutdownOnLastRelease` намеренно не используется:
+#: живой замер 02.10.2026 не подтвердил детерминированного завершения или
+#: owner-death cleanup этого флага.
 #:
 #: 0.10.0: минорный — чтение скрипта страницы: `ScriptBridge.read_page_script`.
 #: COM чтения скрипта не отдаёт (`GetPageScript` в интерфейсе нет), поэтому
@@ -198,4 +205,4 @@ __all__ = [
 #: записи реестра утверждений (#20). Выпуск закрепляется тегом `v0.10.1`:
 #: на релизные теги (`v*`) ссылается пин `simintech-mcp`, а двигать и удалять
 #: их не даёт ruleset `protect-release-tags`.
-__version__ = "0.10.1"
+__version__ = "0.11.0"

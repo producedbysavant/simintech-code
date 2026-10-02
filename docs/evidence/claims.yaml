@@ -788,3 +788,50 @@
     observed_at: 2026-10-02
   evidence: "После создания «Константы»: `TextLabel3 {cls: constLabel, size: (60, 40), points: [(0, −18)], ports: 0}`. Расставленная «как блок» подпись уезжает от блока; после перемещения блока подпись оказывается рядом с ним (её карточка 60×40 накрывает край блока — ложное «наложение» для метрик). Потребитель (mcp) исключает класс из расстановки и проверок: PR #36 и #39"
   tests: []
+
+- id: com-release-does-not-terminate-server
+  claim: "Отпускание последней COM-ссылки не завершает `mmain.exe` надёжно: без открытого проекта процесс чаще остаётся живым; с закрытым проектом завершение стабильно"
+  status: measured
+  source:
+    type: live-com
+    ref: "automation/com-api.md, раздел «Жизненный цикл процесса»; замеры 02.10.2026"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-10-02
+  evidence: "22 прогона connect → disconnect без открытого проекта: завершение наступало 9 раз (на стенде с зарегистрированными сторонними плагинами каждое из них — падение в финализации, Access violation), 13 процессов остались живы; с проектом, закрытым перед отпусканием, — завершение 6 раз из 6. Жёсткая гибель клиента (taskkill без disconnect) сервер не закрывает: 4 из 4 живы"
+  tests: []
+
+- id: com-shutdown-on-last-release-is-not-a-mechanism
+  claim: "`SetShutdownOnLastRelease(1)` не даёт детерминированного завершения сервера и не закрывает его при гибели клиента — как механизм управления процессом непригоден"
+  status: measured
+  source:
+    type: live-com
+    ref: "automation/com-api.md, раздел «Жизненный цикл процесса»; замеры 02.10.2026"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-10-02
+  evidence: "Все четыре комбинации `SetNoCloseAppFlag`/`SetShutdownOnLastRelease` (0 и 1) вели себя одинаково: завершение оставалось случайным (9 наступлений из 22), а с флагом и убитым клиентом сервер остался жив 4 раза из 4. Поэтому библиотека флаг не выставляет, а управляемое завершение делает по точному PID"
+  tests: []
+
+- id: com-createobject-attaches-to-manual-instance
+  claim: "`CreateObject` подключается к экземпляру, запущенному вручную (GUI), а COM-запущенные экземпляры (`-Embedding`) не переиспользует"
+  status: measured
+  source:
+    type: live-com
+    ref: "simintech_api/core/com_client.py, `SessionOwnership`; automation/com-api.md, раздел «Жизненный цикл процесса»"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-10-02
+  evidence: "Ручной запуск `mmain.exe` (окно, без `-Embedding`): `GetProcessID()` вернул PID существующего процесса, нового процесса не появилось. Наоборот, у COM-экземпляров 9 попыток активации при живых процессах (остатки после release, остаток после гибели клиента, процесс с активным клиентом) — все 9 дали новый процесс"
+  tests: []
+
+- id: com-session-ownership-and-managed-shutdown
+  claim: "Владение процессом COM-сессии подтверждается снимками `get_mmain_pids()` до и после `connect()`; `shutdown()` завершает только свой процесс (release → ожидание exact PID → точечное завершение)"
+  status: verified
+  source:
+    type: live-com
+    ref: "simintech_api/core/com_client.py, `SessionOwnership`/`shutdown`; automation/com-api.md, раздел «Жизненный цикл процесса»"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-10-02
+  evidence: "Классификация: PID, появившийся между снимками, — `OWNED`; существовавший до подключения — `EXTERNAL`; неподтверждённый — `UNKNOWN`; завершается только `OWNED`. Живой тест: connect → `session_pid`/`ownership` совпали с наблюдением, `shutdown()` убрал процесс (PID исчез из `get_mmain_pids()`). EXTERNAL-сценарий (GUI-экземпляр) проверен пробой на стенде: attach → `ownership=EXTERNAL` → `shutdown()` → процесс жив"
+  tests:
+    - file: tests/integration/test_lifecycle.py
+      id: test_connect_disconnect
+      kind: live

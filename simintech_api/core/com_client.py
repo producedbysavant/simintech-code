@@ -7,10 +7,20 @@
 from __future__ import annotations
 
 import sys
+from enum import Enum
 from typing import Any, List, Optional
 
 from ..exceptions import ComCallError, ComConnectionError, PackError
 from ..model import TDataDescriptor
+from ..utils.processes import get_mmain_pids, kill_pids as _kill_pids, wait_for_pid_exit
+
+
+class SessionOwnership(str, Enum):
+    """Lifecycle ownership of the process behind the current COM session."""
+
+    UNKNOWN = "unknown"
+    OWNED = "owned"
+    EXTERNAL = "external"
 
 
 class COMClient:
@@ -37,8 +47,10 @@ class COMClient:
         self._connected = False
         self._silent_mode = silent_mode
         self._com_progid = com_progid
-        # PID процесса, порождённого ЭТИМ клиентом (только его можно завершать).
-        self._owned_pid: Optional[int] = None
+        # PID COM-сервера текущей сессии. Наличие PID само по себе не
+        # доказывает, что процесс был запущен этим клиентом.
+        self._session_pid: Optional[int] = None
+        self._ownership = SessionOwnership.UNKNOWN
 
     # ─── Жизненный цикл ─────────────────────────────────────────────
 
@@ -78,6 +90,10 @@ class COMClient:
         # с «Не был произведён вызов CoInitialize» (CO_E_NOTINITIALIZED).
         _ensure_com_initialized()
 
+        # Snapshot до COM-активации нужен, чтобы не принять
+        # уже существующий GUI-экземпляр за управляемый процесс.
+        before_pids = get_mmain_pids()
+
         # Список идентификаторов для перебора
         if self._com_progid:
             candidates = [self._com_progid]
@@ -102,46 +118,93 @@ class COMClient:
                 f"установлен и выполнен: bin\\mmain.exe /regserver"
             ) from last_error
 
-        # Защита от автозавершения сервера при отсоединении последнего клиента
-        self._safe_call("SetNoCloseAppFlag", 1)
-        if self._silent_mode:
-            self._safe_call("SetSilentMode", 1)
-
-        # Запоминаем PID процесса SimInTech, к которому подключились.
-        # Убийство процесса НЕ выполняется здесь автоматически — вызывающая
-        # сторона (тесты/утилиты) сама решает, какие процессы завершать,
-        # по принципу «только появившиеся после начала работы» (см. conftest).
-        self._owned_pid = None
+        # PID нужен до любых session-wide настроек. При attach к GUI мы не
+        # меняем Silent/NoClose: подключённая пользователем сессия не является
+        # нашим управляемым процессом.
+        self._session_pid = None
+        self._ownership = SessionOwnership.UNKNOWN
         try:
-            self._owned_pid = _as_int(self._server.GetProcessID())
+            self._session_pid = _as_int(self._server.GetProcessID())
         except Exception:
-            self._owned_pid = None
+            self._session_pid = None
+
+        after_pids = get_mmain_pids()
+        if self._session_pid is not None and self._session_pid > 0:
+            if self._session_pid in before_pids:
+                self._ownership = SessionOwnership.EXTERNAL
+            elif self._session_pid in after_pids:
+                self._ownership = SessionOwnership.OWNED
+            else:
+                self._ownership = SessionOwnership.UNKNOWN
+
+        # Для управляемой сессии сохраняем прежнюю защиту от автозавершения
+        # и скрытый режим. Для external/unknown COM-сессию не перенастраиваем.
+        if self._ownership is SessionOwnership.OWNED:
+            self._safe_call("SetNoCloseAppFlag", 1)
+            if self._silent_mode:
+                self._safe_call("SetSilentMode", 1)
 
         self._connected = True
         return self
 
+    @property
+    def session_pid(self) -> Optional[int]:
+        """PID COM-сервера текущей/последней сессии."""
+        return self._session_pid
+
+    @property
+    def ownership(self) -> SessionOwnership:
+        """Ownership текущей/последней COM-сессии."""
+        return self._ownership
+
     def disconnect(self) -> None:
-        """Отсоединиться от сервера (не закрывая приложение)."""
+        """Отсоединиться от сервера, не управляя процессом."""
         self._server = None
         self._connected = False
 
     def shutdown(self, kill_pids=None) -> None:
-        """Отсоединиться от сервера.
+        """Закрыть управляемую COM-сессию и адресно убрать её процесс.
 
-        По умолчанию НЕ завершает процессы SimInTech (это безопасно: не
-        трогает процессы, запущенные пользователем). Для принудительного
-        завершения укажите kill_pids — список PID'ов, которые можно убить
-        (например, только появившиеся после начала работы).
+        Для OWNED-сессии выполняется:
+            disconnect -> wait exact PID -> kill exact PID, если он остался.
+
+        EXTERNAL и UNKNOWN-сессии процесс не завершают. Явно переданный
+        ``kill_pids`` сохраняет старый escape hatch для вызывающей стороны,
+        которая сама отвечает за разрешённые PID'ы.
 
         Args:
-            kill_pids: итерация PID'ов mmain.exe, разрешённых к завершению.
-                Пусто (по умолчанию) — ничего не убивать.
+            kill_pids: необязательная итерация PID'ов, разрешённых вызывающей
+                стороной к завершению. Если не задана, завершение выполняется
+                автоматически только для OWNED session PID.
         """
+        pid = self._session_pid
+        ownership = self._ownership
+
         self.disconnect()
-        if not kill_pids or sys.platform != "win32":
+
+        if sys.platform != "win32":
+            self._reset_session_state()
             return
-        from ..utils.processes import kill_pids as _kill
-        _kill(kill_pids)
+
+        if kill_pids is not None:
+            if kill_pids:
+                _kill_pids(kill_pids)
+            self._reset_session_state()
+            return
+
+        if ownership is not SessionOwnership.OWNED or not pid or pid <= 0:
+            self._reset_session_state()
+            return
+
+        if not wait_for_pid_exit(pid, timeout=5.0):
+            _kill_pids([pid])
+
+        self._reset_session_state()
+
+    def _reset_session_state(self) -> None:
+        """Сбросить идентичность завершённой COM-сессии."""
+        self._session_pid = None
+        self._ownership = SessionOwnership.UNKNOWN
 
     # ─── Низкоуровневые вызовы ──────────────────────────────────────
 

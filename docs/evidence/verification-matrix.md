@@ -72,3 +72,7 @@
 | `block-ports-at-center-row` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
 | `block-set-center-is-exact` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
 | `constlabel-objects-are-anchors` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
+| `com-release-does-not-terminate-server` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
+| `com-shutdown-on-last-release-is-not-a-mechanism` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
+| `com-createobject-attaches-to-manual-instance` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
+| `com-session-ownership-and-managed-shutdown` | verified | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | `tests/integration/test_lifecycle.py::test_connect_disconnect` (live) |
