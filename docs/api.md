@@ -16,6 +16,7 @@ from simintech_api import COMClient
 client = COMClient(silent_mode=True).connect()   # скрытый UI
 client.get_process_id()                          # PID mmain.exe
 client.session_pid, client.ownership             # PID сессии и владение ею
+client.job_handle                                # защита: смерть клиента снимает процесс
 client.shutdown()                                # отпустить COM и убрать свой процесс
 ```
 
@@ -32,6 +33,7 @@ client.shutdown()                                # отпустить COM и у�
 | `find_signal(name, project_id) -> TDataDescriptor` | Найти сигнал. |
 | `connected`, `is_available` | Свойства состояния. |
 | `session_pid`, `ownership` | PID процесса сессии и владение им: `SessionOwnership.OWNED` / `EXTERNAL` / `UNKNOWN`. |
+| `job_handle`, `job_error` | Хэндл job-объекта, убирающего процесс OWNED-сессии силами ядра при смерти клиента (`KILL_ON_JOB_CLOSE`), и код отказа назначения (0 — отказа не было). |
 
 > **Завершается только свой процесс — и только по подтверждённому владению.**
 > `shutdown()` без `kill_pids` отпускает COM, ждёт уход процесса сессии (до
@@ -40,10 +42,14 @@ client.shutdown()                                # отпустить COM и у�
 > снимками `get_mmain_pids()` до и после `connect()`: `CreateObject` умеет
 > подключаться к уже запущенному экземпляру — например, открытому человеком, —
 > и такой процесс не завершается никогда; session-wide флаги
-> (`SetNoCloseAppFlag`, `SetSilentMode`) ему тоже не выставляются. Явный
-> список — для вызывающих с собственной политикой:
-> `client.shutdown(kill_pids=[pid])`. Замеры, на которых это построено, —
-> `automation/com-api.md`, «Жизненный цикл процесса».
+> (`SetNoCloseAppFlag`, `SetSilentMode`) ему тоже не выставляются. Процесс
+> `OWNED`-сессии дополнительно назначается в job-объект с
+> `KILL_ON_JOB_CLOSE` (`client.job_handle`): если клиент погибнет, не дойдя
+> до `shutdown()`, сервер снимет ядро; `disconnect()` при этом остаётся
+> отпусканием, а не завершением. Явный список — для вызывающих с
+> собственной политикой: `client.shutdown(kill_pids=[pid])`. Замеры, на
+> которых это построено, — `automation/com-api.md`, «Жизненный цикл
+> процесса».
 
 ---
 

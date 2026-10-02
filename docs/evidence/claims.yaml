@@ -835,3 +835,14 @@
     - file: tests/integration/test_lifecycle.py
       id: test_connect_disconnect
       kind: live
+
+- id: job-object-reaps-owned-process-on-owner-death
+  claim: "Процесс OWNED-сессии назначается в job-объект с `KILL_ON_JOB_CLOSE`, и смерть процесса-клиента снимает его силами ядра — без своего запуска `mmain` и без сторожа-процесса"
+  status: measured
+  source:
+    type: live-com
+    ref: "simintech_api/utils/job_object.py; замеры 02.10.2026 (трек supervisor; проба probe_job_object_owner_death, n=2)"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-10-02
+  evidence: "`AssignProcessToJobObject` принял существующий `-Embedding`-процесс (родитель — `svchost`): сессия после назначения отвечает и создаёт проект из шаблона; после `taskkill /F` процесса-владельца хэндла процесс `mmain.exe` снят ядром в ту же секунду — 2 прогона из 2. Отказ назначения (процесс уже в несовместимом job'е; вложенность — Windows 8+) в замере не встречался; политика при отказе — неразрушающая"
+  tests: []
