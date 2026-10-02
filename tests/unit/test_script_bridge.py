@@ -88,7 +88,7 @@ class FakeEnv:
                  save_project_xml_writes_nothing=False,
                  page_scripts_not_serialized=False,
                  pages_added_by_run=0,
-                 state_read_raises=None, run_raises=None,
+                 state_read_raises=None, run_raises=None, start_raises=None,
                  run_completes_instantly=False, instant_final_time=2.0,
                  stop_raises=None, stop_is_ignored=False,
                  state_read_raises_after_stop=None,
@@ -168,6 +168,10 @@ class FakeEnv:
         self._stop_called = False
         #: Модель «ProjectRun упал»: был ли он применён — неизвестно.
         self.run_raises = run_raises
+        #: Модель «ProjectStart упал»: остановка обязана быть и на этом пути —
+        #: вызов мог примениться и упасть после применения, а инициализированный
+        #: проект отвергает правки модальным окном (замер 2026-09-22).
+        self.start_raises = start_raises
         #: Модель «прогон досчитал весь остаток до endtime между ProjectRun и
         #: первым чтением времени» — замер 01.10.2026: 2 с модельного времени
         #: за ≈70 мс. Без неё фейк считает рост гарантированным и не может
@@ -244,6 +248,8 @@ class FakeEnv:
                 self.current_index = int(args[1]) - 1000
             return 1
         if name == "ProjectStart":
+            if self.start_raises is not None:
+                raise self.start_raises
             # На переходе из остановленного состояния среда исполняет
             # `initialization` страницы и сбрасывает время (замер 01.10.2026:
             # 2.0 → 0.0, тело исполнено). Фейк моделирует переход: сброс и
@@ -282,6 +288,10 @@ class FakeEnv:
             self._stop_called = True
             if not self.stop_is_ignored:
                 self.state = 0
+                # Остановленный проект не «считает»: без этого фейк продолжал
+                # бы растить время ПОСЛЕ ProjectStop — состояние, которого
+                # среда не производит (находка ревью).
+                self._running = False
             return 1
         if name == "GetProjectStateFlag":
             if self.state_read_raises is not None:
@@ -887,6 +897,41 @@ def test_probe_starts_before_run_and_only_once(tmp_path):
     assert names.index("ProjectStart") < names.index("ProjectRun")
 
 
+def test_contour_baseline_is_time_before_run_not_zero(tmp_path):
+    """База контура — время проекта ДО запуска, а не ноль.
+
+    Подмена сравнения на `current_time > 0.0` проходит все прочие тесты (у
+    них начальное время нулевое), а здесь краснеет: на проекте, стоящем на
+    5.0 с с несчитающей моделью, «ростом» был бы первый же опрос, и контур
+    выдал бы ok вместо model-not-running (находка ревью).
+    """
+    env, bridge = _bridge(time_grows=False, initial_time=5.0,
+                          script_result=(f"{PAGE_BEGIN_MARKER}\nтело\n"
+                                         f"{PAGE_END_MARKER}\n"))
+    run = bridge.run_page_script("", tmp_path / "out.txt")
+
+    assert run.outcome.kind == OUTCOME_MODEL_NOT_RUNNING, (
+        "неподвижное время на проекте с ненулевым стартом сочтено ростом: "
+        f"{run.outcome.kind!r}")
+
+
+def test_probe_stop_is_attempted_when_start_raises(tmp_path):
+    """Сбой ProjectStart — остановка всё равно предпринимается.
+
+    Новый вызов пробной ветки (`_start_and_wait`) стоит внутри контракта
+    «останови даже если вызов бросил»: исключение могло прийти после
+    применения, а инициализированный проект отвергает правки модальным
+    окном (замер 2026-09-22). Фейк моделирует этот путь (находка ревью).
+    """
+    env, bridge = _bridge(start_raises=OSError("COM недоступен"))
+    with pytest.raises(OSError):
+        bridge.run_probe("", tmp_path / "out.txt")
+
+    assert len(_stop_calls(env)) == 1, (
+        "на пути «ProjectStart упал» остановка не предпринята: состояние "
+        "неизвестно, а проект мог остаться инициализированным")
+
+
 def test_run_probe_reports_frozen_model_time(tmp_path):
     """Неподвижное время — отказ, и он не выдаёт себя за диагноз.
 
@@ -1138,7 +1183,9 @@ def test_restore_failure_keeps_its_place_when_stop_also_fails(tmp_path):
 #
 # Проба начинается с инициализации проекта, а та обнуляет модельное время
 # (измерено: 0.02 -> 0.001). Значит на уже считающем проекте проба не
-# «докручивает» расчёт, а уничтожает его — молча и необратимо.
+# «докручивает» расчёт, а уничтожает его — молча и необратимо. Контур
+# времени не сбрасывает (ProjectStart у него нет), но и он уничтожил бы
+# расчёт вызывающего: тело исполняется заново, а уборка его останавливает.
 
 def test_probe_refuses_when_calculation_already_runs(tmp_path):
     """Идёт расчёт — отказ, и проект не тронут ни одним вызовом."""
@@ -1236,9 +1283,10 @@ def test_run_page_script_keeps_model_stuck_separate_from_success(tmp_path):
 def test_read_page_script_returns_text_without_touching_calculation(tmp_path):
     """Чтение скрипта: текст возвращён, расчёт НЕ запускался.
 
-    Через `run_page_script` читать нельзя: он запускает расчёт (`ProjectRun`), а тот
-    обнуляет модельное время — читающий инструмент уничтожил бы результаты
-    расчёта вызывающего. Проверка сторожит именно это.
+    Через `run_page_script` читать нельзя: контур запускает расчёт, а уборка
+    его останавливает — читающий инструмент уничтожил бы результаты расчёта
+    вызывающего (проба к тому же сбрасывает время, начиная с `ProjectStart`).
+    Проверка сторожит именно это.
     """
     env, bridge = _bridge(installed="// прежний скрипт\nseterrorflag(0);")
 
