@@ -70,9 +70,6 @@ def wait_for_pid_exit(
             return False
         time.sleep(poll_interval)
 
-
-
-
 # ─── Внутренние методы ─────────────────────────────────────────────
 
 def _pids_wmic() -> Set[int]:
