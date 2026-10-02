@@ -62,12 +62,16 @@
 | `closepack-invalid-id-crashes-server` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | `tests/unit/test_pack.py::test_pack_close_refuses_invalid_id` (unit) |
 | `pack-double-open-creates-second-pack` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | — |
 | `pack-member-ids-are-unstable` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | — |
-| `written-pack-opens-in-simintech` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | — |
+| `written-pack-opens-in-simintech` | verified | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | `tests/integration/test_pack_writer_live.py::test_written_pack_opens_in_simintech` (live) |
 | `page-init-reruns-on-each-step` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | `tests/unit/test_script_bridge.py::test_wait_protocol_is_one_run_and_poll` (unit) |
 | `run-outruns-the-first-time-read` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | `tests/unit/test_script_bridge.py::test_wait_reads_baseline_before_run` (unit) |
 | `projectstart-executes-init-and-resets-time` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | `tests/unit/test_script_bridge.py::test_probe_starts_before_run_and_only_once` (unit) |
 | `endtime-run-executes-init-without-growth` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-01 | — |
 | `langblock-port-array-without-size` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
+| `block-points-first-is-center` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
+| `block-ports-at-center-row` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
+| `block-set-center-is-exact` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
+| `constlabel-objects-are-anchors` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
 | `com-release-does-not-terminate-server` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
 | `com-shutdown-on-last-release-is-not-a-mechanism` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
 | `com-createobject-attaches-to-manual-instance` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
