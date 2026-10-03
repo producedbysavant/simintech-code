@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING, List
 
 from ..exceptions import PageError, ProjectError, SignalError
@@ -46,7 +47,24 @@ class Project:
 
     @classmethod
     def open(cls, client: "COMClient", path: str) -> "Project":
-        """Открыть проект (.prt/.xprt) по пути."""
+        """Открыть проект (.prt/.xprt) по пути.
+
+        Несуществующий путь отвергается **до COM**: на нём `OpenProject`
+        возвращает ненулевой id (среда показывает модальное «Cannot open
+        file…», а наружу это не выходит — `GetOpenedFileName` такого проекта
+        возвращает тот же путь; замер 03.10.2026). Без проверки вызывающий
+        получал бы проект-фантом — пустышку, привязанную к несуществующему
+        файлу, — и молчание об этом.
+
+        Существующий «не-проектный» файл (`.mgr` поставки и т.п.) проверять
+        не нужно: среда отвергает его сама — `OpenProject` возвращает 0
+        (замер 03.10.2026), и отказ идёт из ветки ниже.
+        """
+        if not os.path.isfile(path):
+            raise ProjectError(
+                f"OpenProject: файла '{path}' нет — проект не открыт "
+                f"(на несуществующем пути среда заводит проект-фантом с "
+                f"ненулевым id, и отличить его по COM нечем)")
         project_id = client.open_project(path)
         if project_id == 0:
             raise ProjectError(f"OpenProject не удалось открыть '{path}'")
