@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, Dict, List
 
 from ..exceptions import PageError, ProjectError, SignalError
 from ..constants import CALC_LAYER, find_model_template
@@ -13,6 +13,7 @@ from .com_client import _out_values
 if TYPE_CHECKING:
     from .com_client import COMClient
     from .page import Page
+    from .signal import Signal
     from .simulation import Simulation
 
 
@@ -193,7 +194,7 @@ class Project:
 
     # ─── Настройки расчёта (свойства слоя) ──────────────────────────
 
-    def calc_settings(self) -> dict:
+    def calc_settings(self) -> Dict[str, str]:
         """Параметры расчётного слоя проекта: имена и значения.
 
         Читаются **из выгрузки** `.xprt`, а не через COM: метода чтения свойств
@@ -468,7 +469,7 @@ class Project:
             )
         return desc
 
-    def signal(self, name: str) -> "Signal":  # noqa: F821 — Signal импортируется ниже
+    def signal(self, name: str) -> "Signal":
         """Вернуть объект Signal по имени сигнала."""
         from .signal import Signal
         return Signal(self, self.find_signal(name), name)
