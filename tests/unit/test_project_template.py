@@ -33,6 +33,10 @@ class FakeClient:
         self.calls.append(("open_template", path))
         return self._project_id
 
+    def open_project(self, path):
+        self.calls.append(("open_project", path))
+        return self._project_id
+
     def set_layer_prop(self, project_id, layer_no, name, value):
         self.calls.append(("set_layer_prop", project_id, layer_no, name, value))
         return self._layer_handle
@@ -75,6 +79,33 @@ def test_find_model_template_uses_root(monkeypatch, tmp_path):
     monkeypatch.setenv("SIMINTECH_PATH", str(tmp_path))
 
     assert find_model_template() == str(tpl)
+
+
+# ─── Project.open ──────────────────────────────────────────────────
+
+
+def test_open_missing_path_is_refused_before_com():
+    """Несуществующий путь — отказ до COM: иначе проект-фантом.
+
+    Замер 03.10.2026: `OpenProject` на несуществующем пути возвращает
+    ненулевой id, среда показывает модальное «Cannot open file», а
+    `GetOpenedFileName` «проекта» возвращает тот же путь. Клиент здесь None
+    намеренно: дойди вызов до COM — тест упал бы.
+    """
+    with pytest.raises(ProjectError, match="фантом"):
+        Project.open(None, "/нет-такого-4f2a/model.prt")
+
+
+def test_open_existing_path_goes_to_com(tmp_path):
+    """Существующий путь открывается обычным порядком — проверка не мешает."""
+    file = tmp_path / "model.prt"
+    file.write_text("x", encoding="utf-8")
+    client = FakeClient(project_id=42)
+
+    prj = Project.open(client, str(file))
+
+    assert client.calls == [("open_project", str(file))]
+    assert prj.id == 42
 
 
 # ─── Project.from_template ─────────────────────────────────────────
