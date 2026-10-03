@@ -771,3 +771,75 @@ def test_coverage_of_empty_distribution_is_zero_not_error(tmp_path):
 
     assert report["classes_in_profile"] == 0
     assert report["fraction"] == 0.0
+
+
+# ─── Скрипт блока «Язык программирования» ─────────────────────────
+
+#: Фрагмент реальной выгрузки (замер 03.10.2026, поставка 2.26.6.23):
+#: запись `Script` лежит в `visual_props` объекта, значение — обычной
+#: кодировкой выгрузки. Внутренние записи (`SortType`) рядом.
+XPRT_BLOCK_SCRIPT = """<project>
+  <object>
+    <name>`LangBlock_0`</name>
+    <class_name>`Язык программирования`</class_name>
+    <visual_props>
+      <data>
+        <name>`SortType`</name>
+        <value>`2`</value>
+      </data>
+      <data>
+        <name>`Script`</name>
+        <value>`input`#13#10`    u: double;`#13#10""" \
+    + """`output`#13#10`    y: double;`#13#10#13#10`y = u;`#13#10</value>
+      </data>
+    </visual_props>
+  </object>
+  <object>
+    <name>`k_0`</name>
+    <class_name>`Константа`</class_name>
+    <custom_props>
+      <data><name>`a`</name><mode>`1`</mode><value>`1`</value></data>
+    </custom_props>
+  </object>
+</project>"""
+
+
+def test_parse_block_script_finds_and_decodes():
+    """Скрипт блока читается из выгрузки и декодируется как запись страницы."""
+    from simintech_api.catalog import parse_xprt_block_script
+
+    script = parse_xprt_block_script(XPRT_BLOCK_SCRIPT, "LangBlock_0")
+
+    assert script == ("input\r\n    u: double;\r\noutput\r\n    y: double;\r\n"
+                      "\r\ny = u;\r\n")
+
+
+def test_parse_block_script_returns_none_without_record():
+    """Нет записи `Script` (или объекта) — None, а не пустая строка."""
+    from simintech_api.catalog import parse_xprt_block_script
+
+    assert parse_xprt_block_script(XPRT_BLOCK_SCRIPT, "k_0") is None
+    assert parse_xprt_block_script(XPRT_BLOCK_SCRIPT, "нет_такого") is None
+
+
+def test_parse_block_script_decodes_operator_codes():
+    """Коды кроме переводов строки (`#60`/`#96`) раскодируются, не теряются."""
+    from simintech_api.catalog import parse_xprt_block_script
+
+    text = XPRT_BLOCK_SCRIPT.replace(
+        "`y = u;`", "`if u `#60` 0 then y = u;`#96`x`")
+
+    script = parse_xprt_block_script(text, "LangBlock_0")
+
+    assert "u < 0 then" in script
+    assert "`x" in script, "обратная кавычка (#96) потеряна"
+
+
+def test_parse_block_script_empty_value_is_empty_string():
+    """Запись есть, значение пустое — пустая строка, а не None."""
+    from simintech_api.catalog import parse_xprt_block_script
+
+    text = XPRT_BLOCK_SCRIPT.replace("`y = u;`#13#10", "")
+
+    assert parse_xprt_block_script(text, "LangBlock_0") == (
+        "input\r\n    u: double;\r\noutput\r\n    y: double;\r\n\r\n")
