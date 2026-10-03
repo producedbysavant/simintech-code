@@ -50,6 +50,7 @@
 | `submodel-script-injection-needs-reinitsubmodel` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
 | `initsubmodelports-makes-ports-immediately-visible` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
 | `removeprimitiv-breaks-calculation-start` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
+| `wire-removal-keeps-calculation-start` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-03 | — |
 | `model-text-quote-is-chr34` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
 | `model-text-loading-creates-objects` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
 | `dot-syntax-belongs-to-model-text` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-09-29 | — |
