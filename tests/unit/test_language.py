@@ -49,9 +49,9 @@ def _page(name, crumbs, purpose=None, syntax=True, syntax_text="y = f(x);",
     """Страница справки: функция (`syntax=True`) или обзор категории.
 
     `syntax_text` кладётся в `<pre>` раздела «Синтаксис» (переводы строк в нём
-    сохраняются разбором — у `createwire` форм две). `args` — строки
-    «Имя / Тип данных / Описание»: таблица вместе с заголовком, как в справке,
-    чтобы и разбор заголовка был проверен.
+    сохраняются разбором — у `createwire` форм две). `args` — строки таблицы
+    «Имя / Тип данных / Описание» (длины строки — по числу колонок): таблица
+    вместе с заголовком, как в справке, чтобы и разбор заголовка был проверен.
     """
     short = f'<p class="- topic/shortdesc shortdesc">{purpose}</p>' \
         if purpose else ""
@@ -62,9 +62,8 @@ def _page(name, crumbs, purpose=None, syntax=True, syntax_text="y = f(x);",
     if args:
         head = "<tr><th>Имя</th><th>Тип данных</th><th>Описание</th></tr>"
         rows = "".join(
-            f"<tr><td>{arg_name}</td><td>{arg_type}</td>"
-            f"<td>{arg_desc}</td></tr>"
-            for arg_name, arg_type, arg_desc in args)
+            "<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>"
+            for row in args)
         args_section = ('<section id="x__args"><h2 class="- topic/title '
                         'title sectiontitle">Аргументы</h2>'
                         f"<table>{head}{rows}</table></section>")
@@ -199,6 +198,39 @@ def test_parse_page_reads_syntax_and_args():
     assert [arg.name for arg in page.args] == ["a", "b"]
     assert page.args[0].type == "integer"
     assert page.args[1].description == "Тип линии."
+
+
+def test_parse_page_keeps_one_column_arg_rows():
+    """Строка таблицы аргументов с одной ячейкой — всё ещё аргумент.
+
+    Потерять её целиком (как было) — значит объявить функцию без аргументов
+    там, где имя аргумента в справке есть; тип и описание тогда пустые —
+    честно, как пустое назначение у двух страниц справки.
+    """
+    page = parse_page(_page("f", ["a", "b"], args=[("gid",)]), "a/f.html")
+
+    assert [(arg.name, arg.type, arg.description)
+            for arg in page.args] == [("gid", "", "")]
+
+
+def test_page_with_syntax_title_but_no_anchor_is_not_a_function():
+    """«Синтаксис» заголовком, но без якоря — не функция.
+
+    У пяти страниц поставки (`globalcolor`, `container_name`, …) раздел
+    назван «Синтаксис», а якоря `__syntax` нет; заголовком они выглядели бы
+    функциями без формы вызова. Признак берётся по якорю — тому же, из
+    которого извлекается синтаксис (сплошная проверка 03.10.2026).
+    """
+    source = ("<!DOCTYPE html><html><body>"
+              "<h1>globalcolor</h1>"
+              '<section id="x"><h2 class="sectiontitle">Синтаксис</h2>'
+              "<pre><code>globalcolor</code></pre></section>"
+              "</body></html>")
+
+    page = parse_page(source, "a/globalcolor.html")
+
+    assert not page.has_syntax
+    assert page.syntax == ""
 
 
 def test_parse_page_without_shortdesc_leaves_purpose_empty():
