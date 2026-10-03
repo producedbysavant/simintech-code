@@ -522,14 +522,25 @@
   tests: []
 
 - id: removeprimitiv-breaks-calculation-start
-  claim: "`removeprimitiv(id)` удаляет объект из контейнера, но следующий старт расчёта падает: `ProjectStart` возвращает access violation в `mbtylib.dll`"
+  claim: "`removeprimitiv(id)` при удалении блока роняет следующий старт расчёта: `ProjectStart` возвращает access violation в `mbtylib.dll`; на линии дефект не распространяется — см. `wire-removal-keeps-calculation-start`"
   status: measured
   source:
     type: live-com
     ref: "docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.3"
     product_version: "SimInTech64, поставка 2.26.6.23"
     observed_at: 2026-09-29
-  evidence: "Изоляция 2×2 «удаление × выгрузка модели»: с удалением — падение (в том числе когда сначала удалён провод), без удаления — расчёт идёт. Скрипт при этом отрабатывает целиком: лог дописан до последней строки. Объекты создавались `createmodel` в `initialization`. Воспроизводитель отправлен вендору 2026-09-29"
+  evidence: "Изоляция 2×2 «удаление × выгрузка модели»: с удалением — падение (в том числе когда сначала удалён провод), без удаления — расчёт идёт. Скрипт при этом отрабатывает целиком: лог дописан до последней строки. Блоки создавались `createmodel` в `initialization`. Воспроизводитель отправлен вендору 2026-09-29. Уточнение 2026-10-03: падение воспроизведено на блоке; удаление линии старт не роняет — см. `wire-removal-keeps-calculation-start`"
+  tests: []
+
+- id: wire-removal-keeps-calculation-start
+  claim: "Удаление линии языковым путём (`removeprimitiv(wire_id)` или `removeobject(wire_id)` по id) следующий старт расчёта не роняет — в отличие от удаления блока (`removeprimitiv-breaks-calculation-start`); воссозданная линия получает тот же id"
+  status: measured
+  source:
+    type: live-com
+    ref: "живой замер трека правки линий (simintech-mcp#13), проба probe_wire_edit.py"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-10-03
+  evidence: "Серия r: `removeprimitiv`/`removeobject` по id + немедленное воссоздание — исход контура ok, расчёт идёт, id переиспользован; удаление без воссоздания — процесс жив, расчёт стоит структурно (висячий вход). Адресация только по id: имена линий не уникальны (`MBTYWire`), форма `removeobject` с именем-строкой обрывает тело скрипта"
   tests: []
 
 - id: model-text-quote-is-chr34
