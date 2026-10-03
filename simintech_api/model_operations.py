@@ -17,6 +17,22 @@ SUBMODEL_OBJECT_CODE = 102
 #: Точки пустой субмодели — те же, что в демонстрационном примере вендора.
 EMPTY_SUBMODEL_POINTS = "[(0, 0), (-16, 0), (0, -16), (0, 16)]"
 
+#: Класс блока «Язык программирования»: его пины генерирует `reinitlangblock`,
+#: а не `createmodel` (замеры 01.10.2026 и 03.10.2026).
+LANG_BLOCK_CLASS = "Язык программирования"
+
+#: Пересборка пинов всех блоков «Язык программирования» текущего контейнера.
+#: Повторный вызов для существующих блоков безопасен (замер 03.10.2026:
+#: пины, провода и расчёт переживают), поэтому цикл идёт по всем.
+REINIT_LANG_BLOCKS = (
+    "i = 1;\n"
+    "while i <= getobjcount(getcurrentcontainer) do begin\n"
+    "  o = getobj(i);\n"
+    f'  if getobjclassname(o) = "{LANG_BLOCK_CLASS}" then reinitlangblock(o);\n'
+    "  i = i + 1;\n"
+    "end;"
+)
+
 
 def to_language_literal(text: str) -> str:
     """Собрать строковый литерал встроенного языка из произвольного текста.
@@ -46,7 +62,7 @@ def build_export_model_text_body(artifact_path: str) -> str:
 
 
 def build_import_model_text_body(model_text: str) -> str:
-    """Тело загрузки модели: объявление кортежа и `createmodel`.
+    """Тело загрузки модели: объявление кортежа, `createmodel`, пины PL-блоков.
 
     Форма взята из демонстрационных проектов вендора: `const model : ( … );` —
     это не строка, а запись языка, введённая в текст скрипта.
@@ -57,13 +73,22 @@ def build_import_model_text_body(model_text: str) -> str:
     именно это — выгрузка как есть не собиралась, а она же без внешней скобки
     собиралась и создавала объекты. Поэтому внешняя скобка распознаётся и
     повторно не добавляется.
+
+    **Пины блоков «Язык программирования» пересобираются после импорта.**
+    `createmodel` их не генерирует (замер 01.10.2026: у свежего PL-блока один
+    дефолтный вход, провода к остальным пинам создаются половинками молча);
+    пины даёт `reinitlangblock`. Повторный вызов для уже существующих блоков
+    проверен живым замером 03.10.2026: пины, провода и расчёт переживают, а
+    на модели без PL-блоков цикл — недорогой обход объектов.
     """
     text = model_text.strip()
     if text.startswith("(") and text.endswith(")"):
-        return (f"const model : {text};\n"
+        head = (f"const model : {text};\n"
                 "createmodel(getcurrentprojectid, model);")
-    return (f"const model : (\n{text}\n);\n"
-            "createmodel(getcurrentprojectid, model);")
+    else:
+        head = (f"const model : (\n{text}\n);\n"
+                "createmodel(getcurrentprojectid, model);")
+    return f"{head}\n{REINIT_LANG_BLOCKS}"
 
 
 def build_inject_submodel_script_body(injected_script: str,

@@ -65,3 +65,20 @@ def test_inject_body_creates_submodel_assigns_script_and_reinits():
     assert "createprimitiv(102," in body
     assert 'setprop(objid, "script",' in body
     assert body.index("reinitsubmodel(objid);") > body.index('setprop(objid, "script"')
+
+
+def test_import_body_rebuilds_lang_block_pins():
+    """Импорт пересобирает пины PL-блоков: `createmodel` их не генерирует.
+
+    Замер 01.10.2026: у свежего блока «Язык программирования» один дефолтный
+    вход, а провода к остальным пинам из того же текста создаются
+    половинками молча. Пины даёт `reinitlangblock`; повторный вызов для уже
+    существующих блоков проверен живым замером 03.10.2026 (пины, провода и
+    расчёт переживают).
+    """
+    body = build_import_model_text_body('block0: (type = "Ступенька")')
+
+    assert "reinitlangblock(o);" in body
+    assert 'getobjclassname(o) = "Язык программирования"' in body
+    assert body.index("createmodel") < body.index("reinitlangblock"), (
+        "пересборка пинов стоит до создания модели")
