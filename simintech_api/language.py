@@ -10,12 +10,13 @@
 
 **Как считается число функций.** Разделом языка считается каталог
 `webhelp/11_yazyk_programmirovaniya/`. Функция — это страница раздела, у
-которой есть раздел «Синтаксис» (структурный признак: `sectiontitle` с текстом
-«Синтаксис»), кроме страниц каталога ключевых слов `5_klyuchevye_slova/` — там
-тоже «Синтаксис», но это `and`, `begin..end` или `category` из языка запросов,
-а не функции. Всё, у чего «Синтаксиса» нет, — обзорные страницы категорий
-(`DIR_*.html` и одноимённые им), их 55. Так получается **907** функций:
-904 в `6_funkcii/` и 3 в `8_funkcii_graficheskogo_kontejnera/`.
+которой есть раздел «Синтаксис» (структурный признак — якорь `__syntax`:
+он же несёт форму вызова), кроме страниц каталога ключевых слов
+`5_klyuchevye_slova/` — там тоже «Синтаксис», но это `and`, `begin..end` или
+`category` из языка запросов, а не функции. Всё, у чего «Синтаксиса» нет, —
+обзорные страницы категорий (`DIR_*.html` и одноимённые им), их 55. Так
+получается **907** функций: 904 в `6_funkcii/` и 3 в
+`8_funkcii_graficheskogo_kontejnera/`.
 
 Почему не 959: 959 — это **все** файлы `.html` каталога `6_funkcii/`
 (904 функции + 55 обзорных страниц категорий). Число из плана
@@ -30,6 +31,15 @@
 поставке v15.05.2026), очищенный от разметки. Извлекается он не всегда: у двух
 страниц (`projectloaddb`, `projectsavedb`) его нет — у них поле пустое, а не
 выдумано.
+
+**Синтаксис и аргументы** (схема 2) — разделы карточки «Синтаксис» (текст
+`<pre>`, переводы строк сохранены: у `createwire` там две формы вызова) и
+«Аргументы» (таблица «Имя / Тип данных / Описание», строка заголовка
+отбрасывается). Без них реестр отвечал «имя есть», но не давал позвать
+функцию — знание формы вызова жило только в справке. Разделы берутся по
+якорям DITA (`__syntax`/`__args`), а не по заголовкам: якорь не переводится и
+не меняется от разметки, — суффикс якоря не зависит от имени файла, хотя сам
+якорь несёт его в префиксе. Отсутствие разделов — пустые значения, не выдумка.
 
 **Пересборка** (нужна при обновлении поставки)::
 
@@ -47,6 +57,7 @@ import posixpath
 import re
 import sys
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import (Dict, Iterable, List, Optional, Sequence, Set, Tuple,
                     cast)
@@ -72,15 +83,17 @@ GRAPHICS_ONLY_PAGE = "funkcii_dostupnye_tolko_v_graf_konteinere.html"
 ALPHABET_PAGE = "vse_funkcii_i_kluchevye_slova_po_alfavitu.html"
 
 #: Версия формата `data/language_functions.json`.
-REGISTRY_VERSION = 1
+REGISTRY_VERSION = 2
 
 DATA_DIR = Path(__file__).parent / "data"
 DEFAULT_REGISTRY_PATH = DATA_DIR / "language_functions.json"
 
-#: Раздел «Синтаксис» — признак страницы функции. Ссылка на якорь
-#: (`idsteampt__syntax`) сгенерирована DITA-OT и зависит от имени файла, а
-#: заголовок раздела — от разметки страницы; берём заголовок.
-_SYNTAX_RE = re.compile(r"sectiontitle[^>]*>\s*Синтаксис\s*<")
+#: Раздел «Синтаксис» — признак страницы функции. Берётся по якорю, а не по
+#: заголовку (`sectiontitle`): сплошная проверка 03.10.2026 показала, что у
+#: пяти страниц **системных переменных** (`globalcolor`, `container_name`, …)
+#: заголовок «Синтаксис» есть, а якоря нет, — заголовком они выглядели бы
+#: функциями без синтаксиса. Так признак функции и извлечение формы вызова —
+#: один и тот же якорь, и «функция без синтаксиса» структурно невозможна.
 _H1_RE = re.compile(r"<h1[^>]*>(.*?)</h1>", re.S)
 _SHORTDESC_RE = re.compile(
     r'<p class="- topic/shortdesc shortdesc">(.*?)</p>', re.S)
@@ -88,6 +101,23 @@ _BREADCRUMB_RE = re.compile(r'<ol class="d-print-none">(.*?)</ol>', re.S)
 _CRUMB_ITEM_RE = re.compile(r'<div class="title"><a href="[^"]*">([^<]*)</a>')
 _CHILD_LINK_RE = re.compile(r'<strong><a href="([^"]+)">([^<]*)</a></strong>')
 _HELP_VERSION_RE = re.compile(r"Справочная система SimInTech \(([^)]+)\)")
+
+#: Разделы карточки по суффиксу якоря DITA (`id<имя>__syntax`, `__args`).
+#: Суффикс выбран намеренно: префикс — имя файла страницы, а оно у части
+#: страниц с кириллическим двойником (`arсsin`) или спецсимволом (`@`) в
+#: идентификатор так просто не превращается.
+#:
+#: Захват нежадный до первого `</section>`: **вложенных секций в справке нет**
+#: (сплошная проверка 03.10.2026: 0 из 970 у `__syntax`). Если вендор их
+#: заведёт, строка синтаксиса оборвётся молча — тогда разбор надо дополнить
+#: счётчиком вложенности (граница названа здесь, чтобы не искать её заново).
+_SYNTAX_ID_RE = re.compile(
+    r'(?s)<section[^>]*id="[^"]*__syntax"[^>]*>(.*?)</section>')
+_ARGS_ID_RE = re.compile(
+    r'(?s)<section[^>]*id="[^"]*__args"[^>]*>(.*?)</section>')
+_PRE_RE = re.compile(r"(?s)<pre[^>]*>(.*?)</pre>")
+_ROW_RE = re.compile(r"(?s)<tr[^>]*>(.*?)</tr>")
+_CELL_RE = re.compile(r"(?s)<t[hd][^>]*>(.*?)</t[hd]>")
 
 #: Границы слова при поиске имени в документах. Только ASCII: имена функций
 #: латинские, а соседство с кириллицей («функцияabs») — уже не имя функции.
@@ -101,6 +131,82 @@ def _text(raw: str) -> str:
     return html.unescape(re.sub(r"\s+", " ", re.sub("<[^>]+>", "", raw))).strip()
 
 
+def _pre_text(raw: str) -> str:
+    """Текст блока `<pre>`: построчно, без тегов; пустые строки убраны.
+
+    Отличие от `_text` — сохранённые переводы строк: в «Синтаксисе»
+    `createwire` две формы вызова, и схлопывание склеило бы их в одну.
+    """
+    text = html.unescape(re.sub("<[^>]+>", "", raw)).replace("\xa0", " ")
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.splitlines()]
+    return "\n".join(line for line in lines if line)
+
+
+@dataclass(frozen=True)
+class HelpArg:
+    """Аргумент функции из раздела «Аргументы» справки.
+
+    Args:
+        name: имя аргумента, как в таблице справки.
+        type: тип данных («integer», «строка»); пустая строка, если колонки нет.
+        description: описание из третьей колонки; пусто, если её нет.
+    """
+
+    name: str
+    type: str
+    description: str
+
+    def as_dict(self) -> Dict[str, str]:
+        """Представление для JSON."""
+        return {"name": self.name, "type": self.type,
+                "description": self.description}
+
+    @classmethod
+    def from_dict(cls, raw: Dict[str, object]) -> "HelpArg":
+        """Запись из JSON; недостающие поля — пустые строки."""
+        return cls(
+            name=str(raw.get("name", "")),
+            type=str(raw.get("type", "")),
+            description=str(raw.get("description", "")),
+        )
+
+
+def _syntax_of(source: str) -> str:
+    """Синтаксис карточки: `<pre>` раздела `__syntax`; пусто, если разделов нет."""
+    section = _SYNTAX_ID_RE.search(source)
+    if not section:
+        return ""
+    pre = _PRE_RE.search(section.group(1))
+    return _pre_text(pre.group(1)) if pre else _text(section.group(1))
+
+
+def _args_of(source: str) -> Tuple[HelpArg, ...]:
+    """Аргументы карточки: строки таблицы `__args`; строка заголовка отброшена.
+
+    Ячейки разбираются по отдельности, а не одним `_text`: по тексту всей
+    секции колонки слились бы, и «имя» от «описания» стало бы неотличимо.
+
+    Строка берётся и с одной ячейкой: таблица без колонок типа/описания —
+    всё ещё аргументы, и потерять их целиком было бы хуже, чем показать имя
+    без подробностей (тип и описание тогда пустые — так же честно, как
+    пустое назначение у двух страниц справки).
+    """
+    section = _ARGS_ID_RE.search(source)
+    if not section:
+        return ()
+    args: List[HelpArg] = []
+    for row in _ROW_RE.findall(section.group(1)):
+        cells = [_text(cell) for cell in _CELL_RE.findall(row)]
+        if not cells or not cells[0] or cells[0] == "Имя":
+            continue
+        args.append(HelpArg(
+            name=cells[0],
+            type=cells[1] if len(cells) > 1 else "",
+            description=cells[2] if len(cells) > 2 else "",
+        ))
+    return tuple(args)
+
+
 @dataclass(frozen=True)
 class HelpPage:
     """Разобранная страница раздела языка.
@@ -112,6 +218,10 @@ class HelpPage:
         purpose: `shortdesc` одной строкой; пустая строка, если его нет.
         breadcrumb: заголовки хлебных крошек по порядку, включая имя страницы.
         has_syntax: есть ли раздел «Синтаксис».
+        syntax: текст раздела «Синтаксис» (может быть многострочным); пусто,
+            если раздела нет.
+        args: аргументы из раздела «Аргументы» по порядку; пусто, если раздела
+            нет или таблица не разобралась.
     """
 
     doc: str
@@ -119,6 +229,8 @@ class HelpPage:
     purpose: str
     breadcrumb: Tuple[str, ...]
     has_syntax: bool
+    syntax: str = ""
+    args: Tuple[HelpArg, ...] = ()
 
 
 def parse_page(source: str, doc: str = "") -> HelpPage:
@@ -137,7 +249,9 @@ def parse_page(source: str, doc: str = "") -> HelpPage:
         purpose=_text(short.group(1)) if short else "",
         breadcrumb=tuple(_CRUMB_ITEM_RE.findall(crumbs.group(1)))
         if crumbs else (),
-        has_syntax=bool(_SYNTAX_RE.search(source)),
+        has_syntax=bool(_SYNTAX_ID_RE.search(source)),
+        syntax=_syntax_of(source),
+        args=_args_of(source),
     )
 
 
@@ -147,7 +261,8 @@ def _is_function(page: HelpPage) -> bool:
     Два условия, и оба нужны. Раздел «Синтаксис» отличает функцию от обзорной
     страницы категории. Каталог отличает её от **системных переменных**
     (`2_peremennye/sistemnye_peremennye/`): у них раздел тоже назван
-    «Синтаксис», но это не функции, и в реестре функций им не место.
+    «Синтаксис» (заголовком — якоря нет), но это не функции, и в реестре
+    функций им не место.
     """
     if not page.has_syntax:
         return False
@@ -207,6 +322,9 @@ class LanguageFunction:
             контейнере — со страницы-указателя справки.
         purpose: назначение одной строкой из справки; пустая строка, если его
             на странице нет.
+        syntax: форма вызова из раздела «Синтаксис» (может быть многострочной);
+            пустая строка, если раздела на странице нет (схема 2).
+        args: аргументы из раздела «Аргументы» по порядку (схема 2).
     """
 
     name: str
@@ -215,6 +333,8 @@ class LanguageFunction:
     doc: str
     graphics_only: bool
     purpose: str
+    syntax: str = ""
+    args: Tuple[HelpArg, ...] = ()
 
     def as_dict(self) -> Dict[str, object]:
         """Представление для JSON."""
@@ -225,11 +345,19 @@ class LanguageFunction:
             "doc": self.doc,
             "graphics_only": self.graphics_only,
             "purpose": self.purpose,
+            "syntax": self.syntax,
+            "args": [arg.as_dict() for arg in self.args],
         }
 
     @classmethod
     def from_dict(cls, raw: Dict[str, object]) -> "LanguageFunction":
-        """Запись из JSON."""
+        """Запись из JSON.
+
+        Поля схемы 2 (`syntax`, `args`) необязательны: реестр схемы 1
+        читается без них — пустыми, а не отказом: иначе обновление читателя
+        раньше писателя роняло бы чтение.
+        """
+        raw_args = raw.get("args")
         return cls(
             name=str(raw.get("name", "")),
             category=str(raw.get("category", "")),
@@ -237,6 +365,11 @@ class LanguageFunction:
             doc=str(raw.get("doc", "")),
             graphics_only=bool(raw.get("graphics_only", False)),
             purpose=str(raw.get("purpose", "")),
+            syntax=str(raw.get("syntax", "")),
+            args=tuple(HelpArg.from_dict(item)
+                       for item in raw_args
+                       if isinstance(item, dict))
+            if isinstance(raw_args, list) else (),
         )
 
     @property
@@ -339,14 +472,20 @@ def build_registry(help_dir: Path) -> Dict[str, object]:
             doc=page.doc,
             graphics_only=page.doc in graphics_only,
             purpose=page.purpose,
+            syntax=page.syntax,
+            args=page.args,
         ))
     functions.sort(key=lambda f: (f.name, f.doc))
 
     categories = _categories(functions)
+    help_version = _help_version(raw)
     return {
         "version": REGISTRY_VERSION,
         "section": HELP_SECTION,
-        "help_version": _help_version(raw),
+        "help_version": help_version,
+        "meta": {
+            "observation": _observation(help_version),
+        },
         "graphics_only_page": graphics_source is not None,
         "alphabet_page": alphabet_source is not None,
         "count": len(functions),
@@ -356,6 +495,8 @@ def build_registry(help_dir: Path) -> Dict[str, object]:
             "graphics_container_only": sum(
                 1 for f in functions if f.graphics_only),
             "with_purpose": sum(1 for f in functions if f.purpose),
+            "with_syntax": sum(1 for f in functions if f.syntax),
+            "with_args": sum(1 for f in functions if f.args),
             "categories": len({str(row["category"]) for row in categories}),
             "category_rows": len(categories),
             "alphabet_index_entries": len(alphabet_links),
@@ -375,6 +516,33 @@ def build_registry(help_dir: Path) -> Dict[str, object]:
 def _in_keywords(doc: str) -> bool:
     """Ссылка указателя ведёт в каталог ключевых слов, а не к функции."""
     return _in_dir(doc, KEYWORDS_DIR)
+
+
+def _observation(help_version: str) -> Dict[str, object]:
+    """Чем и когда снят реестр — привязка снапшота к версии справки.
+
+    Обязательные поля снапшота — `docs/knowledge-snapshot.md`: без
+    `observation` пересборка теряла бы привязку к версии, и реестр следующей
+    поставки выглядел бы как старый. Поле обязано проставляться **сборщиком**
+    (так же устроен каталог блоков): иначе оно живёт только в лежащем файле,
+    и первая же пересборка его роняет — так и случилось с реестром, который
+    собирался вне репозитория.
+
+    `version` — версия **справки** (она прочитана со страниц), а версия
+    продукта здесь не спрашивается: её знает человек, и догадка хуже
+    `unknown`. `observed_at` — день пересборки: он и есть дата наблюдения.
+    """
+    # Импорт ленивый: `__version__` объявлен в конце `__init__.py` (как в
+    # `catalog._observation` — иначе цикл импорта).
+    from . import __version__ as package_version
+
+    return {
+        "product": "SimInTech",
+        "version": help_version or "unknown",
+        "observed_at": date.today().isoformat(),
+        "source": "справка поставки (help.simintech.ru)",
+        "generator": f"simintech-api {package_version}",
+    }
 
 
 def _help_version(raw: Sequence[Tuple[str, str]]) -> str:

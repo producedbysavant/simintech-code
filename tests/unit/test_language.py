@@ -17,6 +17,7 @@ import pytest  # noqa: E402
 
 from simintech_api.language import (  # noqa: E402
     DEFAULT_REGISTRY_PATH,
+    LanguageFunction,
     _fold_homoglyphs,
     build_registry,
     coverage,
@@ -43,18 +44,35 @@ def _crumbs(items):
     return f'<ol class="d-print-none">{links}</ol>'
 
 
-def _page(name, crumbs, purpose=None, syntax=True):
-    """Страница справки: функция (`syntax=True`) или обзор категории."""
+def _page(name, crumbs, purpose=None, syntax=True, syntax_text="y = f(x);",
+          args=()):
+    """Страница справки: функция (`syntax=True`) или обзор категории.
+
+    `syntax_text` кладётся в `<pre>` раздела «Синтаксис» (переводы строк в нём
+    сохраняются разбором — у `createwire` форм две). `args` — строки таблицы
+    «Имя / Тип данных / Описание» (длины строки — по числу колонок): таблица
+    вместе с заголовком, как в справке, чтобы и разбор заголовка был проверен.
+    """
     short = f'<p class="- topic/shortdesc shortdesc">{purpose}</p>' \
         if purpose else ""
     section = ('<section id="x__syntax"><h2 class="- topic/title title '
-               'sectiontitle">Синтаксис</h2><pre><code>y = f(x);'
+               'sectiontitle">Синтаксис</h2><pre><code>' + syntax_text +
                '</code></pre></section>') if syntax else ""
+    args_section = ""
+    if args:
+        head = "<tr><th>Имя</th><th>Тип данных</th><th>Описание</th></tr>"
+        rows = "".join(
+            "<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>"
+            for row in args)
+        args_section = ('<section id="x__args"><h2 class="- topic/title '
+                        'title sectiontitle">Аргументы</h2>'
+                        f"<table>{head}{rows}</table></section>")
     return (f"<!DOCTYPE html><html><body>"
             f"{_crumbs(crumbs)}"
             f'<h1 class="- topic/title title topictitle1" '
             f'id="ariaid-title1">{name}</h1>'
-            f'<div class="- topic/body body">{short}{section}</div>'
+            f'<div class="- topic/body body">{short}{section}'
+            f'{args_section}</div>'
             f"</body></html>")
 
 
@@ -105,7 +123,8 @@ def _build_help(tmp_path):
         "Категория один", ["Язык программирования SimInTech"], syntax=False))
     _write(root, f"{lang}/6_funkcii/1_kategoriya/abs.html", _page(
         "abs", ["Язык программирования SimInTech", "Функции",
-                "Категория один", "abs"], "Функция получения модуля числа."))
+                "Категория один", "abs"], "Функция получения модуля числа.",
+        syntax_text="y = abs(x);", args=[("x", "число", "Аргумент модуля.")]))
     _write(root, f"{lang}/6_funkcii/1_kategoriya/absolute.html", _page(
         "absolute", ["Язык программирования SimInTech", "Функции",
                      "Категория один", "absolute"], "Модуль числа."))
@@ -159,6 +178,61 @@ def test_parse_page_reads_name_purpose_and_category():
     assert page.has_syntax
 
 
+def test_parse_page_reads_syntax_and_args():
+    """Синтаксис и аргументы читаются из карточки (схема 2).
+
+    Синтаксис — текст `<pre>`: переводы строк сохранены (у `createwire` форм
+    две). Аргументы — строки таблицы без заголовка: по ним функция зовётся,
+    без них реестр отвечал «имя есть», а формы вызова не давал.
+    """
+    page = parse_page(_page(
+        "createwire", ["Язык программирования SimInTech", "Функции",
+                       "Порты блоков и линии связи", "createwire"],
+        syntax_text="wire_id = createwire(a, b);\nwire_id = createwire(a, b, "
+                    "layer);",
+        args=[("a", "integer", "Идентификатор проекта."),
+              ("b", "integer", "Тип линии.")]), "a/createwire.html")
+
+    assert page.syntax == ("wire_id = createwire(a, b);\n"
+                           "wire_id = createwire(a, b, layer);")
+    assert [arg.name for arg in page.args] == ["a", "b"]
+    assert page.args[0].type == "integer"
+    assert page.args[1].description == "Тип линии."
+
+
+def test_parse_page_keeps_one_column_arg_rows():
+    """Строка таблицы аргументов с одной ячейкой — всё ещё аргумент.
+
+    Потерять её целиком (как было) — значит объявить функцию без аргументов
+    там, где имя аргумента в справке есть; тип и описание тогда пустые —
+    честно, как пустое назначение у двух страниц справки.
+    """
+    page = parse_page(_page("f", ["a", "b"], args=[("gid",)]), "a/f.html")
+
+    assert [(arg.name, arg.type, arg.description)
+            for arg in page.args] == [("gid", "", "")]
+
+
+def test_page_with_syntax_title_but_no_anchor_is_not_a_function():
+    """«Синтаксис» заголовком, но без якоря — не функция.
+
+    У пяти страниц поставки (`globalcolor`, `container_name`, …) раздел
+    назван «Синтаксис», а якоря `__syntax` нет; заголовком они выглядели бы
+    функциями без формы вызова. Признак берётся по якорю — тому же, из
+    которого извлекается синтаксис (сплошная проверка 03.10.2026).
+    """
+    source = ("<!DOCTYPE html><html><body>"
+              "<h1>globalcolor</h1>"
+              '<section id="x"><h2 class="sectiontitle">Синтаксис</h2>'
+              "<pre><code>globalcolor</code></pre></section>"
+              "</body></html>")
+
+    page = parse_page(source, "a/globalcolor.html")
+
+    assert not page.has_syntax
+    assert page.syntax == ""
+
+
 def test_parse_page_without_shortdesc_leaves_purpose_empty():
     """Назначения нет — поле пустое, а не придуманный текст.
 
@@ -177,6 +251,38 @@ def test_parse_page_marks_category_overview():
                             syntax=False), "a/DIR_x.html")
 
     assert not page.has_syntax
+    assert page.syntax == ""
+    assert page.args == ()
+
+
+def test_registry_carries_syntax_and_args(tmp_path):
+    """Реестр несёт форму вызова и аргументы — по ним функцию и зовут."""
+    registry = build_registry(_build_help(tmp_path))
+
+    found = {item["name"]: item for item in registry["functions"]}
+    assert found["abs"]["syntax"] == "y = abs(x);"
+    assert [(arg["name"], arg["type"], arg["description"])
+            for arg in found["abs"]["args"]] == [
+                ("x", "число", "Аргумент модуля.")]
+    assert registry["counts"]["with_syntax"] == registry["counts"]["functions"]
+    assert registry["counts"]["with_args"] == 1
+
+
+def test_registry_schema_1_reads_without_new_fields():
+    """Реестр схемы 1 (без `syntax`/`args`) читается: поля пустые, не отказ.
+
+    Читатель обновляется раньше писателя — старый JSON не должен ронять
+    чтение; пустые значения честны: формы вызова в том реестре не было.
+    """
+    function = LanguageFunction.from_dict({
+        "name": "abs", "category": "Стандартные", "section": "",
+        "doc": "a/abs.html", "graphics_only": False, "purpose": "Модуль.",
+    })
+
+    assert function.syntax == ""
+    assert function.args == ()
+    assert function.as_dict()["syntax"] == ""
+    assert function.as_dict()["args"] == []
 
 
 def test_registry_ignores_overviews_keywords_and_system_variables(tmp_path):
@@ -297,8 +403,23 @@ def test_registry_meta_reports_help_version():
     """Версия справки сохраняется в реестре — по ней видно, устарел ли он."""
     meta = registry_meta()
 
-    assert str(meta["version"]) == "1"
+    assert str(meta["version"]) == "2"
     assert str(meta["help_version"]).startswith("v")
+
+
+def test_registry_records_observation(tmp_path):
+    """Пересборка сама проставляет привязку к версии — первой же сборкой.
+
+    Поле, живущее только в лежащем файле, первая же пересборка роняет: так и
+    вышло с реестром, который собирался вне репозитория (`generator:
+    unknown`), — теперь наблюдение пишет сам сборщик, как у каталога блоков.
+    """
+    registry = build_registry(_build_help(tmp_path))
+
+    observation = registry["meta"]["observation"]
+    assert observation["product"] == "SimInTech"
+    assert observation["observed_at"], "дата наблюдения не проставлена"
+    assert str(observation["generator"]).startswith("simintech-api")
 
 
 def test_language_functions_are_copies():
@@ -438,6 +559,8 @@ def test_distribution_pages_all_parse():
         "unique_names": 878,
         "graphics_container_only": 78,
         "with_purpose": 905,
+        "with_syntax": 907,
+        "with_args": 848,
         "categories": 28,
         "category_rows": 50,
         "alphabet_index_entries": 843,
@@ -449,6 +572,9 @@ def test_distribution_pages_all_parse():
     for item in registry["functions"]:
         assert item["name"], item
         assert item["category"], item
+        # Синтаксис есть у каждой функции (схема 2): без него запись отвечает
+        # «имя есть», но формы вызова не даёт — ради этого схема и заведена.
+        assert item["syntax"], item["name"]
     # Назначение есть у всех, кроме двух страниц без `shortdesc`.
     assert {item["name"] for item in registry["functions"]
             if not item["purpose"]} == {"projectloaddb", "projectsavedb"}
