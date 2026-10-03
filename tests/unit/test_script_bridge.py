@@ -94,7 +94,8 @@ class FakeEnv:
                  stop_raises=None, stop_is_ignored=False,
                  state_read_raises_after_stop=None,
                  current_page_raises=False,
-                 dump_fails_before_install=False, raw_result=None):
+                 dump_fails_before_install=False, raw_result=None,
+                 time_grows_after_s=None):
         #: Имена страниц — как их пишет выгрузка; первая всегда главная.
         self.pages = list(pages)
         #: Скрипты страниц. Имя `installed` сохранено намеренно: на нём стоят
@@ -154,6 +155,13 @@ class FakeEnv:
         self.calls = []
         self._running = False
         self._time = float(initial_time)
+        #: Модель «рост приходит не сразу»: время начинает расти, только когда
+        #: после `ProjectRun` прошло столько секунд. Без этого перехода фейк
+        #: умеет лишь «растёт на каждом чтении» и «замерло навсегда» — и
+        #: границу `BODY_END_GRACE_SECONDS` (медленный старт против
+        #: структурного простоя) проверить нечем.
+        self.time_grows_after_s = time_grows_after_s
+        self._run_started_at = None
         # ─── Состояние расчёта ────────────────────────────────────────
         # Флаг моделирует **переход**, а не константу: без перехода фейк не
         # различает «расчёт начали мы» и «он шёл до нас», и любая проверка
@@ -264,6 +272,7 @@ class FakeEnv:
             if self.run_raises is not None:
                 raise self.run_raises
             self._running = True
+            self._run_started_at = time.monotonic()
             self.state = 7
             self._maybe_write_result()
             if self.run_completes_instantly:
@@ -304,8 +313,16 @@ class FakeEnv:
         if name == "GetProjectTime":
             if self.time_grows and self._running:
                 # Время растёт по чтениям: опрос роста ничего не
-                # переинициализирует, и фейк моделирует именно чтение.
-                self._time += 0.1
+                # переинициализирует, и фейк моделирует именно чтение. Если
+                # задан `time_grows_after_s`, рост включается только спустя
+                # это время после `ProjectRun` — модель медленного старта.
+                started = self._run_started_at
+                ready = (self.time_grows_after_s is None
+                         or (started is not None
+                             and time.monotonic() - started
+                             >= self.time_grows_after_s))
+                if ready:
+                    self._time += 0.1
             return self._time
         if name == "ProjectStep":
             raise AssertionError(
@@ -1278,29 +1295,48 @@ def test_run_page_script_keeps_model_stuck_separate_from_success(tmp_path):
     assert result.outcome.lines == ["A"]
 
 
-def test_contour_exits_early_when_body_ended_but_time_frozen(tmp_path):
-    """`CTX_END` без роста времени — выход за grace, а не за полный таймаут.
+def test_contour_waits_out_slow_start_within_body_end_grace(tmp_path):
+    """Рост в пределах grace — дожидаемся: медленный старт не «не считает».
 
-    Замер 03.10.2026 (пересоздание блока импортом при сборке, входы ещё не
-    подключены): контурный вызов стоил «1m 16s» — мост выжидал заводскую
-    минуту на модели, которая структурно не считает. С тела, дописавшего
-    конечный маркер, исход `model-not-running` уже определён; остаётся
-    короткий `BODY_END_GRACE_SECONDS` на разброс роста.
-
-    Таймаут моста здесь — 30 с (заводской был бы 60): без раннего выхода
-    тест падал бы по времени, а не по исходу.
+    Фейк моделирует **переход**, а не константу: тело дописало маркеры, время
+    стоит и поднимается только через `time_grows_after_s` после запуска — так
+    выглядит большая модель, чей первый шаг идёт дольше демо-замера (70 мс).
+    Ранний выход обязан молчать, пока рост укладывается в границу: исход —
+    успех, а не `model-not-running` (находка ревью 03.10.2026).
     """
     env = FakeEnv(
-        time_grows=False,
+        time_grows=True, time_grows_after_s=0.3,
         raw_result=f"{PAGE_BEGIN_MARKER}\nA\n{PAGE_END_MARKER}\n")
-    bridge = ScriptBridge(env, project_id=42, time_growth_timeout_s=30.0)
+    bridge = ScriptBridge(env, project_id=42,
+                          time_growth_timeout_s=30.0, body_end_grace_s=2.0)
 
     started = time.monotonic()
-    result = bridge.run_page_script("x();", tmp_path / "e.txt")
+    result = bridge.run_page_script("x();", tmp_path / "g.txt")
+
+    assert result.outcome.kind == OUTCOME_OK
+    assert time.monotonic() - started < 10
+
+
+def test_contour_early_exit_when_growth_lags_past_body_end_grace(tmp_path):
+    """Рост позже grace — ранний выход: `model-not-running` за секунды.
+
+    Замер 03.10.2026 (сборка: входы ещё не подключены): контурный вызов
+    стоил «1m 16s» — мост выжидал заводскую минуту. Таймаут моста здесь —
+    30 с, рост фейк даёт лишь через 60 с: без раннего выхода тест падал бы
+    по времени, а не по исходу.
+    """
+    env = FakeEnv(
+        time_grows=True, time_grows_after_s=60.0,
+        raw_result=f"{PAGE_BEGIN_MARKER}\nA\n{PAGE_END_MARKER}\n")
+    bridge = ScriptBridge(env, project_id=42,
+                          time_growth_timeout_s=30.0, body_end_grace_s=0.5)
+
+    started = time.monotonic()
+    result = bridge.run_page_script("x();", tmp_path / "h.txt")
     elapsed = time.monotonic() - started
 
     assert result.outcome.kind == OUTCOME_MODEL_NOT_RUNNING
-    assert elapsed < 10, f"ранний выход не сработал: {elapsed:.1f} с (ждали 30)"
+    assert elapsed < 6, f"ранний выход не сработал: {elapsed:.1f} с (ждали 30)"
 
 
 # ─── Чтение скрипта страницы ─────────────────────────────────────────────────
