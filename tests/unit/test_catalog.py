@@ -771,3 +771,199 @@ def test_coverage_of_empty_distribution_is_zero_not_error(tmp_path):
 
     assert report["classes_in_profile"] == 0
     assert report["fraction"] == 0.0
+
+
+# ─── Скрипт блока «Язык программирования» ─────────────────────────
+
+#: Фрагмент реальной выгрузки (замер 03.10.2026, поставка 2.26.6.23):
+#: запись `Script` лежит в `visual_props` объекта, значение — обычной
+#: кодировкой выгрузки. Внутренние записи (`SortType`) рядом.
+XPRT_BLOCK_SCRIPT = """<project>
+  <page>
+    <name>`Схема`</name>
+  <object>
+    <name>`LangBlock_0`</name>
+    <class_name>`Язык программирования`</class_name>
+    <visual_props>
+      <data>
+        <name>`SortType`</name>
+        <value>`2`</value>
+      </data>
+      <data>
+        <name>`Script`</name>
+        <value>`input`#13#10`    u: double;`#13#10""" \
+    + """`output`#13#10`    y: double;`#13#10#13#10`y = u;`#13#10</value>
+      </data>
+    </visual_props>
+  </object>
+  <object>
+    <name>`k_0`</name>
+    <class_name>`Константа`</class_name>
+    <custom_props>
+      <data><name>`a`</name><mode>`1`</mode><value>`1`</value></data>
+    </custom_props>
+  </object>
+  </page>
+</project>"""
+
+#: Старая конвенция (одна поставка, демо вендора): куски в **одинарных**
+#: кавычках; внутри куска своя кавычка приходит кодом (`#39`).
+XPRT_OLD_QUOTES = """<project>
+  <page>
+    <name>'Схема'</name>
+  <object>
+    <name>'LangBlock_22'</name>
+    <class_name>'Язык программирования'</class_name>
+    <visual_props>
+      <data>
+        <name>'Script'</name>
+        <value>'x = 1;'#13#10'if u '#60' 0 then y = 1; // it'#39's'</value>
+      </data>
+    </visual_props>
+  </object>
+  </page>
+</project>"""
+
+
+def test_parse_block_script_finds_and_decodes():
+    """Скрипт блока читается из выгрузки и декодируется как запись страницы."""
+    from simintech_api.catalog import parse_xprt_block_script
+
+    script = parse_xprt_block_script(XPRT_BLOCK_SCRIPT, "LangBlock_0")
+
+    assert script == ("input\r\n    u: double;\r\noutput\r\n    y: double;\r\n"
+                      "\r\ny = u;\r\n")
+
+
+def test_parse_block_script_decodes_old_quote_convention():
+    """Одинарные кавычки старых выгрузок разбираются той же полнотой.
+
+    Измерено на демо поставки («Получить значения сигнала в цикле»):
+    разбор одной конвенцией давал 35 символов вместо 818 — почти пустой
+    скрипт, неотличимый от настоящего.
+    """
+    from simintech_api.catalog import parse_xprt_block_script
+
+    script = parse_xprt_block_script(XPRT_OLD_QUOTES, "LangBlock_22")
+
+    assert script == "x = 1;\r\nif u < 0 then y = 1; // it's"
+
+
+def test_parse_block_script_returns_none_without_record():
+    """Нет записи `Script` (или объекта) — None, а не пустая строка."""
+    from simintech_api.catalog import parse_xprt_block_script
+
+    assert parse_xprt_block_script(XPRT_BLOCK_SCRIPT, "k_0") is None
+    assert parse_xprt_block_script(XPRT_BLOCK_SCRIPT, "нет_такого") is None
+
+
+def test_parse_block_script_ignores_nested_subsystem_block():
+    """Скрипт блока, вложенного в субмодель, не отдаётся за скрипт субмодели.
+
+    Находка max-ревью на реальной выгрузке: у объекта-субмодели своей записи
+    `Script` нет, а внутри лежат блоки «Язык программирования» — обход
+    поддерева возвращал чужую программу. Контекст чтения — прямые объекты
+    первой страницы: ни субмодель, ни её внутренний блок этим путём не
+    адресуются (внутренний блок — отдельная задача, как и в `connect`).
+    """
+    from simintech_api.catalog import parse_xprt_block_script
+
+    nested = """<project>
+  <page>
+    <name>`Схема`</name>
+  <object>
+    <name>`Macro8`</name>
+    <class_name>`Субмодель`</class_name>
+    <visual_props></visual_props>
+    <object>
+      <name>`LangBlock_0`</name>
+      <class_name>`Язык программирования`</class_name>
+      <visual_props>
+        <data>
+          <name>`Script`</name>
+          <value>`y = 42;`</value>
+        </data>
+      </visual_props>
+    </object>
+  </object>
+  </page>
+</project>"""
+
+    assert parse_xprt_block_script(nested, "Macro8") is None, (
+        "субмодели отдан скрипт вложенного блока")
+    assert parse_xprt_block_script(nested, "LangBlock_0") is None, (
+        "вложенный блок адресован с главной страницы")
+
+
+def test_parse_block_script_prefers_first_page():
+    """Одноимённый объект второй страницы не подменяет адресованный.
+
+    В поставке `LangBlock9` встречается 22 раза (копии в субмоделях) — ответ
+    на запрос блока главной страницы обязан быть её собственным.
+    """
+    from simintech_api.catalog import parse_xprt_block_script
+
+    second_page = """  <page>
+    <name>`Вторая`</name>
+  <object>
+    <name>`LangBlock_0`</name>
+    <class_name>`Язык программирования`</class_name>
+    <visual_props>
+      <data>
+        <name>`Script`</name>
+        <value>`y = 999;`</value>
+      </data>
+    </visual_props>
+  </object>
+  </page>
+"""
+    two_pages = XPRT_BLOCK_SCRIPT.replace("</project>",
+                                          second_page + "</project>")
+
+    script = parse_xprt_block_script(two_pages, "LangBlock_0")
+
+    assert "y = u;" in script
+    assert "999" not in script, "взят скрипт объекта не с первой страницы"
+
+
+def test_parse_block_script_refuses_broken_xml():
+    """Повреждённая выгрузка — отказ, а не «записи нет»."""
+    from simintech_api.catalog import parse_xprt_block_script
+    from simintech_api.exceptions import ScriptBridgeError
+
+    with pytest.raises(ScriptBridgeError):
+        parse_xprt_block_script("<project><page>", "LangBlock_0")
+
+
+def test_parse_block_script_refuses_partial_value():
+    """Значение, разобранное не полностью, — отказ, а не усечённый скрипт."""
+    from simintech_api.catalog import parse_xprt_block_script
+    from simintech_api.exceptions import ScriptBridgeError
+
+    text = XPRT_BLOCK_SCRIPT.replace(
+        "`y = u;`", '"y = u;"  // двойные кавычки не наша конвенция')
+
+    with pytest.raises(ScriptBridgeError):
+        parse_xprt_block_script(text, "LangBlock_0")
+
+
+def test_parse_block_script_empty_value_is_empty_string():
+    """Запись есть, значение пустое — пустая строка, а не None."""
+    from simintech_api.catalog import parse_xprt_block_script
+
+    text = XPRT_BLOCK_SCRIPT.replace(
+        "`input`#13#10`    u: double;`#13#10"
+        "`output`#13#10`    y: double;`#13#10#13#10`y = u;`#13#10", "")
+
+    assert parse_xprt_block_script(text, "LangBlock_0") == ""
+
+
+def test_parse_block_script_decodes_operator_codes():
+    """Коды кроме переводов строки (`#60`/`#96`/`#39`) раскодируются."""
+    from simintech_api.catalog import parse_xprt_block_script
+
+    text = XPRT_BLOCK_SCRIPT.replace("`y = u;`", "`if u `#60` 0 then y = u;`")
+
+    script = parse_xprt_block_script(text, "LangBlock_0")
+
+    assert "u < 0 then" in script

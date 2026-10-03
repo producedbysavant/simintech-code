@@ -57,12 +57,23 @@ def build_import_model_text_body(model_text: str) -> str:
     именно это — выгрузка как есть не собиралась, а она же без внешней скобки
     собиралась и создавала объекты. Поэтому внешняя скобка распознаётся и
     повторно не добавляется.
+
+    **Пины блоков «Язык программирования» импорт не пересобирает.** `createmodel`
+    их не генерирует (замер 01.10.2026: у свежего PL-блока один дефолтный
+    вход, провода к остальным пинам создаются половинками молча), их даёт
+    `reinitlangblock`. Автоматический обход с пересборкой здесь сознательно не
+    делается: пересборка пинов измеренно **неполна для объявлений с размером**
+    (`a[3]: array` даёт два входа вместо трёх — замер 02.10.2026), а цикл
+    затронул бы и уже настроенные блоки — потеря пина у существующего блока
+    молча остановила бы расчёт всей модели. Свежие PL-блоки доводятся
+    осознанно: перезаписью скрипта (`set_block_script` в сервере —
+    «setprop + reinitlangblock») или вызовом `reinitlangblock` в
+    `run_page_script`.
     """
     text = model_text.strip()
-    if text.startswith("(") and text.endswith(")"):
-        return (f"const model : {text};\n"
-                "createmodel(getcurrentprojectid, model);")
-    return (f"const model : (\n{text}\n);\n"
+    model = text if text.startswith("(") and text.endswith(")") \
+        else f"(\n{text}\n)"
+    return (f"const model : {model};\n"
             "createmodel(getcurrentprojectid, model);")
 
 

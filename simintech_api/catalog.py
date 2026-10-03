@@ -39,7 +39,7 @@ from typing import (TYPE_CHECKING, Dict, Iterable, Iterator, List, Optional,
                     Tuple, TypedDict)
 
 from .constants import SUPPORTED_COM_BLOCK_CLASSES
-from .exceptions import SimInTechError
+from .exceptions import ScriptBridgeError, SimInTechError
 
 if TYPE_CHECKING:
     from .core.com_client import COMClient
@@ -391,6 +391,174 @@ def decode_xprt(raw: bytes) -> str:
             f"Не удалось определить кодировку .xprt: файл не UTF-8 и не cp1251 "
             f"({exc})"
         ) from exc
+
+
+#: Токены значения выгрузки: куски в кавычках плюс коды `#NN`. Кавычки двух
+#: конвенций — обратные в новых выгрузках, одинарные в старых (обе есть в
+#: одной поставке; та же пара конвенций у `clean_value`); внутри куска своей
+#: кавычки не бывает — она приходит кодом (`#96` / `#39`). Разбираем
+#: токенами, а не подстановкой отдельных кодов: проверено на поставке — в
+#: 1181 непустом скрипте новой конвенции покрытие полное, остатка нет;
+#: поддержка одинарных измерена на старом демо («Получить значения сигнала в
+#: цикле»): 818 символов скрипта вместо 35 при разборе одной конвенцией.
+_TOKEN_RE = re.compile(r"`([^`]*)`|'([^']*)'|#(\d+)")
+
+
+def decode_xprt_value(raw: str) -> str:
+    """Раскодировать значение выгрузки: куски в кавычках плюс коды `#NN`.
+
+    Коды раскодируются **любые**, а не только перевод строки и табуляция: в
+    поставке встречаются `#60` и `#62` (`<` и `>`), и оператор сравнения в
+    скрипте иначе вернулся бы на место нерабочим — молча, потому что среда об
+    ошибке скрипта не сообщает.
+
+    Обратная кавычка внутри скрипта приходит кодом `#96` и потому не путается
+    с кавычками-обёртками.
+
+    Код, из которого символа не выходит, — отказ, а не исключение из недр
+    `chr()`: `leftover_of` такую запись считает покрытой, поэтому «покрыта» и
+    «разбирается» — разные вещи, и разница обязана быть видна вызывающему.
+    Таких кодов два вида:
+
+    * вне диапазона Unicode (`#1114112` и больше) — `chr()` бросает
+      `ValueError` прямо здесь;
+    * одиночный суррогат (`#55296`…`#57343`) — `chr()` его принимает, но такого
+      символа не существует в UTF-8, и падение случилось бы позже, сырым
+      `UnicodeEncodeError` при записи скрипта обратно в проект.
+
+    Декодер живёт здесь, рядом с `decode_xprt` (декодированием файла): им
+    пользуются и скриптовые записи страниц (мост), и записи объектов (скрипт
+    блока); `script_probe` реэкспортирует имена для прежних путей импорта.
+    """
+    parts = []
+    for backtick, quoted, code in _TOKEN_RE.findall(raw):
+        if code == "":
+            # Кусок значения: кавычка одной из двух конвенций.
+            parts.append(backtick if backtick else quoted)
+            continue
+        try:
+            value = int(code)
+        except ValueError as exc:
+            # int() на цепочке длиннее ~4300 цифр бросает ValueError
+            # (лимит CPython): повреждённое значение обязано стать отказом
+            # своей иерархии, а не сырым исключением из недр.
+            shown = code if len(code) <= 32 else code[:32] + "…"
+            raise ScriptBridgeError(
+                f"код #{shown} в значении выгрузки не разбирается как число "
+                f"({exc}). Значение повреждено или записано не тем кодеком."
+            ) from exc
+        if value > 0x10FFFF:
+            raise ScriptBridgeError(
+                f"код #{code} в значении выгрузки вне диапазона Unicode: "
+                "разобрать запись нечем, а подставить вместо символа нечто "
+                "другое значило бы испортить скрипт молча.")
+        if 0xD800 <= value <= 0xDFFF:
+            raise ScriptBridgeError(
+                f"код #{code} в значении выгрузки — одиночный суррогат: такого "
+                "символа в UTF-8 не существует, и запись скрипта обратно в "
+                "проект упала бы сырым UnicodeEncodeError уже вне иерархии "
+                "ошибок моста.")
+        parts.append(chr(value))
+    return "".join(parts)
+
+
+def leftover_of(raw: str) -> str:
+    """Часть значения, не покрытая ни куском, ни кодом.
+
+    Нужна проверкам: непустой остаток означает, что разбор теряет текст и
+    вернул бы на место испорченный скрипт.
+    """
+    return _TOKEN_RE.sub("", raw)
+
+
+#: Сырое значение записи `<data>` — как записано, без снятия кавычек: у
+#: значений скриптов куски и коды чередуются, и урезающий `_VALUE_RE` вернул
+#: бы только первый кусок. Запись ищется в секциях свойств объекта; кавычки
+#: обеих конвенций разбирает `decode_xprt_value`.
+_RAW_VALUE_RE = re.compile(r"<value>(.*?)</value>", re.S | re.I)
+
+
+def _script_record_in(section: "ET.Element") -> Optional[str]:
+    """Сырое значение записи `Script` в секции свойств, если она есть.
+
+    Возвращает `""` для `<value></value>` и `None`, если записи `Script` в
+    секции нет. Обе формы данных (`<data>`/`<data_N>`) и обе конвенции
+    кавычек имени разбирают общие регекспы `_DATA_RE`/`_NAME_RE` — второй
+    копии грамматики записи здесь быть не должно (`_iter_data`).
+    """
+    body_text = ET.tostring(section, encoding="unicode")
+    for data in _DATA_RE.finditer(body_text):
+        name_match = _NAME_RE.search(data.group("body"))
+        if (not name_match
+                or clean_value(name_match.group(1)) != "Script"):
+            continue
+        value_match = _RAW_VALUE_RE.search(data.group("body"))
+        if value_match is None:
+            return ""
+        return value_match.group(1)
+    return None
+
+
+def parse_xprt_block_script(xml_text: str, block_name: str) -> Optional[str]:
+    """Скрипт блока «Язык программирования» из XML-проекта (.xprt).
+
+    Замер 03.10.2026 (поставка 2.26.6.23): скрипт блока лежит в выгрузке
+    записью `<name>`Script`</name>` секции свойств объекта, значение — обычной
+    кодировкой выгрузки (куски в кавычках и коды `#13#10`). Чтение выгрузкой
+    **не требует запуска расчёта** — в отличие от чтения через контур
+    (`getpropasstring`), и это его назначение: читающий инструмент не должен
+    сдвигать модельное время вызывающего.
+
+    **Контекст — объекты первой страницы документа** (это главная страница:
+    замер 03.10.2026 — её объекты лежат прямыми детьми первого `<page>`) и
+    только они. Так исключаются две ошибки, измеренные а `max`-ревью: скрипт
+    вложенного в субмодель блока не выдаётся за скрипт самой субмодели
+    (у объектов-субмоделей своей записи `Script` нет, а вложенные есть), и
+    одноимённый объект с другой страницы не подменяет адресованный
+    (`LangBlock9` в поставке встречается 22 раза). Блок внутри субмодели этим
+    путём не адресуется — инструмент работает с главной страницей, как
+    `connect`.
+
+    Возвращается `None`, если записи нет (нет скрипта или объекта); пустая
+    строка — запись есть, значение пустое. Повреждённая выгрузка (XML не
+    разбирается) — `ScriptBridgeError`, а не `None`: «не разобралось» и
+    «записи нет» — разные состояния, и выдавать первое за второе нельзя.
+    Значение, разобранное не полностью, — тоже отказ (`leftover_of`): усечённый
+    скрипт неотличим от настоящего.
+    """
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as exc:
+        raise ScriptBridgeError(
+            f"выгрузка проекта не разбирается как XML ({exc}): читать скрипт "
+            f"блока нечем. Повреждённый снимок нельзя принять за «записи "
+            f"нет».") from exc
+    page = root.find(".//page")
+    if page is None:
+        return None
+    for obj in page:
+        if not _OBJECT_TAG_RE.fullmatch(obj.tag):
+            continue
+        name_node = obj.find("name")
+        if clean_value(name_node.text if name_node is not None else None) \
+                != block_name:
+            continue
+        for section_name in ("custom_props", "visual_props"):
+            section = obj.find(section_name)
+            if section is None:
+                continue
+            raw = _script_record_in(section)
+            if raw is None:
+                continue
+            leftover = leftover_of(raw)
+            if leftover:
+                raise ScriptBridgeError(
+                    f"значение `Script` разобрано не полностью (остаток "
+                    f"{leftover[:48]!r}): форма записи не та, что измерена, и "
+                    f"вернуть усечённый скрипт значило бы выдать чужой текст "
+                    f"за настоящий.")
+            return decode_xprt_value(raw)
+    return None
 
 
 def export_xprt_text(project: "Project", suffix: str = ".xprt") -> str:

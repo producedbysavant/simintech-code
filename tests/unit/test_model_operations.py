@@ -65,3 +65,18 @@ def test_inject_body_creates_submodel_assigns_script_and_reinits():
     assert "createprimitiv(102," in body
     assert 'setprop(objid, "script",' in body
     assert body.index("reinitsubmodel(objid);") > body.index('setprop(objid, "script"')
+
+
+def test_import_body_does_not_reinit_lang_blocks():
+    """Импорт НЕ пересобирает пины PL-блоков — почему это решение.
+
+    `createmodel` пины не генерирует (замер 01.10.2026), но автоматическая
+    пересборка отвергнута: она измеренно неполна для объявлений с размером
+    (`a[3]: array` даёт два входа вместо трёх — замер 02.10.2026), а цикл
+    затронул бы и уже настроенные блоки: потеря пина у существующего блока
+    молча остановила бы расчёт всей модели. Свежие PL-блоки доводятся
+    осознанно (`set_block_script` в сервере / `reinitlangblock`).
+    """
+    body = build_import_model_text_body('block0: (type = "Ступенька")')
+
+    assert "reinitlangblock" not in body
