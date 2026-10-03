@@ -522,7 +522,7 @@
   tests: []
 
 - id: removeprimitiv-breaks-calculation-start
-  claim: "`removeprimitiv(id)` удаляет блок из контейнера, но следующий старт расчёта падает: `ProjectStart` возвращает access violation в `mbtylib.dll`"
+  claim: "`removeprimitiv(id)` при удалении блока роняет следующий старт расчёта: `ProjectStart` возвращает access violation в `mbtylib.dll`; на линии дефект не распространяется — см. `wire-removal-keeps-calculation-start`"
   status: measured
   source:
     type: live-com
@@ -533,7 +533,7 @@
   tests: []
 
 - id: wire-removal-keeps-calculation-start
-  claim: "Удаление линии языковым путём (`removeprimitiv(wire_id)` или `removeobject(wire_id)` по id) следующий старт расчёта не роняет; воссозданная линия получает тот же id"
+  claim: "Удаление линии языковым путём (`removeprimitiv(wire_id)` или `removeobject(wire_id)` по id) следующий старт расчёта не роняет — в отличие от удаления блока (`removeprimitiv-breaks-calculation-start`); воссозданная линия получает тот же id"
   status: measured
   source:
     type: live-com
