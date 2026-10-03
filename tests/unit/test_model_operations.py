@@ -67,18 +67,16 @@ def test_inject_body_creates_submodel_assigns_script_and_reinits():
     assert body.index("reinitsubmodel(objid);") > body.index('setprop(objid, "script"')
 
 
-def test_import_body_rebuilds_lang_block_pins():
-    """Импорт пересобирает пины PL-блоков: `createmodel` их не генерирует.
+def test_import_body_does_not_reinit_lang_blocks():
+    """Импорт НЕ пересобирает пины PL-блоков — почему это решение.
 
-    Замер 01.10.2026: у свежего блока «Язык программирования» один дефолтный
-    вход, а провода к остальным пинам из того же текста создаются
-    половинками молча. Пины даёт `reinitlangblock`; повторный вызов для уже
-    существующих блоков проверен живым замером 03.10.2026 (пины, провода и
-    расчёт переживают).
+    `createmodel` пины не генерирует (замер 01.10.2026), но автоматическая
+    пересборка отвергнута: она измеренно неполна для объявлений с размером
+    (`a[3]: array` даёт два входа вместо трёх — замер 02.10.2026), а цикл
+    затронул бы и уже настроенные блоки: потеря пина у существующего блока
+    молча остановила бы расчёт всей модели. Свежие PL-блоки доводятся
+    осознанно (`set_block_script` в сервере / `reinitlangblock`).
     """
     body = build_import_model_text_body('block0: (type = "Ступенька")')
 
-    assert "reinitlangblock(o);" in body
-    assert 'getobjclassname(o) = "Язык программирования"' in body
-    assert body.index("createmodel") < body.index("reinitlangblock"), (
-        "пересборка пинов стоит до создания модели")
+    assert "reinitlangblock" not in body

@@ -393,10 +393,15 @@ def decode_xprt(raw: bytes) -> str:
         ) from exc
 
 
-#: Токены значения выгрузки: куски в кавычках плюс коды `#NN`. Разбираем
+#: Токены значения выгрузки: куски в кавычках плюс коды `#NN`. Кавычки двух
+#: конвенций — обратные в новых выгрузках, одинарные в старых (обе есть в
+#: одной поставке; та же пара конвенций у `clean_value`); внутри куска своей
+#: кавычки не бывает — она приходит кодом (`#96` / `#39`). Разбираем
 #: токенами, а не подстановкой отдельных кодов: проверено на поставке — в
-#: 1181 непустом скрипте покрытие полное, остатка нет.
-_TOKEN_RE = re.compile(r"`([^`]*)`|#(\d+)")
+#: 1181 непустом скрипте новой конвенции покрытие полное, остатка нет;
+#: поддержка одинарных измерена на старом демо («Получить значения сигнала в
+#: цикле»): 818 символов скрипта вместо 35 при разборе одной конвенцией.
+_TOKEN_RE = re.compile(r"`([^`]*)`|'([^']*)'|#(\d+)")
 
 
 def decode_xprt_value(raw: str) -> str:
@@ -426,11 +431,22 @@ def decode_xprt_value(raw: str) -> str:
     блока); `script_probe` реэкспортирует имена для прежних путей импорта.
     """
     parts = []
-    for chunk, code in _TOKEN_RE.findall(raw):
+    for backtick, quoted, code in _TOKEN_RE.findall(raw):
         if code == "":
-            parts.append(chunk)
+            # Кусок значения: кавычка одной из двух конвенций.
+            parts.append(backtick if backtick else quoted)
             continue
-        value = int(code)
+        try:
+            value = int(code)
+        except ValueError as exc:
+            # int() на цепочке длиннее ~4300 цифр бросает ValueError
+            # (лимит CPython): повреждённое значение обязано стать отказом
+            # своей иерархии, а не сырым исключением из недр.
+            shown = code if len(code) <= 32 else code[:32] + "…"
+            raise ScriptBridgeError(
+                f"код #{shown} в значении выгрузки не разбирается как число "
+                f"({exc}). Значение повреждено или записано не тем кодеком."
+            ) from exc
         if value > 0x10FFFF:
             raise ScriptBridgeError(
                 f"код #{code} в значении выгрузки вне диапазона Unicode: "
@@ -455,14 +471,32 @@ def leftover_of(raw: str) -> str:
     return _TOKEN_RE.sub("", raw)
 
 
-#: Запись `<data>` внутри объекта — вместе с телом (обе формы: `<data>` и
-#: `<data_N>`), имя записи и **сырое** значение. Сырое, а не через
-#: `_VALUE_RE`: значения скриптов многосоставные (куски в кавычках и коды),
-#: и урезающий регексп вернул бы только первый кусок.
-_OBJECT_DATA_RE = re.compile(
-    r"<(?P<tag>data(?:_\d+)?)>(?P<body>.*?)</(?P=tag)>", re.S | re.I)
-_DATA_NAME_RE = re.compile(r"<name>\s*[`']?([^`<]*)[`']?\s*</name>", re.I)
+#: Сырое значение записи `<data>` — как записано, без снятия кавычек: у
+#: значений скриптов куски и коды чередуются, и урезающий `_VALUE_RE` вернул
+#: бы только первый кусок. Запись ищется в секциях свойств объекта; кавычки
+#: обеих конвенций разбирает `decode_xprt_value`.
 _RAW_VALUE_RE = re.compile(r"<value>(.*?)</value>", re.S | re.I)
+
+
+def _script_record_in(section: "ET.Element") -> Optional[str]:
+    """Сырое значение записи `Script` в секции свойств, если она есть.
+
+    Возвращает `""` для `<value></value>` и `None`, если записи `Script` в
+    секции нет. Обе формы данных (`<data>`/`<data_N>`) и обе конвенции
+    кавычек имени разбирают общие регекспы `_DATA_RE`/`_NAME_RE` — второй
+    копии грамматики записи здесь быть не должно (`_iter_data`).
+    """
+    body_text = ET.tostring(section, encoding="unicode")
+    for data in _DATA_RE.finditer(body_text):
+        name_match = _NAME_RE.search(data.group("body"))
+        if (not name_match
+                or clean_value(name_match.group(1)) != "Script"):
+            continue
+        value_match = _RAW_VALUE_RE.search(data.group("body"))
+        if value_match is None:
+            return ""
+        return value_match.group(1)
+    return None
 
 
 def parse_xprt_block_script(xml_text: str, block_name: str) -> Optional[str]:
@@ -475,33 +509,55 @@ def parse_xprt_block_script(xml_text: str, block_name: str) -> Optional[str]:
     (`getpropasstring`), и это его назначение: читающий инструмент не должен
     сдвигать модельное время вызывающего.
 
-    Ищется **первый** объект с таким именем (имена в проекте обычно
-    уникальны; в разных субмоделях могут совпасть — тогда вернётся скрипт
-    первого). Класс объекта не проверяется: запись ищется по имени свойства
-    (`Script`), и её наличие само говорит, что скрипт у объекта есть.
+    **Контекст — объекты первой страницы документа** (это главная страница:
+    замер 03.10.2026 — её объекты лежат прямыми детьми первого `<page>`) и
+    только они. Так исключаются две ошибки, измеренные а `max`-ревью: скрипт
+    вложенного в субмодель блока не выдаётся за скрипт самой субмодели
+    (у объектов-субмоделей своей записи `Script` нет, а вложенные есть), и
+    одноимённый объект с другой страницы не подменяет адресованный
+    (`LangBlock9` в поставке встречается 22 раза). Блок внутри субмодели этим
+    путём не адресуется — инструмент работает с главной страницей, как
+    `connect`.
 
     Возвращается `None`, если записи нет (нет скрипта или объекта); пустая
-    строка — запись есть, значение пустое.
+    строка — запись есть, значение пустое. Повреждённая выгрузка (XML не
+    разбирается) — `ScriptBridgeError`, а не `None`: «не разобралось» и
+    «записи нет» — разные состояния, и выдавать первое за второе нельзя.
+    Значение, разобранное не полностью, — тоже отказ (`leftover_of`): усечённый
+    скрипт неотличим от настоящего.
     """
-    for obj in _iter_xprt_objects(xml_text):
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as exc:
+        raise ScriptBridgeError(
+            f"выгрузка проекта не разбирается как XML ({exc}): читать скрипт "
+            f"блока нечем. Повреждённый снимок нельзя принять за «записи "
+            f"нет».") from exc
+    page = root.find(".//page")
+    if page is None:
+        return None
+    for obj in page:
+        if not _OBJECT_TAG_RE.fullmatch(obj.tag):
+            continue
         name_node = obj.find("name")
         if clean_value(name_node.text if name_node is not None else None) \
                 != block_name:
             continue
-        for section in (obj.find("custom_props"), obj.find("visual_props"),
-                        obj):
+        for section_name in ("custom_props", "visual_props"):
+            section = obj.find(section_name)
             if section is None:
                 continue
-            body_text = ET.tostring(section, encoding="unicode")
-            for data in _OBJECT_DATA_RE.finditer(body_text):
-                name_match = _DATA_NAME_RE.search(data.group("body"))
-                if (not name_match
-                        or clean_value(name_match.group(1)) != "Script"):
-                    continue
-                value_match = _RAW_VALUE_RE.search(data.group("body"))
-                if value_match is None:
-                    return ""
-                return decode_xprt_value(value_match.group(1))
+            raw = _script_record_in(section)
+            if raw is None:
+                continue
+            leftover = leftover_of(raw)
+            if leftover:
+                raise ScriptBridgeError(
+                    f"значение `Script` разобрано не полностью (остаток "
+                    f"{leftover[:48]!r}): форма записи не та, что измерена, и "
+                    f"вернуть усечённый скрипт значило бы выдать чужой текст "
+                    f"за настоящий.")
+            return decode_xprt_value(raw)
     return None
 
 

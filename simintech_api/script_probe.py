@@ -305,12 +305,16 @@ def parse_probe_result(text: str) -> ProbeResult:
     return ProbeResult(lines=lines[begins[0] + 1:ends[0]], complete=True)
 
 
-#: Значение в выгрузке `.xprt` — последовательность кусков в обратных кавычках
-#: и кодов `#NN` между ними. Декодер (`decode_xprt_value`) и проверка остатка
-#: (`leftover_of`) живут в `catalog.py` — там же декодирование файла и разбор
-#: записей объектов; здесь — реэкспорт: прежние пути импорта (`script_bridge`,
-#: тесты) остаются рабочими.
-from .catalog import decode_xprt_value, leftover_of  # noqa: E402,F401
+#: Значение в выгрузке `.xprt` — последовательность кусков в кавычках (обеих
+#: конвенций) и кодов `#NN` между ними. Декодер (`decode_xprt_value`) и
+#: проверка остатка (`leftover_of`) живут в `catalog.py` — там же
+#: декодирование файла и разбор записей объектов; здесь — реэкспорт с
+#: `as`-формой: строгая типизация видит имена и на прежнем пути импорта
+#: (`script_bridge`, тесты).
+from .catalog import (  # noqa: E402,F401
+    decode_xprt_value as decode_xprt_value,
+    leftover_of as leftover_of,
+)
 
 
 #: Скрипт страницы в выгрузке — `<script>` **сразу за** `<name>` страницы.
