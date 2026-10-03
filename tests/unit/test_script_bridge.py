@@ -16,6 +16,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 import warnings
 from pathlib import Path
 
@@ -1275,6 +1276,31 @@ def test_run_page_script_keeps_model_stuck_separate_from_success(tmp_path):
 
     assert result.outcome.kind == OUTCOME_MODEL_NOT_RUNNING
     assert result.outcome.lines == ["A"]
+
+
+def test_contour_exits_early_when_body_ended_but_time_frozen(tmp_path):
+    """`CTX_END` без роста времени — выход за grace, а не за полный таймаут.
+
+    Замер 03.10.2026 (пересоздание блока импортом при сборке, входы ещё не
+    подключены): контурный вызов стоил «1m 16s» — мост выжидал заводскую
+    минуту на модели, которая структурно не считает. С тела, дописавшего
+    конечный маркер, исход `model-not-running` уже определён; остаётся
+    короткий `BODY_END_GRACE_SECONDS` на разброс роста.
+
+    Таймаут моста здесь — 30 с (заводской был бы 60): без раннего выхода
+    тест падал бы по времени, а не по исходу.
+    """
+    env = FakeEnv(
+        time_grows=False,
+        raw_result=f"{PAGE_BEGIN_MARKER}\nA\n{PAGE_END_MARKER}\n")
+    bridge = ScriptBridge(env, project_id=42, time_growth_timeout_s=30.0)
+
+    started = time.monotonic()
+    result = bridge.run_page_script("x();", tmp_path / "e.txt")
+    elapsed = time.monotonic() - started
+
+    assert result.outcome.kind == OUTCOME_MODEL_NOT_RUNNING
+    assert elapsed < 10, f"ранний выход не сработал: {elapsed:.1f} с (ждали 30)"
 
 
 # ─── Чтение скрипта страницы ─────────────────────────────────────────────────
