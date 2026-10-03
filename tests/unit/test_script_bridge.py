@@ -1351,3 +1351,27 @@ def test_run_probe_still_refuses_when_file_absent(tmp_path):
         bridge.run_probe("", tmp_path / "out.txt")
 
     assert "файл результата" in str(exc.value)
+
+
+def test_locked_result_file_is_named_as_abort_not_raw_permission(
+        tmp_path, monkeypatch):
+    """Запертый файл результата — отказ с объяснением, а не сырой `PermissionError`.
+
+    Обрыв тела оставляет файл открытым в mmain (`freeobject` не исполнен), и
+    чтение снаружи падает `PermissionError` (живой замер 02.10.2026: сценарий
+    смерти клиента — файл моста остался заперт оборванным телом). Мост обязан
+    назвать причину: запертость возможна только у оборвавшегося тела, а
+    «пустой результат» классифицировался бы как «не собрался» — неверно.
+    """
+    env, bridge = _bridge(writes_result=True)
+
+    def locked_read(*args, **kwargs):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(Path, "read_text", locked_read)
+
+    with pytest.raises(ScriptBridgeError) as excinfo:
+        bridge.run_page_script("x();", tmp_path / "r.txt")
+
+    assert "заперт" in str(excinfo.value)
+    assert "обрыв" in str(excinfo.value)
