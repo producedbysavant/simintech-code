@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sys
 from enum import Enum
-from typing import Any, List, Optional
+from typing import Any, Iterable, List, Optional
 
 from ..exceptions import ComCallError, ComConnectionError, PackError
 from ..model import TDataDescriptor
@@ -215,7 +215,7 @@ class COMClient:
         self._connected = False
         self._release_job_if_process_dead()
 
-    def shutdown(self, kill_pids=None) -> None:
+    def shutdown(self, kill_pids: Optional[Iterable[int]] = None) -> None:
         """Закрыть управляемую COM-сессию и адресно убрать её процесс.
 
         Для OWNED-сессии выполняется:

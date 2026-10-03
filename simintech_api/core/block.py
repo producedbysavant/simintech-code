@@ -9,6 +9,7 @@ from ..exceptions import PortError
 from ..utils.converters import value_to_prop_string
 
 if TYPE_CHECKING:
+    from ..catalog import BlockCatalog
     from .project import Project
     from .port import Port
 
@@ -82,7 +83,8 @@ class Block:
         """Прочитать свойство блока как строку."""
         return _as_str(self.client.call("GetBlockPropAsString", self._id, name))
 
-    def get_properties(self, catalog=None) -> Dict[str, str]:
+    def get_properties(self,
+                       catalog: Optional["BlockCatalog"] = None) -> Dict[str, str]:
         """Прочитать известные свойства блока.
 
         COM API не умеет перечислять свойства блока (нет `GetPropCount`/
@@ -166,7 +168,7 @@ class Block:
         self.client.call("SetBlockPosition", self._id, x, y, width, height, angle)
         return self
 
-    def set_graph_prop(self, name: str, value) -> "Block":
+    def set_graph_prop(self, name: str, value: object) -> "Block":
         """Задать графическое свойство блока (`SetGraphBlockProp`).
 
         Часть свойств обычный `SetBlockProp` **молча игнорирует** — например
