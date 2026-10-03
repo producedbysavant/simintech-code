@@ -32,6 +32,8 @@ from typing import TYPE_CHECKING, List, NamedTuple, Optional, Tuple
 from ..catalog import decode_xprt
 from ..exceptions import ScriptBridgeError, ScriptBridgeUnsafeStateError
 from ..script_probe import (
+    PAGE_BEGIN_MARKER,
+    PAGE_END_MARKER,
     ContourOutcome,
     ProbeResult,
     TARGET_TOKEN_PREFIX,
@@ -89,8 +91,29 @@ class ScriptBridge:
     #: константа: иначе тест на замороженное время ждал бы заводскую минуту.
     TIME_GROWTH_TIMEOUT_SECONDS = 60.0
 
+    #: Сколько ещё следить за ростом времени после того, как тело контура
+    #: дописало `CTX_END`. Рост у считающейся модели приходит почти сразу
+    #: (замер 01.10.2026 на демо-модели — 2 с модельного времени за ≈70 мс),
+    #: а у модели, которая **структурно не считает** (сборка: входы ещё не
+    #: подключены), роста не будет вовсе — и полный
+    #: `TIME_GROWTH_TIMEOUT_SECONDS` на каждом контурном вызове при сборке был
+    #: чистой платой ожиданием: замер 03.10.2026 — «1m 16s» на пересоздании
+    #: блока импортом.
+    #:
+    #: Это **компромисс, а не измеренная граница** (находка ревью 03.10.2026):
+    #: модель, у которой первый шаг после тела скрипта идёт дольше запаса,
+    #: получит `model-not-running` при фактическом счёте. Поэтому запас
+    #: настраиваемый (`body_end_grace_s`) и заметно больше демо-замера;
+    #: живой замер на медленно стартующем проекте — в очереди стенда.
+    BODY_END_GRACE_SECONDS = 5.0
+
+    #: Как часто по ходу ожидания заглядывать в файл результата (секунды).
+    #: Время опрашивается каждые 0.05 с, файл читается реже — он на диске.
+    RESULT_POLL_SECONDS = 0.2
+
     def __init__(self, client: "COMClient", project_id: int, *,
-                 time_growth_timeout_s: float = TIME_GROWTH_TIMEOUT_SECONDS
+                 time_growth_timeout_s: float = TIME_GROWTH_TIMEOUT_SECONDS,
+                 body_end_grace_s: float = BODY_END_GRACE_SECONDS
                  ) -> None:
         # Таймаут проверяется сразу: нечисловое или неположительное значение
         # превратило бы ожидание либо в бесконечный цикл на единственном
@@ -100,9 +123,14 @@ class ScriptBridge:
             raise ValueError(
                 "таймаут роста модельного времени должен быть конечным и "
                 f"положительным, получено {time_growth_timeout_s!r}")
+        if not math.isfinite(body_end_grace_s) or body_end_grace_s <= 0:
+            raise ValueError(
+                "запас после завершения тела должен быть конечным и "
+                f"положительным, получено {body_end_grace_s!r}")
         self._client = client
         self._project_id = project_id
         self._time_growth_timeout_s = time_growth_timeout_s
+        self._body_end_grace_s = body_end_grace_s
         #: Выросло ли модельное время в последнем прогоне. Заполняет
         #: `_execute_installed`, читает контур (`run_page_script`) сразу после
         #: вызова — там, где неподвижное время не отказ, а исход. Объявлено в
@@ -463,7 +491,7 @@ class ScriptBridge:
                 self._start_and_wait()
                 self._last_time_grew = True
             else:
-                self._last_time_grew = self._try_start_and_wait()
+                self._last_time_grew = self._try_start_and_wait(result_path)
             text = self._read_result_text(
                 result_path, missing_is_empty=not time_growth_is_an_error)
         except BaseException as exc:
@@ -789,7 +817,31 @@ class ScriptBridge:
                     "невозможно, сверка выполнена по наличию текста записи цели и "
                     "отсутствию метки пробы")
 
-    def _try_start_and_wait(self) -> bool:
+    def _body_finished(self, result_path: Path) -> bool:
+        """Тело контура дописало `CTX_END` — по сырому файлу результата.
+
+        Читается по ходу ожидания (файл маленький, `RESULT_POLL_SECONDS`):
+        `CTX_END` после `CTX_BEGIN` означает, что тело скомпилировалось и
+        дошло до конца, — и это ровно тот признак, ради которого контур вообще
+        отличает исходы. Если он есть, а время стоит, ждать оставшиеся
+        десятки секунд нечего: `model-not-running` уже определён.
+
+        Любая ошибка чтения — «ещё нет»: ранний выход — оптимизация, а не
+        признак, и ошибиться в сторону ожидания безопаснее. Файла нет, пока
+        скрипт не собрался (живой замер 2026-09-29) — это тот же ответ.
+        """
+        try:
+            text = result_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return False
+        lines = text.splitlines()
+        begins = [index for index, line in enumerate(lines)
+                  if line == PAGE_BEGIN_MARKER]
+        if not begins:
+            return False
+        return any(line == PAGE_END_MARKER for line in lines[begins[0] + 1:])
+
+    def _try_start_and_wait(self, result_path: Optional[Path] = None) -> bool:
         """Запустить расчёт и вернуть, сдвинулось ли модельное время.
 
         `False` — **признак, а не диагноз**: так выглядят и скрипт, который
@@ -823,17 +875,41 @@ class ScriptBridge:
         запуска, оракул не увидел бы роста никогда — гонка: свежий проект
         давал «не выросло», хотя время прошло 0 → 2. База до запуска —
         единственное чтение, заведомо старшее всякого счёта.
+
+        **Ранний выход по `CTX_END`** (`result_path` передан контуром): как
+        только тело дописало конечный маркер, рост времени проверяется ещё
+        `body_end_grace_s` — и, если его нет, возвращается `False`, не
+        дожидаясь полного таймаута. Так исход «модель структурно не считает»
+        (сборка: входы ещё не подключены) стоит секунды, а не минуту; проба
+        (`run_probe`) файл не передаёт и ждёт как раньше — у неё неподвижное
+        время всё равно отказ.
+
+        **Граница запаса названа честно** (находка ревью 03.10.2026): модель,
+        у которой первый шаг после тела идёт дольше `body_end_grace_s`,
+        получит `False` — и исход `model-not-running` при фактическом счёте.
+        Заводской запас заметно больше демо-замера (70 мс) и настраивается;
+        живой замер на медленно стартующем проекте — в очереди стенда.
         """
         initial_time = float(self._client.call("GetProjectTime",
                                                self._project_id))
         self._client.call("ProjectRun", self._project_id)
         deadline = time.monotonic() + self._time_growth_timeout_s
+        body_end_deadline: Optional[float] = None
+        next_file_check = time.monotonic()
         while True:
             current_time = float(self._client.call("GetProjectTime",
                                                    self._project_id))
             if current_time > initial_time:
                 return True
-            if time.monotonic() >= deadline:
+            now = time.monotonic()
+            if (body_end_deadline is None and result_path is not None
+                    and now >= next_file_check):
+                next_file_check = now + self.RESULT_POLL_SECONDS
+                if self._body_finished(result_path):
+                    body_end_deadline = now + self._body_end_grace_s
+            if body_end_deadline is not None and now >= body_end_deadline:
+                return False
+            if now >= deadline:
                 return False
             time.sleep(0.05)
 
