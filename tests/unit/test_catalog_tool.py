@@ -138,11 +138,13 @@ def test_main_skips_classes_library_refuses(monkeypatch, tmp_path, capsys):
     """Классы, которые библиотека отвергает, не идут в обход и в `failed`.
 
     `Page.create_block` бросает `UnsupportedBlockError` для классов из
-    `UNSUPPORTED_COM_BLOCK_CLASSES` детерминированно. Пока обход брал их из
-    каталога, прогон без `--merge` клал их в `meta["failed"]` и возвращал 1 —
-    успешный прогон был невозможен. Проверка идёт через **настоящий**
-    `generate_catalog` и настоящий отказ `Page.create_block`; подменены только
-    COM-клиент и `Project`.
+    `UNSUPPORTED_COM_BLOCK_CLASSES` детерминированно (с 05.10.2026 там остался
+    один «Порт выхода»: «Из памяти» снят — годность в расчёте подтверждена
+    живым замером, и класс измеряется обычным путём — проверяется ниже). Пока
+    обход брал отвергаемые классы из каталога, прогон без `--merge` клал их в
+    `meta["failed"]` и возвращал 1 — успешный прогон был невозможен. Проверка
+    идёт через **настоящий** `generate_catalog` и настоящий отказ
+    `Page.create_block`; подменены только COM-клиент и `Project`.
     """
     from simintech_api.core.page import Page
 
@@ -192,9 +194,17 @@ def test_main_skips_classes_library_refuses(monkeypatch, tmp_path, capsys):
     code = catalog_tool.main(["--out", str(out)])
 
     assert code == 0
-    failed = BlockCatalog.load(out).meta["failed"]
+    catalog = BlockCatalog.load(out)
+    failed = catalog.meta["failed"]
+    assert "Порт выхода" not in failed, "отвергаемый класс — в пропуске, не в failed"
+    # Снятие запрета видно по составу обхода: «Из памяти» вычитаться больше
+    # не должен, а «Порт выхода» — по-прежнему да.
+    requested = catalog.meta["requested"]
+    assert "Из памяти" in requested, (
+        "снятый с запрета класс обязан попасть в обход")
+    assert "Порт выхода" not in requested, (
+        "отвергаемый класс из обхода вычитается")
     assert "Из памяти" not in failed
-    assert "Порт выхода" not in failed
     assert "пропущены" not in capsys.readouterr().err
 
 
