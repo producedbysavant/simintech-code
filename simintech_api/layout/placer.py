@@ -21,7 +21,9 @@ from typing import (
     TypeVar,
 )
 
-from ..constants import BLOCK_GAP, LAYER_GAP
+from ..constants import BLOCK_GAP
+
+from .canon import WIRE_PITCH, channel_width, round_step
 
 # Ключ блока — любой хешируемый: алгоритм раскладывает граф по ключам и не
 # заглядывает внутрь. Идентификатор не обязан быть int: примеры и тесты
@@ -34,14 +36,20 @@ class LayeredPlacer:
     """Размещение блоков слоями по направлению сигнала.
 
     Args:
-        layer_gap: расстояние между слоями по X.
+        layer_gap: ЯВНЫЙ пол шага слоёв по X. По канону (ТЗ 4.2) шаг
+            считается формулой col_width + channel_w, а не задаётся
+            константой; параметр нужен только чтобы задать пол
+            осознанно (по умолчанию пола нет).
         block_gap: расстояние между блоками в слое по Y.
     """
 
-    def __init__(self, layer_gap: float = LAYER_GAP,
+    def __init__(self, layer_gap: Optional[float] = None,
                  block_gap: float = BLOCK_GAP):
         self.layer_gap = layer_gap
         self.block_gap = block_gap
+        #: Высота нижнего канала обратных связей по последней раскладке
+        #: (ТЗ 4.3). Заполняется `place`, читается аудитом.
+        self.back_channel = 0.0
 
     def place(
         self,
@@ -67,6 +75,7 @@ class LayeredPlacer:
                 (обратные связи разрешены — они просто не образуют новый слой).
         """
         block_ids = list(block_ids)
+        connections = list(connections)
         if not block_ids:
             return {}
 
@@ -159,6 +168,33 @@ class LayeredPlacer:
             for index, layer in enumerate(layers):
                 for bid in layer:
                     layer_of[bid] = index
+        # 1b) Нормализация слоёв: слой приёмника строго правее слоя источника.
+        #     Ранжирование этого не обещало — обратные рёбра из него выкинуты, —
+        #     и связанные блоки могли встать в одну колонку; аудит называет
+        #     такие связи «внутриколоночными». Граф без обратных рёбер
+        #     ациклический, поэтому подъём слоёв сходится.
+        back = _back_edges(block_ids, outgoing)
+        for _pass in range(len(block_ids) + 1):
+            lifted = False
+            for src_id, dst_id in connections:
+                if (src_id, dst_id) in back:
+                    continue
+                if src_id not in layer_of or dst_id not in layer_of:
+                    continue
+                if layer_of[dst_id] <= layer_of[src_id]:
+                    layer_of[dst_id] = layer_of[src_id] + 1
+                    lifted = True
+            if not lifted:
+                break
+        levels = max(layer_of.values(), default=-1) + 1
+        rebuilt: List[List[_BlockId]] = [[] for _ in range(levels)]
+        for bid in block_ids:
+            if bid in layer_of:
+                rebuilt[layer_of[bid]].append(bid)
+        layers[:] = [layer for layer in rebuilt if layer]
+        for index, layer in enumerate(layers):
+            for bid in layer:
+                layer_of[bid] = index
 
         # 2) Упорядочивание внутри слоя (медианная эвристика)
         for li, layer in enumerate(layers):
@@ -172,41 +208,167 @@ class LayeredPlacer:
                 medians[bid] = _median(srcs) if srcs else float(len(prev_positions))
             layers[li] = sorted(layer, key=lambda b: medians[b])
 
-        # 3) Координаты центров
-        result: Dict[_BlockId, Tuple[float, float]] = {}
         cx0, cy0 = origin
 
-        def height(items: List[_BlockId]) -> float:
-            return (sum(sizes.get(b, (60.0, 40.0))[1] for b in items)
-                    + self.block_gap * max(0, len(items) - 1))
-
-        # Высоту считаем по основному ряду: вспомогательные блоки стоят ниже и
-        # на выравнивание слоёв влиять не должны, иначе цепочка разъезжается.
+        # 3) Вертикальные координаты (Y): стопкой, зазор по канону.
         main = {li: [b for b in layer if b not in helpers]
                 for li, layer in enumerate(layers)}
-        max_layer_height = max(
-            (height(items) for items in main.values()), default=0.0)
+        gaps: Dict[Tuple[int, int], float] = {}
+        ys, _heights = self._stack(layers, main, sizes, gaps, cy0)
+        # Два прохода: полосы зазоров зависят от Y, а Y — от зазоров.
+        for _pass in range(2):
+            gaps = self._vertical_gaps(
+                main, sizes, ys, layer_of, connections, gaps)
+            ys, _heights = self._stack(layers, main, sizes, gaps, cy0)
 
-        for li, layer in enumerate(layers):
-            # Вертикальное центрирование слоя относительно самой высокой колонки
-            y_start = cy0 + (max_layer_height - height(main[li])) / 2.0
-            y = y_start
-            for bid in main[li]:
-                w, h = sizes.get(bid, (60.0, 40.0))
-                result[bid] = (cx0 + li * self.layer_gap, y + h / 2.0)
-                y += h + self.block_gap
-            # Вспомогательный ряд — под основным, с тем же шагом
-            y = y_start + height(main[li]) + (
-                self.block_gap if main[li] else 0.0)
-            for bid in layer:
-                if bid not in helpers:
-                    continue
-                w, h = sizes.get(bid, (60.0, 40.0))
-                result[bid] = (cx0 + li * self.layer_gap, y + h / 2.0)
-                y += h + self.block_gap
-            cx0 += 0  # X каждого слоя фиксирован: cx0 + li*layer_gap
+        # 4) Шаг слоя по канону ТЗ 4.2 («канал шире разреза»):
+        #    layer_x[i+1] = layer_x[i] + col_width(i) + channel_w(i),
+        #    channel_w = STUB + WIRE_PITCH * max(1, cut_size).
+        #    cut_size(i) — связи через зазор i минус выровненные в одну
+        #    горизонталь: Y уже посчитан, выровненность берётся фактически.
+        col_width = [
+            max((sizes.get(b, (60.0, 40.0))[0] for b in layer), default=0.0)
+            for layer in layers]
+        edges = [
+            (layer_of[src], layer_of[dst], src, dst)
+            for src, dst in connections
+            if src in layer_of and dst in layer_of
+            and layer_of[src] < layer_of[dst]]
+        xs = [cx0]
+        for li in range(len(layers) - 1):
+            # Разрез — ВСЕ связи через зазор: выравненность по центрам не
+            # равна выравненности по пинам (у многопортового блока пин in:0
+            # стоит на центр − 8), поэтому до ТЗ 4.1 выровненные не
+            # вычитаем — иначе канал систематически занижен на 8 за связь.
+            cut = sum(1 for ls, ld, _src, _dst in edges if ls <= li < ld)
+            # Полуширины обеих колонок: иначе широкий сосед съедает канал
+            # (порт 260 против логики 32 — зазор 14 px вместо 136).
+            step = (col_width[li] / 2.0 + channel_width(cut)
+                    + col_width[li + 1] / 2.0)
+            if self.layer_gap is not None:
+                step = max(self.layer_gap, step)
+            xs.append(xs[li] + round_step(step))
+        result: Dict[_BlockId, Tuple[float, float]] = {
+            bid: (xs[li], ys[bid])
+            for li, layer in enumerate(layers) for bid in layer}
+
+        # 5) Обратные связи — не слой, а отдельный канал НИЖЕ всех
+        #    колонок высотой WIRE_PITCH за связь (ТЗ 4.3). Раскладчик
+        #    канал не рисует — он не трассирует, — но контракт держит:
+        #    ниже колонок ничего не ставится, и маршруты обратных связей
+        #    аудит вправе ждать именно здесь.
+        self.back_channel = WIRE_PITCH * sum(
+            1 for src, dst in connections
+            if src in layer_of and dst in layer_of
+            and layer_of[dst] <= layer_of[src])
 
         return result
+
+    def _stack(
+        self,
+        layers: List[List[_BlockId]],
+        main: Dict[int, List[_BlockId]],
+        sizes: Dict[_BlockId, Tuple[float, float]],
+        gaps: Dict[Tuple[int, int], float],
+        origin_y: float,
+    ) -> "Tuple[Dict[_BlockId, float], List[float]]":
+        """Y-координаты стопкой в слое; зазор пары берётся из `gaps`.
+
+        Возвращает (центры по Y, высоты слоёв). Вспомогательный ряд встаёт под
+        основным с базовым зазором — как и было до канона: он не влияет на
+        выравнивание слоёв, иначе цепочка разъезжается.
+        """
+        heights: List[float] = []
+        for li, layer in enumerate(layers):
+            total = 0.0
+            for index, bid in enumerate(main[li]):
+                total += sizes.get(bid, (60.0, 40.0))[1]
+                if index:
+                    total += gaps.get((li, index - 1), self.block_gap)
+            heights.append(total)
+        max_height = max(heights, default=0.0)
+        ys: Dict[_BlockId, float] = {}
+        for li, layer in enumerate(layers):
+            start = origin_y + (max_height - heights[li]) / 2.0
+            y = start
+            for index, bid in enumerate(main[li]):
+                h = sizes.get(bid, (60.0, 40.0))[1]
+                ys[bid] = y + h / 2.0
+                y += h + gaps.get((li, index), self.block_gap)
+            y = start + heights[li]
+            for bid in layer:
+                if bid in main[li]:
+                    continue
+                h = sizes.get(bid, (60.0, 40.0))[1]
+                y += self.block_gap
+                ys[bid] = y + h / 2.0
+                y += h
+        return ys, heights
+
+    def _vertical_gaps(
+        self,
+        main: Dict[int, List[_BlockId]],
+        sizes: Dict[_BlockId, Tuple[float, float]],
+        ys: Dict[_BlockId, float],
+        layer_of: Dict[_BlockId, int],
+        connections: Sequence[Tuple[_BlockId, _BlockId]],
+        gaps: Dict[Tuple[int, int], float],
+    ) -> Dict[Tuple[int, int], float]:
+        """Зазор между соседними блоками колонки — по канону ТЗ 4.x.
+
+        `pins_between` — число линий, пересекающих горизонтальную полосу зазора.
+        Линия, прыгающая через колонку (источник левее, приёмник правее),
+        проходит её на Y приёмника — там идёт её дальняя горизонталь; связь,
+        оканчивающаяся в колонке или выходящая из неё, полосу не пересекает
+        (её горизонталь лежит в канале, а не в теле колонки).
+
+        Зазор = `max(BLOCK_GAP, WIRE_PITCH * (pins_between + 1))`: при
+        BLOCK_GAP = 16 формула начинает влиять со второй такой линии (n = 2
+        даёт 24), иначе вылеты соседних пинов сразу делят один трек.
+        """
+        result = dict(gaps)
+        for li, items in main.items():
+            for index in range(len(items) - 1):
+                lower, upper = items[index], items[index + 1]
+                top = ys[upper] - sizes.get(upper, (60.0, 40.0))[1] / 2.0
+                bottom = ys[lower] + sizes.get(lower, (60.0, 40.0))[1] / 2.0
+                pins = 0
+                for src, dst in connections:
+                    if src not in layer_of or dst not in layer_of:
+                        continue
+                    if layer_of[src] < li < layer_of[dst] and bottom < ys[dst] < top:
+                        pins += 1
+                result[(li, index)] = max(
+                    self.block_gap, WIRE_PITCH * (pins + 1))
+        return result
+
+
+def _back_edges(
+    block_ids: "List[_BlockId]",
+    outgoing: "Dict[_BlockId, Set[_BlockId]]",
+) -> "Set[Tuple[_BlockId, _BlockId]]":
+    """Рёбра, замыкающие цикл (обратные связи) — их нормализация не трогает.
+
+    Обход в глубину: ребро на вершину, которая ещё в стеке, — обратное. Именно
+    эти рёбра ранжирование и выбрасывает; поднимать по ним слой приёмника
+    значило бы выпрямить обратную связь и развернуть часть схемы назад.
+    """
+    state: "Dict[_BlockId, int]" = {bid: 0 for bid in block_ids}
+    back: "Set[Tuple[_BlockId, _BlockId]]" = set()
+
+    def visit(node: _BlockId) -> None:
+        state[node] = 1
+        for nxt in outgoing.get(node, set()):
+            if state.get(nxt, 2) == 1:
+                back.add((node, nxt))
+            elif state.get(nxt, 2) == 0:
+                visit(nxt)
+        state[node] = 2
+
+    for bid in block_ids:
+        if state.get(bid, 0) == 0:
+            visit(bid)
+    return back
 
 
 def _median(values: Sequence[float]) -> float:
