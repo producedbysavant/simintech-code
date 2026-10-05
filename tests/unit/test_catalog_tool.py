@@ -83,6 +83,25 @@ def test_traversal_classes_without_index_keeps_default_set():
     assert "Константа" in names
 
 
+def test_traversal_classes_skips_direct_unsafe_classes():
+    """Классы с неполным прямым набором имён обход миновать обязан.
+
+    «Из памяти»: прямой `CreateBlock` отдаёт `a`/`src_type` без
+    `block_can_be_stub` (замер 2026-09-18), а у блоков в моделях имя есть —
+    поставляемый каталог хранит `a`, `block_can_be_stub`, `src_type`. Прямое
+    измерение обеднило бы каталог, и `check_params` начал бы отвергать имя,
+    которое у блоков есть (находка ревью PR #49). Класс при этом создавать
+    **можно** — снят с `UNSUPPORTED_COM_BLOCK_CLASSES` 05.10.2026; исключение
+    касается только генератора каталога.
+    """
+    names = catalog_tool._traversal_classes(
+        None, ["Из памяти", "Порт выхода", "Операция РАВНО"])
+
+    assert "Из памяти" not in names
+    assert "Порт выхода" not in names
+    assert "Операция РАВНО" in names
+
+
 def test_known_classes_of_missing_catalog_is_empty(tmp_path):
     """Пропавший каталог — пустой список, а не ошибка."""
     assert catalog_tool._known_classes(tmp_path / "нет.json") == []
@@ -139,8 +158,8 @@ def test_main_skips_classes_library_refuses(monkeypatch, tmp_path, capsys):
 
     `Page.create_block` бросает `UnsupportedBlockError` для классов из
     `UNSUPPORTED_COM_BLOCK_CLASSES` детерминированно (с 05.10.2026 там остался
-    один «Порт выхода»: «Из памяти» снят — годность в расчёте подтверждена
-    живым замером, и класс измеряется обычным путём — проверяется ниже). Пока
+    один «Порт выхода»: «Из памяти» снят с запрета — годность в расчёте
+    подтверждена живым замером, доказательство — в `test_page_blocks`). Пока
     обход брал отвергаемые классы из каталога, прогон без `--merge` клал их в
     `meta["failed"]` и возвращал 1 — успешный прогон был невозможен. Проверка
     идёт через **настоящий** `generate_catalog` и настоящий отказ
@@ -197,13 +216,15 @@ def test_main_skips_classes_library_refuses(monkeypatch, tmp_path, capsys):
     catalog = BlockCatalog.load(out)
     failed = catalog.meta["failed"]
     assert "Порт выхода" not in failed, "отвергаемый класс — в пропуске, не в failed"
-    # Снятие запрета видно по составу обхода: «Из памяти» вычитаться больше
-    # не должен, а «Порт выхода» — по-прежнему да.
+    # Состав обхода: «Порт выхода» вычтен как отвергаемый библиотекой, а
+    # «Из памяти» — как класс с неполным прямым набором имён (без этого каталог
+    # потерял бы `block_can_be_stub`). Снятие запрета у «Из памяти»
+    # доказывается не составом обхода, а созданием блока — `test_page_blocks`.
     requested = catalog.meta["requested"]
-    assert "Из памяти" in requested, (
-        "снятый с запрета класс обязан попасть в обход")
     assert "Порт выхода" not in requested, (
         "отвергаемый класс из обхода вычитается")
+    assert "Из памяти" not in requested, (
+        "класс с неполным прямым набором имён обход не измеряет")
     assert "Из памяти" not in failed
     assert "пропущены" not in capsys.readouterr().err
 

@@ -104,12 +104,21 @@ def _traversal_classes(computed: Optional[List[str]],
     `Page.create_block` отвергает **намеренно** (`UnsupportedBlockError`), а не
     отказом среды, поэтому каждый прогон клал бы их в `meta["failed"]` и
     возвращал 1 детерминированно — включая `--bin-dir` без `--merge`, где
-    раньше код возврата был 0. Если такой класс лежит в каталоге (в
-    поставляемом — «Из памяти» и «Порт выхода»), его имена сохраняются слиянием
-    (`--merge` пропускает уже известные классы, а не теряет их), а свежий
-    прогон без `--merge` их не воспроизводит — как и до этой правки.
+    раньше код возврата был 0. С 05.10.2026 в этом списке остался один «Порт
+    выхода»: «Из памяти» снят (годность в расчёте подтверждена замером), но из
+    **прямого обхода** исключён отдельным списком `CATALOG_SKIP_DIRECT_CLASSES`:
+    прямой `CreateBlock` отдаёт неполный набор имён (`a`/`src_type` без
+    `block_can_be_stub`) — обход обеднил бы каталог и заставил бы
+    `catalog.check_params` отвергать имя, которое у блоков моделей есть
+    (находка ревью PR #49).
+
+    Классы, минующие обход, но лежащие в каталоге, сохраняются слиянием:
+    `--merge` пропускает уже известные классы, а не теряет их, а свежий прогон
+    без `--merge` их не воспроизводит — как и до этой правки. Полный набор
+    имён они получают из каталога, а не из прямого создания.
     """
-    from .constants import (SUPPORTED_COM_BLOCK_CLASSES,
+    from .constants import (CATALOG_SKIP_DIRECT_CLASSES,
+                            SUPPORTED_COM_BLOCK_CLASSES,
                             UNSUPPORTED_COM_BLOCK_CLASSES)
 
     if computed is None:
@@ -118,6 +127,7 @@ def _traversal_classes(computed: Optional[List[str]],
         names = set(computed)
     names.update(known or ())
     names -= UNSUPPORTED_COM_BLOCK_CLASSES
+    names -= CATALOG_SKIP_DIRECT_CLASSES
     return sorted(names)
 
 
