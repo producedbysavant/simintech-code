@@ -411,8 +411,8 @@ def test_shutdown_owned_session_waits_then_kills_exact_pid(monkeypatch):
     waited = []
     monkeypatch.setattr(
         cc,
-        "wait_for_pid_exit",
-        lambda pid, timeout=5.0: waited.append((pid, timeout)) or False,
+        "_wait_process_gone",
+        lambda pid, timeout: waited.append((pid, timeout)) or False,
     )
     killed = []
     monkeypatch.setattr(
@@ -427,7 +427,8 @@ def test_shutdown_owned_session_waits_then_kills_exact_pid(monkeypatch):
     result = client.shutdown()
 
     assert result is False
-    assert waited == [(12345, 5.0), (12345, cc._KILL_CONFIRM_TIMEOUT)]
+    assert waited == [(12345, cc._GRACE_TIMEOUT),
+                      (12345, cc._KILL_CONFIRM_TIMEOUT)]
     assert killed == [[12345]]
     assert not client.connected
 
@@ -442,11 +443,8 @@ def test_shutdown_owned_session_does_not_kill_after_graceful_exit(monkeypatch):
 
     snapshots = [set(), {12345}]
     monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
-    monkeypatch.setattr(
-        cc,
-        "wait_for_pid_exit",
-        lambda pid, timeout=5.0: True,
-    )
+    # Процесс ушёл сам после release: персональная проверка это видит.
+    monkeypatch.setattr(cc, "is_process_alive", lambda pid: False)
 
     killed = []
     monkeypatch.setattr(cc, "_kill_pids", lambda pids: killed.append(list(pids)))
@@ -473,8 +471,8 @@ def test_shutdown_external_session_never_kills(monkeypatch):
     waited = []
     monkeypatch.setattr(
         cc,
-        "wait_for_pid_exit",
-        lambda pid, timeout=5.0: waited.append((pid, timeout)) or False,
+        "_wait_process_gone",
+        lambda pid, timeout: waited.append((pid, timeout)) or False,
     )
     killed = []
     monkeypatch.setattr(cc, "_kill_pids", lambda pids: killed.append(list(pids)))
@@ -550,8 +548,8 @@ def test_shutdown_reports_true_after_graceful_exit(monkeypatch):
 
     snapshots = [set(), {12345}]
     monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
-    monkeypatch.setattr(cc, "wait_for_pid_exit",
-                        lambda pid, timeout=5.0: True)
+    # Процесс ушёл сам после release — kill не нужен.
+    monkeypatch.setattr(cc, "is_process_alive", lambda pid: False)
     killed = []
     monkeypatch.setattr(cc, "_kill_pids", lambda pids: killed.append(list(pids)))
 
@@ -578,13 +576,12 @@ def test_shutdown_reports_false_when_pid_survives_kill(monkeypatch):
 
     snapshots = [set(), {12345}]
     monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
-    waits = []
-
-    def fake_wait(pid, timeout=5.0):
-        waits.append(pid)
-        return False
-
-    monkeypatch.setattr(cc, "wait_for_pid_exit", fake_wait)
+    monkeypatch.setattr(cc, "_GRACE_TIMEOUT", 0.0)
+    monkeypatch.setattr(cc, "_KILL_CONFIRM_TIMEOUT", 0.0)
+    asked = []
+    # Процесс переживает и грацию, и kill: персональная проверка всегда «жив».
+    monkeypatch.setattr(cc, "is_process_alive",
+                        lambda pid: asked.append(pid) or True)
     killed = []
     monkeypatch.setattr(cc, "_kill_pids", lambda pids: killed.append(list(pids)))
 
@@ -593,7 +590,7 @@ def test_shutdown_reports_false_when_pid_survives_kill(monkeypatch):
 
     assert client.shutdown() is False
     assert killed == [[12345]]
-    assert waits == [12345, 12345], "ожидание грации и повторная проверка"
+    assert asked.count(12345) >= 2, "живость переспрошена персонально после kill"
 
 
 def test_shutdown_reports_true_when_kill_confirmed(monkeypatch):
@@ -606,15 +603,17 @@ def test_shutdown_reports_true_when_kill_confirmed(monkeypatch):
 
     snapshots = [set(), {12345}]
     monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
-    calls = []
-
-    def fake_wait(pid, timeout=5.0):
-        calls.append(pid)
-        return len(calls) > 1  # грация — мимо; подтверждение — ушёл
-
-    monkeypatch.setattr(cc, "wait_for_pid_exit", fake_wait)
+    monkeypatch.setattr(cc, "_GRACE_TIMEOUT", 0.0)
+    monkeypatch.setattr(cc, "_KILL_CONFIRM_TIMEOUT", 0.0)
+    alive = {"v": True}
+    monkeypatch.setattr(cc, "is_process_alive", lambda pid: alive["v"])
     killed = []
-    monkeypatch.setattr(cc, "_kill_pids", lambda pids: killed.append(list(pids)))
+
+    def fake_kill(pids):
+        killed.append(list(pids))
+        alive["v"] = False  # taskkill /F завершает процесс
+
+    monkeypatch.setattr(cc, "_kill_pids", fake_kill)
 
     client.connect()
     assert client.ownership is SessionOwnership.OWNED
@@ -639,8 +638,8 @@ def test_shutdown_external_reports_true_without_targets(monkeypatch):
     monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
     waited = []
     monkeypatch.setattr(
-        cc, "wait_for_pid_exit",
-        lambda pid, timeout=5.0: waited.append(pid) or False)
+        cc, "_wait_process_gone",
+        lambda pid, timeout: waited.append(pid) or False)
     killed = []
     monkeypatch.setattr(cc, "_kill_pids", lambda pids: killed.append(list(pids)))
 
@@ -669,8 +668,8 @@ def test_shutdown_explicit_pids_reports_true_on_confirmed_exit(monkeypatch):
                         lambda *a, **k: killed.append(a[0]) or None)
     waits = []
     monkeypatch.setattr(
-        cc, "wait_for_pid_exit",
-        lambda pid, timeout=5.0: waits.append(pid) or True)
+        cc, "_wait_process_gone",
+        lambda pid, timeout: waits.append(pid) or True)
 
     assert client.shutdown(kill_pids=[999, 888]) is True
     assert waits == [999, 888]
@@ -691,13 +690,62 @@ def test_shutdown_explicit_pids_reports_false_when_target_survives(monkeypatch):
     monkeypatch.setattr(proc.subprocess, "run", lambda *a, **k: None)
     waits = []
     monkeypatch.setattr(
-        cc, "wait_for_pid_exit",
-        lambda pid, timeout=5.0: waits.append(pid) or False)
+        cc, "_wait_process_gone",
+        lambda pid, timeout: waits.append(pid) or False)
 
     # Один PID: `all` короткозамкнут — после первого живого целевого PID
     # исход False уже решён, проверка остальных не требуется.
     assert client.shutdown(kill_pids=[999]) is False
     assert waits == [999]
+
+
+def test_shutdown_does_not_trust_blind_snapshot(monkeypatch):
+    """Слепой снимок не выдаётся за «процесс завершён» (находка ревью code#54).
+
+    Все три сканера `get_mmain_pids` обёрнуты `try/except` и при отказе
+    дают пустое множество: «процесс ушёл» стало бы неотличимо от «не
+    удалось просканировать», и исход снятия вернулся бы ложным — ровно то
+    допущение, против которого #34. Живость целевого PID проверяется
+    персонально (`is_process_alive` — один `OpenProcess`), и отказ сканеров
+    на неё не влияет.
+    """
+    from simintech_api.core import com_client as cc
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+    client.connect()
+
+    # Сканеры «слепы»: пустой снимок при живом процессе.
+    monkeypatch.setattr(cc, "get_mmain_pids", lambda: set())
+    asked = []
+    monkeypatch.setattr(cc, "is_process_alive",
+                        lambda pid: asked.append(pid) or True)
+    monkeypatch.setattr(cc, "_KILL_CONFIRM_TIMEOUT", 0.0)
+    killed = []
+    monkeypatch.setattr(cc, "_kill_pids", lambda pids: killed.append(list(pids)))
+
+    assert client.shutdown(kill_pids=[999]) is False
+    assert killed == [[999]]
+    assert asked == [999], "живость спрошена персонально по целевому PID"
+
+
+def test_shutdown_personal_check_confirms_exit(monkeypatch):
+    """Персональная проверка подтвердила смерть — True и при слепом снимке."""
+    from simintech_api.core import com_client as cc
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+    client.connect()
+
+    monkeypatch.setattr(cc, "get_mmain_pids", lambda: set())
+    asked = []
+    monkeypatch.setattr(cc, "is_process_alive",
+                        lambda pid: asked.append(pid) or False)
+    monkeypatch.setattr(cc, "_KILL_CONFIRM_TIMEOUT", 0.0)
+    monkeypatch.setattr(cc, "_kill_pids", lambda pids: None)
+
+    assert client.shutdown(kill_pids=[999]) is True
+    assert asked == [999]
 
 
 def test_process_scanners_survive_undecodable_output(monkeypatch):
@@ -965,7 +1013,6 @@ def test_shutdown_closes_job_after_termination(monkeypatch):
     client = _make_client(monkeypatch, fake)
     snapshots = [set(), {12345}]
     monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
-    monkeypatch.setattr(cc, "wait_for_pid_exit", lambda pid, timeout=5.0: True)
     killed = []
     monkeypatch.setattr(cc, "_kill_pids", lambda pids: killed.append(list(pids)))
     closed = []
