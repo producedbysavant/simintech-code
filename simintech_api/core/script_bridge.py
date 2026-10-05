@@ -162,6 +162,11 @@ class ScriptBridge:
                 prefix="simintech-bridge-",
                 ignore_cleanup_errors=True) as tmp:
             path = Path(tmp) / "page.xprt"
+            # `native_path` здесь не нужен — и это не пропуск: `path` не
+            # приходит от клиента, это объект `Path`. На Windows это
+            # `WindowsPath`, чей `str()` всегда в родном виде («C:/a» →
+            # «C:\a»), каким бы ни задали `TMP` — прямые слэши сюда попасть
+            # не могут. Нормализуются клиентские пути — у `save_*`.
             self._client.call("SaveProjectXML", self._project_id, str(path))
             try:
                 data = path.read_bytes()

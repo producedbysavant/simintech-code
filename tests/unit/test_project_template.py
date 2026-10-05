@@ -17,17 +17,23 @@ import pytest  # noqa: E402
 from simintech_api.constants import (  # noqa: E402
     CALC_LAYER, MODEL_TEMPLATE_NAME, find_model_template)
 from simintech_api.core import project as project_module  # noqa: E402
-from simintech_api.core.project import Project  # noqa: E402
+from simintech_api.core.project import Project, native_path  # noqa: E402
 from simintech_api.exceptions import ProjectError  # noqa: E402
 
 
 class FakeClient:
-    """Минимальный клиент: только то, что нужен Project."""
+    """Минимальный клиент: только то, что нужен Project.
 
-    def __init__(self, project_id=77, layer_handle=1234):
+    `write` — путь, по которому «среда» создаёт файл при вызове записи:
+    `save_*` проверяют факт записи (`_require_written`), и фейк обязан
+    моделировать переход, а не молчать.
+    """
+
+    def __init__(self, project_id=77, layer_handle=1234, write=None):
         self.calls = []
         self._project_id = project_id
         self._layer_handle = layer_handle
+        self._write = write
 
     def open_template(self, path):
         self.calls.append(("open_template", path))
@@ -43,6 +49,9 @@ class FakeClient:
 
     def call(self, name, *args):
         self.calls.append((name, *args))
+        if self._write is not None:
+            with open(self._write, "wb") as fh:
+                fh.write(b"x")
         return 0
 
 
@@ -232,15 +241,20 @@ def test_repaint_returns_self():
     assert prj.repaint() is prj
 
 
-def test_export_db_to_xml_calls_com_method():
+def test_export_db_to_xml_calls_com_method(tmp_path):
     """Выгрузка базы идёт через `ExportDBToXML` и адресует текущий проект.
 
     Это единственный COM-путь выгрузки: он не требует ни командной строки, ни
-    макроса `dbexporttoxml`, которым база выгружалась раньше.
+    макроса `dbexporttoxml`, которым база выгружалась раньше. Путь до COM идёт
+    в «родном» виде (обратные слэши) — прямые COM-запись молча не принимает
+    (живой замер 05.10.2026, см. `Project.save_xml`), — и, как всякая запись,
+    проверяется фактом появления файла: фейк «среды» его создаёт.
     """
-    client = FakeClient()
+    signals = tmp_path / "signals.xml"
+    client = FakeClient(write=str(signals))
     project = Project(client, client._project_id)
 
-    project.export_db_to_xml("C:/tmp/signals.xml")
+    project.export_db_to_xml(str(signals))
 
-    assert ("ExportDBToXML", client._project_id, "C:/tmp/signals.xml") in client.calls
+    assert ("ExportDBToXML", client._project_id,
+            native_path(str(signals))) in client.calls

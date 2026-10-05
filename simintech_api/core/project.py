@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import PureWindowsPath
 from typing import TYPE_CHECKING, Dict, List
 
 from ..exceptions import PageError, ProjectError, SignalError
@@ -15,6 +16,60 @@ if TYPE_CHECKING:
     from .page import Page
     from .signal import Signal
     from .simulation import Simulation
+
+
+def native_path(path: str) -> str:
+    """Путь к COM-**записи** — в «родном» виде Windows (обратные слэши).
+
+    Живой замер 05.10.2026: `SaveProjectXML` с путём «C:/…/p.xprt» сообщает об
+    успехе, **не создавая файла** (то же у `SaveProjectBinary`), а с
+    «C:\\…\\p.xprt» — пишет; `OpenProject` при этом прямые слэши принимает.
+    Нормализация живёт здесь, а не у вызывающих: COM-запись проекта — одна на
+    библиотеку, и каждый клиент (в том числе MCP-сервер, передающий путь
+    агента как есть) должен получать рабочий путь.
+
+    `PureWindowsPath` — строковая нормализация, независимая от ОС клиента:
+    и на Linux-тестах «C:/a/b.xprt» превращается в «C:\\a\\b.xprt».
+
+    Пустой путь отвергается: `PureWindowsPath("")` — это «.», и среда приняла
+    бы текущий каталог за цель записи. Путь другой формы (например,
+    `/mnt/c/…`) молча превращается в «\\mnt\\c\\…» — угадывать намерения
+    вызывающего здесь нечем, но сохранить по такому пути не выйдет, и это
+    поймает проверка записи (`_require_written`), а не догадка.
+    """
+    if not path.strip():
+        raise ValueError("путь к файлу пуст")
+    return str(PureWindowsPath(path))
+
+
+def _file_stamp(path: str) -> tuple[bool, int, int]:
+    """Отпечаток файла до записи: (существует, размер, время правки в нс)."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return (False, 0, 0)
+    return (True, st.st_size, st.st_mtime_ns)
+
+
+def _require_written(method: str, path: str,
+                     before: tuple[bool, int, int]) -> None:
+    """Проверить, что COM-запись действительно создала или обновила файл.
+
+    Среда сообщает об успехе, даже когда файла не появляется (живой замер
+    05.10.2026: прямые слэши). «Сохранено» без файла — ложь, которая всплывёт
+    позже и в другом месте, поэтому успех без записи обязан стать отказом
+    здесь. Существовавший файл обязан измениться (размер или время правки) —
+    иначе он не перезаписан.
+    """
+    now = _file_stamp(path)
+    if not now[0]:
+        raise ProjectError(
+            f"{method} сообщил об успехе, но файла {path} нет: запись не "
+            "выполнена. Проверьте каталог и права на него.")
+    if before[0] and now[1] == before[1] and now[2] == before[2]:
+        raise ProjectError(
+            f"{method} сообщил об успехе, но файл {path} не изменился "
+            "(размер и время правки те же): перезаписи не было.")
 
 
 class Project:
@@ -173,12 +228,27 @@ class Project:
         self._client.call("CloseProject", self._id)
 
     def save_xml(self, path: str) -> None:
-        """Сохранить проект в XML-формат (.xprt)."""
-        self._client.call("SaveProjectXML", self._id, path)
+        """Сохранить проект в XML-формат (.xprt).
+
+        Путь нормализуется к «родному» виду (`native_path`): прямые слэши
+        COM-запись молча не принимает (живой замер 05.10.2026). После вызова
+        проверяется, что файл создан или обновлён (`_require_written`): успех
+        без файла — состояние, которое обязано стать отказом, а не ложью.
+        """
+        before = _file_stamp(path)
+        self._client.call("SaveProjectXML", self._id, native_path(path))
+        _require_written("SaveProjectXML", path, before)
 
     def save_binary(self, path: str) -> None:
-        """Сохранить проект в бинарный формат (.prt)."""
-        self._client.call("SaveProjectBinary", self._id, path)
+        """Сохранить проект в бинарный формат (.prt).
+
+        Путь нормализуется к «родному» виду (`native_path`): прямые слэши
+        COM-запись молча не принимает (живой замер 05.10.2026). После вызова
+        проверяется, что файл создан или обновлён (`_require_written`).
+        """
+        before = _file_stamp(path)
+        self._client.call("SaveProjectBinary", self._id, native_path(path))
+        _require_written("SaveProjectBinary", path, before)
 
     def export_db_to_xml(self, path: str) -> None:
         """Выгрузить базу сигналов проекта в XML.
@@ -186,11 +256,15 @@ class Project:
         COM-путь выгрузки базы: не нужны ни командная строка, ни макрос
         `dbexporttoxml` — база отдаётся одним вызовом. Файл пишет сам
         SimInTech; читает его `simintech_api.sdb.SignalDatabase.from_xml`.
+        Путь нормализуется, как у прочих COM-записей, и проверяется факт
+        записи (`_require_written`).
 
         Проверено на поставке: проект с базой отдаёт файл, который наш разбор
         читает целиком (5 категорий, 99 групп, 5805 сигналов).
         """
-        self._client.call("ExportDBToXML", self._id, path)
+        before = _file_stamp(path)
+        self._client.call("ExportDBToXML", self._id, native_path(path))
+        _require_written("ExportDBToXML", path, before)
 
     # ─── Настройки расчёта (свойства слоя) ──────────────────────────
 
@@ -257,10 +331,13 @@ class Project:
     def write_restart(self, path: str) -> None:
         """Записать рестарт проекта в файл (COM `WriteProjectRestart`).
 
-        На живом SimInTech не проверено: ни формат файла, ни то, требуется ли
-        предварительный `write_restart_point`.
+        Путь нормализуется к «родному» виду (`native_path`), как у прочих
+        COM-записей. Файл **не проверяется**: метод на живом SimInTech не
+        проверен (ни формат, ни необходимость `write_restart_point`), и
+        требование «файл появился» могло бы отвергнуть корректный сценарий,
+        которого мы не мерили.
         """
-        self._client.call("WriteProjectRestart", self._id, path)
+        self._client.call("WriteProjectRestart", self._id, native_path(path))
 
     def read_restart(self, path: str) -> None:
         """Загрузить рестарт проекта из файла (COM `ReadProjectRestart`).
