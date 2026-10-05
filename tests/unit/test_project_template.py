@@ -236,11 +236,14 @@ def test_export_db_to_xml_calls_com_method():
     """Выгрузка базы идёт через `ExportDBToXML` и адресует текущий проект.
 
     Это единственный COM-путь выгрузки: он не требует ни командной строки, ни
-    макроса `dbexporttoxml`, которым база выгружалась раньше.
+    макроса `dbexporttoxml`, которым база выгружалась раньше. Путь до COM идёт
+    в «родном» виде (обратные слэши) — прямые COM-запись молча не принимает
+    (живой замер 05.10.2026, см. `Project.save_xml`).
     """
     client = FakeClient()
     project = Project(client, client._project_id)
 
     project.export_db_to_xml("C:/tmp/signals.xml")
 
-    assert ("ExportDBToXML", client._project_id, "C:/tmp/signals.xml") in client.calls
+    assert ("ExportDBToXML", client._project_id, "C:\\tmp\\signals.xml") \
+        in client.calls

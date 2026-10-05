@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import PureWindowsPath
 from typing import TYPE_CHECKING, Dict, List
 
 from ..exceptions import PageError, ProjectError, SignalError
@@ -15,6 +16,22 @@ if TYPE_CHECKING:
     from .page import Page
     from .signal import Signal
     from .simulation import Simulation
+
+
+def _native_path(path: str) -> str:
+    """Путь к COM-**записи** — в «родном» виде Windows (обратные слэши).
+
+    Живой замер 05.10.2026: `SaveProjectXML` с путём «C:/…/p.xprt» сообщает об
+    успехе, **не создавая файла** (то же у `SaveProjectBinary`), а с
+    «C:\\…\\p.xprt» — пишет; `OpenProject` при этом прямые слэши принимает.
+    Нормализация живёт здесь, а не у вызывающих: COM-запись проекта — одна на
+    библиотеку, и каждый клиент (в том числе MCP-сервер, передающий путь
+    агента как есть) должен получать рабочий путь.
+
+    `PureWindowsPath` — строковая нормализация, независимая от ОС клиента:
+    и на Linux-тестах «C:/a/b.xprt» превращается в «C:\\a\\b.xprt».
+    """
+    return str(PureWindowsPath(path))
 
 
 class Project:
@@ -173,12 +190,20 @@ class Project:
         self._client.call("CloseProject", self._id)
 
     def save_xml(self, path: str) -> None:
-        """Сохранить проект в XML-формат (.xprt)."""
-        self._client.call("SaveProjectXML", self._id, path)
+        """Сохранить проект в XML-формат (.xprt).
+
+        Путь нормализуется к «родному» виду (`_native_path`): прямые слэши
+        COM-запись молча не принимает (живой замер 05.10.2026).
+        """
+        self._client.call("SaveProjectXML", self._id, _native_path(path))
 
     def save_binary(self, path: str) -> None:
-        """Сохранить проект в бинарный формат (.prt)."""
-        self._client.call("SaveProjectBinary", self._id, path)
+        """Сохранить проект в бинарный формат (.prt).
+
+        Путь нормализуется к «родному» виду (`_native_path`): прямые слэши
+        COM-запись молча не принимает (живой замер 05.10.2026).
+        """
+        self._client.call("SaveProjectBinary", self._id, _native_path(path))
 
     def export_db_to_xml(self, path: str) -> None:
         """Выгрузить базу сигналов проекта в XML.
@@ -190,7 +215,7 @@ class Project:
         Проверено на поставке: проект с базой отдаёт файл, который наш разбор
         читает целиком (5 категорий, 99 групп, 5805 сигналов).
         """
-        self._client.call("ExportDBToXML", self._id, path)
+        self._client.call("ExportDBToXML", self._id, _native_path(path))
 
     # ─── Настройки расчёта (свойства слоя) ──────────────────────────
 
