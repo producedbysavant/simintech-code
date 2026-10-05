@@ -66,7 +66,7 @@ def test_create_block_refusal_names_the_library_not_com():
     """
     page, client = _page()
     with pytest.raises(UnsupportedBlockError) as refused:
-        page.create_block("Из памяти", 0, 0)
+        page.create_block("Порт выхода", 0, 0)
 
     text = str(refused.value)
     assert "библиотека" in text, f"отказ не называет, кто отказывает: {text}"
@@ -74,6 +74,21 @@ def test_create_block_refusal_names_the_library_not_com():
         f"отказ снова называет причиной COM: {text}")
     assert client.calls == [], (
         "отказ обязан стоять до обращений к COM — иначе он не бесплатен")
+
+
+def test_create_block_from_memory_no_longer_refused():
+    """«Из памяти» снят с запрета: годность в расчёте подтверждена замером.
+
+    Живой замер 05.10.2026: пара `ToMem_0`/`FromMem_0` (настройка — `PortNames`
+    + `initobject`) считает, и значение ходит через неё. Библиотека класс
+    больше не отвергает — регрессия вернула бы запрет незаметно.
+    """
+    page, client = _page()
+
+    page.create_block("Из памяти", 0, 0)
+
+    assert any(call[0] == "CreateBlock" for call in client.calls), (
+        "запрета больше нет — вызов обязан дойти до COM `CreateBlock`")
 
 
 # ─── Таблица штатных размеров ─────────────────────────────────────
