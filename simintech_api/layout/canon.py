@@ -9,7 +9,10 @@ from __future__ import annotations
 
 from typing import List, Tuple
 
-from ..constants import STUB, WIRE_PITCH
+# `as`-форма — явный реэкспорт: канон отдаёт эти константы наружу
+# (`placer` импортирует WIRE_PITCH именно отсюда), а mypy strict без
+# явного реэкспорта считает импорт приватным ([attr-defined]).
+from ..constants import STUB as STUB, WIRE_PITCH as WIRE_PITCH
 
 #: Допуск «связь выровнена»: Y конца у источника и Y конца у приёмника
 #: совпадают (ТЗ 4.1). Полпикселя — координаты считаются целыми.
@@ -39,3 +42,14 @@ def cut_sizes(nets: "List[Tuple[int, int, bool]]", gaps: int) -> "List[int]":
             if not aligned and src <= gap < dst)
         for gap in range(gaps)
     ]
+
+
+def round_step(step: float) -> float:
+    """Шаг колонки — ВВЕРХ до шага трека: округление не съедает канал (ТЗ 4.2).
+
+    Канон даёт ширину канала, кратную `WIRE_PITCH`, но полуширины соседей могут
+    быть нечётными (порт 260 → 130), и центр уезжает с разметки. Снап в MCP
+    тогда двигал бы X и подрезал зазор на 2–4 px — аудит ловит это как overflow.
+    Округление шага вверх сохраняет разметку и растит зазор, а не режет его.
+    """
+    return -(-step // WIRE_PITCH) * WIRE_PITCH

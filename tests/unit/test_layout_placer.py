@@ -120,10 +120,10 @@ def test_layer_step_follows_canon_not_constant():
     placer = LayeredPlacer()
 
     chain = placer.place(['A', 'B', 'C'], [('A', 'B'), ('B', 'C')])
-    assert chain['B'][0] == 84.0
+    assert chain['B'][0] == 88.0
 
     branch = placer.place(['A', 'B', 'C'], [('A', 'B'), ('A', 'C')])
-    assert branch['B'][0] == 92.0
+    assert branch['B'][0] == 96.0
 
 
 def test_explicit_layer_gap_is_only_a_floor():
@@ -134,4 +134,74 @@ def test_explicit_layer_gap_is_only_a_floor():
     assert wide['B'][0] == 200.0
 
     narrow = LayeredPlacer(layer_gap=10).place(['A', 'B', 'C'], chain)
-    assert narrow['B'][0] == 84.0
+    assert narrow['B'][0] == 88.0
+
+
+def test_vertical_gap_widens_with_pins_between():
+    """Линии, пересекающие полосу зазора, расширяют её (канон ТЗ 4.x).
+
+    Один пин в полосе канон не теснит — BLOCK_GAP = 16 уже равен
+    WIRE_PITCH * (1 + 1); два расширяют зазор до 24, иначе вылеты соседних
+    пинов делят один трек.
+    """
+    placer = LayeredPlacer()
+    main = {1: ['b1', 'b2']}
+    sizes = {'b1': (60.0, 40.0), 'b2': (60.0, 40.0)}
+    ys = {'b1': 20.0, 'b2': 76.0, 's1': 0.0, 's2': 0.0,
+          'r1': 50.0, 'r2': 50.0}
+    layer_of = {'s1': 0, 's2': 0, 'r1': 2, 'r2': 2}
+
+    one = placer._vertical_gaps(main, sizes, ys, layer_of,
+                                [('s1', 'r1')], {})
+    assert one[(1, 0)] == 16.0
+
+    two = placer._vertical_gaps(main, sizes, ys, layer_of,
+                                [('s1', 'r1'), ('s2', 'r2')], {})
+    assert two[(1, 0)] == 24.0
+
+
+def test_back_edge_channel_is_reserved_below_columns():
+    """Обратные связи — не слой: под колонками резервируется канал (ТЗ 4.3)."""
+    chain = LayeredPlacer()
+    chain.place(['A', 'B', 'C'], [('A', 'B'), ('B', 'C')])
+    assert chain.back_channel == 0.0
+
+    loop = LayeredPlacer()
+    loop.place(['A', 'B'], [('A', 'B'), ('B', 'A')])
+    assert loop.back_channel == 8.0
+
+
+def test_layer_step_accounts_for_neighbour_half_width():
+    """Широкий сосед не съедает канал: считаются полуширины обеих колонок."""
+    placer = LayeredPlacer()
+    sizes = {'port': (260.0, 40.0), 'logic': (32.0, 40.0)}
+
+    pos = placer.place(['port', 'logic'], [('port', 'logic')], sizes=sizes)
+
+    assert pos['port'][0] == 0.0
+    assert pos['logic'][0] == 176.0
+
+
+def test_layers_normalized_no_forward_link_inside_column():
+    """Прямая связь не остаётся внутри колонки: слои нормализуются.
+
+    «Ромб»: b и c зависят от a, а c ещё и от b. Ранжирование ставило b и c в
+    один слой, и связь b→c оказывалась внутриколоночной — аудит называл её
+    «внутриколоночной».
+    """
+    placer = LayeredPlacer()
+
+    pos = placer.place(['a', 'b', 'c'], [('a', 'b'), ('a', 'c'), ('b', 'c')])
+
+    x = {name: pos[name][0] for name in pos}
+    assert x['a'] < x['b'] < x['c']
+
+
+def test_feedback_does_not_lift_its_target():
+    """Обратная связь не поднимает слой приёмника: петля остаётся петлёй."""
+    placer = LayeredPlacer()
+
+    pos = placer.place(['a', 'b'], [('a', 'b'), ('b', 'a')])
+
+    x = {name: pos[name][0] for name in pos}
+    assert x['a'] < x['b']
