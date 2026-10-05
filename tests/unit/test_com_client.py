@@ -394,7 +394,11 @@ def test_connect_retries_snapshot_for_fresh_pid(monkeypatch):
 
 
 def test_shutdown_owned_session_waits_then_kills_exact_pid(monkeypatch):
-    """Managed shutdown ждёт PID и убивает его, если он всё ещё жив."""
+    """Managed shutdown ждёт PID и убивает его, если он всё ещё жив.
+
+    После kill — повторная проверка (исход наблюдаем, issue #34); здесь она
+    находит процесс живым, поэтому результат вызова — False.
+    """
     from simintech_api.core import com_client as cc
     from simintech_api.core.com_client import SessionOwnership
 
@@ -420,9 +424,10 @@ def test_shutdown_owned_session_waits_then_kills_exact_pid(monkeypatch):
     client.connect()
     assert client.ownership is SessionOwnership.OWNED
 
-    client.shutdown()
+    result = client.shutdown()
 
-    assert waited == [(12345, 5.0)]
+    assert result is False
+    assert waited == [(12345, 5.0), (12345, cc._KILL_CONFIRM_TIMEOUT)]
     assert killed == [[12345]]
     assert not client.connected
 
@@ -533,6 +538,166 @@ def test_shutdown_kills_explicit_pids(monkeypatch):
     assert all(args and args[0] == "taskkill" for args in killed)
     assert ["taskkill", "/F", "/PID", "999"] in killed
     assert ["taskkill", "/F", "/PID", "888"] in killed
+
+
+def test_shutdown_reports_true_after_graceful_exit(monkeypatch):
+    """Managed shutdown: PID ушёл после release — исход True, kill не звали."""
+    from simintech_api.core import com_client as cc
+    from simintech_api.core.com_client import SessionOwnership
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+
+    snapshots = [set(), {12345}]
+    monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
+    monkeypatch.setattr(cc, "wait_for_pid_exit",
+                        lambda pid, timeout=5.0: True)
+    killed = []
+    monkeypatch.setattr(cc, "_kill_pids", lambda pids: killed.append(list(pids)))
+
+    client.connect()
+    assert client.ownership is SessionOwnership.OWNED
+
+    assert client.shutdown() is True
+    assert killed == []
+    assert not client.connected
+
+
+def test_shutdown_reports_false_when_pid_survives_kill(monkeypatch):
+    """Повторная проверка после kill нашла процесс живым — исход False.
+
+    `kill_pids` глотает отказы `taskkill` намеренно (best-effort), поэтому
+    единственный честный признак исхода — собственная перепроверка живости,
+    а не допущение «процесс завершён (или завершается этой строкой)».
+    """
+    from simintech_api.core import com_client as cc
+    from simintech_api.core.com_client import SessionOwnership
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+
+    snapshots = [set(), {12345}]
+    monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
+    waits = []
+
+    def fake_wait(pid, timeout=5.0):
+        waits.append(pid)
+        return False
+
+    monkeypatch.setattr(cc, "wait_for_pid_exit", fake_wait)
+    killed = []
+    monkeypatch.setattr(cc, "_kill_pids", lambda pids: killed.append(list(pids)))
+
+    client.connect()
+    assert client.ownership is SessionOwnership.OWNED
+
+    assert client.shutdown() is False
+    assert killed == [[12345]]
+    assert waits == [12345, 12345], "ожидание грации и повторная проверка"
+
+
+def test_shutdown_reports_true_when_kill_confirmed(monkeypatch):
+    """Kill сработал: повторная проверка не нашла PID — исход True."""
+    from simintech_api.core import com_client as cc
+    from simintech_api.core.com_client import SessionOwnership
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+
+    snapshots = [set(), {12345}]
+    monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
+    calls = []
+
+    def fake_wait(pid, timeout=5.0):
+        calls.append(pid)
+        return len(calls) > 1  # грация — мимо; подтверждение — ушёл
+
+    monkeypatch.setattr(cc, "wait_for_pid_exit", fake_wait)
+    killed = []
+    monkeypatch.setattr(cc, "_kill_pids", lambda pids: killed.append(list(pids)))
+
+    client.connect()
+    assert client.ownership is SessionOwnership.OWNED
+
+    assert client.shutdown() is True
+    assert killed == [[12345]]
+
+
+def test_shutdown_external_reports_true_without_targets(monkeypatch):
+    """EXTERNAL-сессия: заверять нечего — True, процесс не трогается.
+
+    «Нечего заверять» — не то же, что «завершён»: вызывающему этот True
+    не даёт права утверждать снятие чужого процесса.
+    """
+    from simintech_api.core import com_client as cc
+    from simintech_api.core.com_client import SessionOwnership
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+
+    snapshots = [{12345}, {12345}]
+    monkeypatch.setattr(cc, "get_mmain_pids", lambda: snapshots.pop(0))
+    waited = []
+    monkeypatch.setattr(
+        cc, "wait_for_pid_exit",
+        lambda pid, timeout=5.0: waited.append(pid) or False)
+    killed = []
+    monkeypatch.setattr(cc, "_kill_pids", lambda pids: killed.append(list(pids)))
+
+    client.connect()
+    assert client.ownership is SessionOwnership.EXTERNAL
+
+    assert client.shutdown() is True
+    assert waited == []
+    assert killed == []
+
+
+def test_shutdown_explicit_pids_reports_true_on_confirmed_exit(monkeypatch):
+    """shutdown(kill_pids=…): исход — по повторной проверке переданных PID."""
+    from simintech_api.core import com_client as cc
+    from simintech_api.utils import processes as proc
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+    client.connect()
+
+    killed = []
+    monkeypatch.setattr(proc, "_pids_wmic", lambda: set())
+    monkeypatch.setattr(proc, "_pids_tasklist", lambda: set())
+    monkeypatch.setattr(proc, "_pids_powershell", lambda: set())
+    monkeypatch.setattr(proc.subprocess, "run",
+                        lambda *a, **k: killed.append(a[0]) or None)
+    waits = []
+    monkeypatch.setattr(
+        cc, "wait_for_pid_exit",
+        lambda pid, timeout=5.0: waits.append(pid) or True)
+
+    assert client.shutdown(kill_pids=[999, 888]) is True
+    assert waits == [999, 888]
+
+
+def test_shutdown_explicit_pids_reports_false_when_target_survives(monkeypatch):
+    """Целевой PID из kill_pids остался жив — исход False, не молчание."""
+    from simintech_api.core import com_client as cc
+    from simintech_api.utils import processes as proc
+
+    fake = FakeServer()
+    client = _make_client(monkeypatch, fake)
+    client.connect()
+
+    monkeypatch.setattr(proc, "_pids_wmic", lambda: set())
+    monkeypatch.setattr(proc, "_pids_tasklist", lambda: set())
+    monkeypatch.setattr(proc, "_pids_powershell", lambda: set())
+    monkeypatch.setattr(proc.subprocess, "run", lambda *a, **k: None)
+    waits = []
+    monkeypatch.setattr(
+        cc, "wait_for_pid_exit",
+        lambda pid, timeout=5.0: waits.append(pid) or False)
+
+    # Один PID: `all` короткозамкнут — после первого живого целевого PID
+    # исход False уже решён, проверка остальных не требуется.
+    assert client.shutdown(kill_pids=[999]) is False
+    assert waits == [999]
 
 
 def test_process_scanners_survive_undecodable_output(monkeypatch):

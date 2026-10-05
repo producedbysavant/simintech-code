@@ -16,6 +16,10 @@ from ..utils.job_object import (assign_kill_on_close, close_handle,
                                 is_process_alive)
 from ..utils.processes import get_mmain_pids, kill_pids as _kill_pids, wait_for_pid_exit
 
+#: Сколько ждать подтверждения снятия процесса после kill и закрытия job'а.
+#: Короткая перепроверка снимком: исход обязан быть фактом, а не допущением.
+_KILL_CONFIRM_TIMEOUT = 2.0
+
 
 class SessionOwnership(str, Enum):
     """Lifecycle ownership of the process behind the current COM session."""
@@ -215,7 +219,7 @@ class COMClient:
         self._connected = False
         self._release_job_if_process_dead()
 
-    def shutdown(self, kill_pids: Optional[Iterable[int]] = None) -> None:
+    def shutdown(self, kill_pids: Optional[Iterable[int]] = None) -> bool:
         """Закрыть управляемую COM-сессию и адресно убрать её процесс.
 
         Для OWNED-сессии выполняется:
@@ -231,10 +235,25 @@ class COMClient:
         и `kill`, а при ``kill_pids`` — только если процесс уже мёртв (права
         на завершение здесь определяет вызывающая сторона).
 
+        **Исход снятия наблюдаем.** `kill_pids` глотает отказы `taskkill`
+        намеренно (best-effort), а завершение и закрытие job'а асинхронны,
+        поэтому после всех попыток делается повторная проверка живости
+        целевых PID, и её результат возвращается вызывающему: молчаливый
+        `None` позволял утверждать «процесс завершён» без проверки.
+
         Args:
             kill_pids: необязательная итерация PID'ов, разрешённых вызывающей
                 стороной к завершению. Если не задана, завершение выполняется
                 автоматически только для OWNED session PID.
+
+        Returns:
+            True — целевые процессы (PID OWNED-сессии или явно переданные)
+            отсутствуют среди `mmain.exe` к моменту возврата; если заверять
+            было нечего (EXTERNAL/UNKNOWN без ``kill_pids``, пустой список,
+            не-Windows) — тоже True: обязательств не было, и этот True не
+            утверждает снятие чужого процесса. False — после попыток
+            (ожидание, kill, закрытие job'а) повторная проверка нашла целевой
+            PID живым: утверждать «процесс завершён» нельзя.
         """
         pid = self._session_pid
         ownership = self._ownership
@@ -244,26 +263,38 @@ class COMClient:
 
         if sys.platform != "win32":
             self._reset_session_state()
-            return
+            return True
 
         if kill_pids is not None:
-            if kill_pids:
-                _kill_pids(kill_pids)
+            targets = [int(one) for one in kill_pids]
+            if targets:
+                _kill_pids(targets)
             self._release_job_if_process_dead()
             self._reset_session_state()
-            return
+            return self._confirmed_exit(targets)
 
         if ownership is not SessionOwnership.OWNED or not pid or pid <= 0:
             self._reset_session_state()
-            return
+            return True
 
         if not wait_for_pid_exit(pid, timeout=5.0):
             _kill_pids([pid])
 
-        # Процесс завершён (или завершается этой строкой): закрытие job'а
-        # больше ничего живого не задевает — и служит последней мерой.
+        # Закрытие job'а — последняя мера (KILL_ON_JOB_CLOSE); исход же
+        # подтверждается повторной проверкой, а не допущением.
         self._close_job()
         self._reset_session_state()
+        return self._confirmed_exit([pid])
+
+    @staticmethod
+    def _confirmed_exit(pids: List[int]) -> bool:
+        """Повторная проверка живости целевых PID после попыток снятия.
+
+        Единственный честный источник исхода: `kill_pids` молчит об отказах
+        `taskkill`, а завершение и закрытие job'а асинхронны.
+        """
+        return all(wait_for_pid_exit(one, timeout=_KILL_CONFIRM_TIMEOUT)
+                   for one in pids)
 
     def _reset_session_state(self) -> None:
         """Сбросить идентичность завершённой COM-сессии."""
