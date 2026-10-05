@@ -107,3 +107,31 @@ def test_pure_cycle_places():
     # любых числах, то есть не падала бы ни при каком размещении.
     assert pos['A'][0] == 0.0
     assert pos['B'][0] > pos['A'][0]
+
+
+def test_layer_step_follows_canon_not_constant():
+    """Шаг слоя — канон ТЗ 4.2 (col_width + channel_w), а не фиксированные 160.
+
+    Тест держит величину шага: подмена формулы (например, возврат к LAYER_GAP)
+    краснит его. Звено цепочки выровнено по Y, поэтому разрез пуст и канал равен
+    STUB + WIRE_PITCH; у ветвления два невыровненных луча — канал шире на шаг
+    трека.
+    """
+    placer = LayeredPlacer()
+
+    chain = placer.place(['A', 'B', 'C'], [('A', 'B'), ('B', 'C')])
+    assert chain['B'][0] == 84.0
+
+    branch = placer.place(['A', 'B', 'C'], [('A', 'B'), ('A', 'C')])
+    assert branch['B'][0] == 92.0
+
+
+def test_explicit_layer_gap_is_only_a_floor():
+    """Явный layer_gap — пол, а не шаг: канон может его перекрыть."""
+    chain = [('A', 'B'), ('B', 'C')]
+
+    wide = LayeredPlacer(layer_gap=200).place(['A', 'B', 'C'], chain)
+    assert wide['B'][0] == 200.0
+
+    narrow = LayeredPlacer(layer_gap=10).place(['A', 'B', 'C'], chain)
+    assert narrow['B'][0] == 84.0

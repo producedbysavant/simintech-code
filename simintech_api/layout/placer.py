@@ -21,7 +21,9 @@ from typing import (
     TypeVar,
 )
 
-from ..constants import BLOCK_GAP, LAYER_GAP
+from ..constants import BLOCK_GAP
+
+from .canon import ALIGN_EPS, channel_width
 
 # Ключ блока — любой хешируемый: алгоритм раскладывает граф по ключам и не
 # заглядывает внутрь. Идентификатор не обязан быть int: примеры и тесты
@@ -34,11 +36,14 @@ class LayeredPlacer:
     """Размещение блоков слоями по направлению сигнала.
 
     Args:
-        layer_gap: расстояние между слоями по X.
+        layer_gap: ЯВНЫЙ пол шага слоёв по X. По канону (ТЗ 4.2) шаг
+            считается формулой col_width + channel_w, а не задаётся
+            константой; параметр нужен только чтобы задать пол
+            осознанно (по умолчанию пола нет).
         block_gap: расстояние между блоками в слое по Y.
     """
 
-    def __init__(self, layer_gap: float = LAYER_GAP,
+    def __init__(self, layer_gap: Optional[float] = None,
                  block_gap: float = BLOCK_GAP):
         self.layer_gap = layer_gap
         self.block_gap = block_gap
@@ -67,6 +72,7 @@ class LayeredPlacer:
                 (обратные связи разрешены — они просто не образуют новый слой).
         """
         block_ids = list(block_ids)
+        connections = list(connections)
         if not block_ids:
             return {}
 
@@ -172,8 +178,10 @@ class LayeredPlacer:
                 medians[bid] = _median(srcs) if srcs else float(len(prev_positions))
             layers[li] = sorted(layer, key=lambda b: medians[b])
 
-        # 3) Координаты центров
-        result: Dict[_BlockId, Tuple[float, float]] = {}
+        # 3) Вертикальные координаты (Y): стопкой в слое, как и раньше.
+        #    X считается после — шаг слоя зависит от Y: выровненная связь
+        #    (ТЗ 4.1) трека не занимает, и без неё разрез шире.
+        ys: Dict[_BlockId, float] = {}
         cx0, cy0 = origin
 
         def height(items: List[_BlockId]) -> float:
@@ -193,7 +201,7 @@ class LayeredPlacer:
             y = y_start
             for bid in main[li]:
                 w, h = sizes.get(bid, (60.0, 40.0))
-                result[bid] = (cx0 + li * self.layer_gap, y + h / 2.0)
+                ys[bid] = y + h / 2.0
                 y += h + self.block_gap
             # Вспомогательный ряд — под основным, с тем же шагом
             y = y_start + height(main[li]) + (
@@ -202,9 +210,34 @@ class LayeredPlacer:
                 if bid not in helpers:
                     continue
                 w, h = sizes.get(bid, (60.0, 40.0))
-                result[bid] = (cx0 + li * self.layer_gap, y + h / 2.0)
+                ys[bid] = y + h / 2.0
                 y += h + self.block_gap
-            cx0 += 0  # X каждого слоя фиксирован: cx0 + li*layer_gap
+
+        # 4) Шаг слоя по канону ТЗ 4.2 («канал шире разреза»):
+        #    layer_x[i+1] = layer_x[i] + col_width(i) + channel_w(i),
+        #    channel_w = STUB + WIRE_PITCH * max(1, cut_size).
+        #    cut_size(i) — связи через зазор i минус выровненные в одну
+        #    горизонталь: Y уже посчитан, выровненность берётся фактически.
+        col_width = [
+            max((sizes.get(b, (60.0, 40.0))[0] for b in layer), default=0.0)
+            for layer in layers]
+        edges = [
+            (layer_of[src], layer_of[dst], src, dst)
+            for src, dst in connections
+            if src in layer_of and dst in layer_of
+            and layer_of[src] < layer_of[dst]]
+        xs = [cx0]
+        for li in range(len(layers) - 1):
+            cut = sum(
+                1 for ls, ld, src, dst in edges
+                if ls <= li < ld and abs(ys[src] - ys[dst]) >= ALIGN_EPS)
+            step = col_width[li] + channel_width(cut)
+            if self.layer_gap is not None:
+                step = max(self.layer_gap, step)
+            xs.append(xs[li] + step)
+        result: Dict[_BlockId, Tuple[float, float]] = {
+            bid: (xs[li], ys[bid])
+            for li, layer in enumerate(layers) for bid in layer}
 
         return result
 
