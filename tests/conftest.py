@@ -79,8 +79,33 @@ def simintech_available(pytestconfig) -> bool:
         return False
 
 
+#: Сколько ждать ухода процессов, порождённых этим прогоном, прежде чем
+#: снять их самим: соседний тест завершает свой процесс не мгновенно.
+_OUR_PROCESSES_GRACE_S = 15.0
+
+
+def _foreign_skip_reason(pids) -> str:
+    """Почему при чужом процессе работа не начинается (текст скипа)."""
+    return (f"на машине уже запущен SimInTech (PID {sorted(pids)}): клиент "
+            "подключился бы к чужому экземпляру, и «текущая страница» была бы "
+            "не нашей. Закройте SimInTech — или запустите с "
+            "SIMINTECH_KILL_ALL_MMAIN=1, чтобы убрать остатки перед прогоном.")
+
+
+@pytest.fixture(scope="session")
+def mmain_baseline_pids():
+    """Снимок mmain.exe на старте прогона — граница «чужой/свой».
+
+    «Свои» — появившиеся после снимка: их породил этот прогон (тесты), и
+    распоряжаться ими можно. Жившие до старта — чужие: подключение к ним
+    подменило бы «текущую страницу» и числа, поэтому их не трогают никогда.
+    """
+    from simintech_api.utils.processes import get_mmain_pids
+    return set(get_mmain_pids())
+
+
 @pytest.fixture(scope="session", autouse=True)
-def _cleanup_mmain_processes():
+def _cleanup_mmain_processes(mmain_baseline_pids):
     """Завершить процессы mmain.exe, появившиеся в ходе тестов.
 
     Собирает PID'ы ДО прогона; после — убивает ТОЛЬКО разность
@@ -104,7 +129,9 @@ def _cleanup_mmain_processes():
     import time
 
     kill_all = os.environ.get("SIMINTECH_KILL_ALL_MMAIN") == "1"
-    before = set(get_mmain_pids())
+    # Та же граница «чужой/свой», что у фикстуры `client`: снимок старта
+    # прогона (issue #17) — одна граница у уборки и у владения.
+    before = set(mmain_baseline_pids)
     print(f"\n[simintech] mmain.exe ДО тестов: "
           f"{sorted(before) if before else '(не обнаружены)'}", file=sys.stderr)
     yield
@@ -142,7 +169,7 @@ def _cleanup_mmain_processes():
 
 
 @pytest.fixture(scope="session")
-def client(simintech_available):
+def client(simintech_available, mmain_baseline_pids):
     """Подключённый COMClient, который **владеет** своим процессом SimInTech.
 
     Владение — точный PID, как в измерительной оснастке: до подключения снимается
@@ -165,6 +192,11 @@ def client(simintech_available):
 
     Остатки прошлых прогонов убирает владелец: `SIMINTECH_KILL_ALL_MMAIN=1`
     (переменная документирована в `_cleanup_mmain_processes`).
+
+    «Свой/чужой» — по снимку `mmain_baseline_pids` (issue #17): появившийся
+    после старта прогона процесс — свой (сосед ещё завершает свой `shutdown`),
+    его ждут до `_OUR_PROCESSES_GRACE_S` и, если не ушёл, снимают сами;
+    живший до старта — чужой, при нём `skip`, как и раньше.
     """
     if not simintech_available:
         pytest.skip("COM SimInTech недоступен (нужна Windows + mmain.exe /regserver)")
@@ -173,32 +205,51 @@ def client(simintech_available):
     from simintech_api import COMClient
     from simintech_api.utils.processes import get_mmain_pids, kill_pids
 
-    before = set(get_mmain_pids())
-    if before and os.environ.get("SIMINTECH_KILL_ALL_MMAIN") == "1":
-        kill_pids(before)
-        time.sleep(0.5)
-        before = set(get_mmain_pids())
-    if before:
+    if os.environ.get("SIMINTECH_KILL_ALL_MMAIN") == "1":
+        all_now = set(get_mmain_pids())
+        if all_now:
+            kill_pids(all_now)
+            time.sleep(0.5)
+
+    if get_mmain_pids():
         # Отсрочка на выход «соседа»: процесс, завершаемый прямо сейчас (свой
         # тест зовёт `shutdown()`), исчезает не мгновенно, и без этой паузы
         # фикстура отказала бы из-за него — то есть отказ срабатывал бы на
         # ровном месте. Проверка повторяется после паузы, а не вместо неё.
         time.sleep(1.0)
-        before = set(get_mmain_pids())
-    if before:
-        pytest.skip(
-            f"на машине уже запущен SimInTech (PID {sorted(before)}): клиент "
-            "подключился бы к чужому экземпляру, и «текущая страница» была бы не "
-            "нашей. Закройте SimInTech — или запустите с "
-            "SIMINTECH_KILL_ALL_MMAIN=1, чтобы убрать остатки перед прогоном.")
+    deadline = time.monotonic() + _OUR_PROCESSES_GRACE_S
+    while True:
+        alive = set(get_mmain_pids())
+        foreign = alive & mmain_baseline_pids
+        if foreign:
+            pytest.skip(_foreign_skip_reason(foreign))
+        ours = alive - mmain_baseline_pids
+        if not ours:
+            break
+        if time.monotonic() >= deadline:
+            print(f"[simintech] процессы прогона не ушли за "
+                  f"{_OUR_PROCESSES_GRACE_S:.0f} с — завершаю: {sorted(ours)}",
+                  file=sys.stderr)
+            kill_pids(ours)
+            time.sleep(0.5)
+            alive = set(get_mmain_pids())
+            foreign = alive & mmain_baseline_pids
+            if foreign:
+                pytest.skip(_foreign_skip_reason(foreign))
+            still = alive - mmain_baseline_pids
+            if still:
+                pytest.fail(
+                    f"процессы этого прогона не удалось снять: {sorted(still)}")
+            break
+        time.sleep(0.2)
 
     c = COMClient(silent_mode=True)
     c.connect()
     owned = c.get_process_id()
-    if owned in before:
+    if owned in mmain_baseline_pids:
         c.disconnect()
         pytest.fail(
-            f"клиент назвал своим PID {owned}, который жил до подключения: "
+            f"клиент назвал своим PID {owned}, который жил до прогона: "
             "владение определено неверно, и завершать этот процесс нельзя")
     if c.ownership.value != "owned":
         c.disconnect()
