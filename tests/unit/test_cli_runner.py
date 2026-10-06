@@ -289,3 +289,86 @@ def test_param_name_rejects_option_like(param):
     """Имя параметра опцией быть не может, послабления для чисел тут не нужны."""
     with pytest.raises(ValueError):
         _cli().set_parameter("model.prt", param, "5")
+
+
+# ─── Запуск макроса через mstarter (форма вендора, #13) ───────────
+
+def _starter_cli(tmp_path):
+    """Адаптер с mmain.exe и mstarter.exe рядом — ни один не запускается."""
+    (tmp_path / "mmain.exe").write_bytes(b"")
+    (tmp_path / "mstarter.exe").write_bytes(b"")
+    return CLIAdapter(mmain_path=str(tmp_path / "mmain.exe"))
+
+
+def _fake_process(monkeypatch, returncode=0):
+    """Подменить subprocess.run и вернуть место наблюдения за командой."""
+    seen = {}
+
+    class _Completed:
+        stdout = b""
+        stderr = b""
+
+    def fake_run(cmd, **kwargs):
+        seen["cmd"] = list(cmd)
+        seen["kwargs"] = kwargs
+        done = _Completed()
+        done.returncode = returncode
+        return done
+
+    monkeypatch.setattr(cli_runner.subprocess, "run", fake_run)
+    return seen
+
+
+def test_run_macro_via_starter_builds_vendor_command(tmp_path, monkeypatch):
+    """Форма вендора — `mstarter.exe macros "<файл>"`, без `/silentmode`.
+
+    Замер 06.10.2026: mstarter передаёт `mmain.exe "macros" "<файл>"` и
+    завершается сразу (0.06 с), поэтому команда проверяется ровно в этой
+    форме — mmain-опции к mstarter не примешиваются.
+    """
+    cli = _starter_cli(tmp_path)
+    seen = _fake_process(monkeypatch)
+    macro = str(tmp_path / "probe.txt")
+
+    result = cli.run_macro_via_starter(macro)
+
+    assert result.success is True
+    assert seen["cmd"] == [str(tmp_path / "mstarter.exe"), "macros",
+                           str(Path(macro).absolute())]
+    assert "/silentmode" not in seen["cmd"]
+
+
+def test_run_macro_via_starter_reports_missing_starter(tmp_path):
+    """Без mstarter.exe рядом с mmain.exe — отказ, а не исключение."""
+    (tmp_path / "mmain.exe").write_bytes(b"")
+    cli = CLIAdapter(mmain_path=str(tmp_path / "mmain.exe"))
+
+    result = cli.run_macro_via_starter(str(tmp_path / "probe.txt"))
+
+    assert result.success is False
+    assert "mstarter.exe не найден" in result.message
+
+
+def test_run_macro_via_starter_reports_timeout(tmp_path, monkeypatch):
+    """Зависший mstarter не должен вешать адаптер (замер: возврат мгновенный)."""
+    import subprocess
+
+    cli = _starter_cli(tmp_path)
+
+    def fake_run(cmd, **kwargs):
+        raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout", 0))
+
+    monkeypatch.setattr(cli_runner.subprocess, "run", fake_run)
+
+    result = cli.run_macro_via_starter(str(tmp_path / "probe.txt"), timeout=3)
+
+    assert result.success is False
+    assert "Тайм-аут" in result.message
+
+
+def test_run_macro_via_starter_rejects_whitespace_in_path(tmp_path):
+    """Пробел в пути породил бы лишние аргументы командной строки."""
+    cli = _starter_cli(tmp_path)
+
+    with pytest.raises(ValueError):
+        cli.run_macro_via_starter("/tmp/macro.txt /exit")

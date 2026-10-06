@@ -78,3 +78,5 @@
 | `com-createobject-attaches-to-manual-instance` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
 | `com-session-ownership-and-managed-shutdown` | verified | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | `tests/integration/test_lifecycle.py::test_connect_disconnect` (live) |
 | `job-object-reaps-owned-process-on-owner-death` | measured | live-com | SimInTech64, поставка 2.26.6.23 | 2026-10-02 | — |
+| `mstarter-macros-runs-macro-in-a-new-instance` | measured | controlled-experiment | SimInTech64, поставка 2.26.6.23 | 2026-10-06 | `tests/unit/test_cli_runner.py::test_run_macro_via_starter_builds_vendor_command` (unit) |
+| `projmacros-does-not-run-macro-and-keeps-process-alive` | measured | controlled-experiment | SimInTech64, поставка 2.26.6.23 | 2026-10-06 | — |
