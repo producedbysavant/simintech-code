@@ -298,6 +298,12 @@ class CLIAdapter:
         явно сказано про путь к файлу, у `/macros` — нет, хотя путь принимают
         оба. Отдельный метод заведён, чтобы разницу можно было проверить
         опытом, а не догадкой.
+
+        **Форма не работает на живом SimInTech** (замер 06.10.2026, проба H):
+        макрос не исполнился (файл-маркер не появился), а процесс `mmain.exe`
+        остался живым — воспроизведён таймаут, ради которого заведён issue
+        #13. Рабочие формы: `run_macro_file` (`/macros`) и
+        `run_macro_via_starter` (`mstarter macros`).
         """
         macro_abs = str(Path(macro_path).absolute())
         _check_arg(macro_abs, "macro_path")
@@ -306,7 +312,13 @@ class CLIAdapter:
     # ─── Работа с макросами ────────────────────────────────────────
 
     def run_macro_file(self, macro_path: str, timeout: int = 300) -> CLIResult:
-        """Запустить файл макроса SimInTech (/macros)."""
+        """Запустить файл макроса SimInTech (`/macros`).
+
+        Форма подтверждена замером 06.10.2026 (проба F): макрос исполнился,
+        процесс `mmain.exe` поднят и остался жить (завершает его сам макрос —
+        `closeapp` — или вызывающий, точечно по PID). `run_macro_via_starter`
+        даёт тот же результат через mstarter.
+        """
         macro_abs = str(Path(macro_path).absolute())
         _check_arg(macro_abs, "macro_path")
         return self.run_sync(f"/macros {macro_abs}", timeout=timeout)
@@ -325,6 +337,72 @@ class CLIAdapter:
                 os.unlink(tmp_path)
             except OSError:
                 pass
+
+    def _resolve_starter_path(self) -> str:
+        """Путь к `mstarter.exe` — соседу `mmain.exe` в поставке.
+
+        Отдельного env-поиска нет: mstarter двигается вместе с поставкой, а
+        чужой каталог смешал бы версии инструментов из разных сборок.
+        """
+        candidate = Path(self.mmain_path).parent / "mstarter.exe"
+        if candidate.exists():
+            return str(candidate)
+        raise FileNotFoundError(
+            f"mstarter.exe не найден рядом с mmain.exe: {candidate}")
+
+    def run_macro_via_starter(self, macro_path: str,
+                              timeout: int = 300) -> CLIResult:
+        """Запустить макрос через `mstarter` — форма, названная вендором (#13).
+
+        Команда — `mstarter.exe macros "<файл>"`: mstarter передаёт
+        `mmain.exe "macros" "<файл>"` и завершается сразу (замер 06.10.2026,
+        поставка 2.26.6.23: возврат за 0.06 с, rc=0), а макрос исполняется в
+        поднятом экземпляре.
+
+        Границы формы, измеренные теми же прогонами (`probes/mstarter`):
+
+        * **не «в уже работающий экземпляр»**: при живом COM-экземпляре
+          запуск поднял второй процесс `mmain.exe`; передачи задания в живой
+          экземпляр не наблюдалось (проба G);
+        * **`rc` — не исход макроса**: mstarter завершается до исполнения, и
+          ошибка в макросе снаружи не видна (проба C: rc=0, файла нет).
+          Исход наблюдается только эффектами самого макроса — файлами-
+          маркерами, которые он пишет; их и стоит включать в макрос;
+        * **процесс остаётся жить** после макроса; завершает его сам макрос
+          (`closeapp`, проба E) или вызывающий — точечно по PID.
+
+        Для запуска в уже поднятом экземпляре форма не подходит;
+        `mmain.exe "macros" "<файл>"` без mstarter ведёт себя так же
+        (проба D), а `/macros` остаётся рабочей формой `run_macro_file`.
+        """
+        macro_abs = str(Path(macro_path).absolute())
+        _check_arg(macro_abs, "macro_path")
+        try:
+            starter = self._resolve_starter_path()
+        except FileNotFoundError as exc:
+            return CLIResult(success=False, message=str(exc))
+        try:
+            result = subprocess.run(
+                [starter, "macros", macro_abs],
+                capture_output=True, text=False, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return CLIResult(
+                success=False,
+                message=f"Тайм-аут ({timeout}с): mstarter не завершился вовремя")
+        except FileNotFoundError:
+            return CLIResult(success=False,
+                             message=f"mstarter.exe не найден: {starter}")
+        stdout = self._decode(result.stdout)
+        stderr = self._decode(result.stderr)
+        if result.returncode == 0:
+            return CLIResult(
+                success=True,
+                message="Задание передано (исход макроса — по его эффектам)",
+                data={"stdout": stdout, "stderr": stderr})
+        return CLIResult(
+            success=False,
+            message=f"mstarter завершился с кодом {result.returncode}",
+            data={"stdout": stdout, "stderr": stderr})
 
     # ─── Работа с Linux/Wine ────────────────────────────────────────
 

@@ -857,3 +857,28 @@
     observed_at: 2026-10-02
   evidence: "`AssignProcessToJobObject` принял существующий `-Embedding`-процесс (родитель — `svchost`): сессия после назначения отвечает и создаёт проект из шаблона; после `taskkill /F` процесса-владельца хэндла процесс `mmain.exe` снят ядром в ту же секунду — 2 прогона из 2. Отказ назначения (процесс уже в несовместимом job'е; вложенность — Windows 8+) в замере не встречался; политика при отказе — неразрушающая"
   tests: []
+
+- id: mstarter-macros-runs-macro-in-a-new-instance
+  claim: "`mstarter.exe macros \"<файл>\"` исполняет макрос: mstarter передаёт `mmain.exe \"macros\" \"<файл>\"` и завершается за десятые доли секунды; макрос исполняется в поднятом (новом) экземпляре — в уже работающий экземпляр задание не передаётся"
+  status: measured
+  source:
+    type: controlled-experiment
+    ref: "simintech_api/cli_runner.py, `run_macro_via_starter`; automation/macros.md, «Запуск из командной строки»; пробы probes/mstarter (внутренний стенд), 06.10.2026"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-10-06
+  evidence: "Файл-маркер, записанный макросом, появлялся после каждого запуска; командная строка поднятого процесса — `mmain.exe \"macros\" \"<файл>\"`; при живом COM-экземпляре (`ownership=owned`) запуск поднял второй процесс mmain, живой не тронул. Тем же замером подтверждены формы `mmain.exe macros` и `mmain.exe /macros`; после макроса процесс остаётся жить, `closeapp` внутри макроса завершает его сам"
+  tests:
+    - file: tests/unit/test_cli_runner.py
+      id: test_run_macro_via_starter_builds_vendor_command
+      kind: unit
+
+- id: projmacros-does-not-run-macro-and-keeps-process-alive
+  claim: "`mmain.exe /projmacros \"<файл>\"` макрос не исполняет и оставляет процесс живым — воспроизведение таймаута, ради которого заведён issue #13"
+  status: measured
+  source:
+    type: controlled-experiment
+    ref: "simintech_api/cli_runner.py, `project_macro`; automation/macros.md, «Запуск из командной строки»; проба H (probes/mstarter), 06.10.2026"
+    product_version: "SimInTech64, поставка 2.26.6.23"
+    observed_at: 2026-10-06
+  evidence: "Через 20 с после запуска файл-маркер макроса отсутствовал, а процесс `mmain.exe /projmacros <файл>` оставался жив (снят точечно по PID). Рабочие формы того же макроса (`/macros`, `macros`, `mstarter macros`) файл-маркер создавали"
+  tests: []
