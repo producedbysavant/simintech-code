@@ -27,20 +27,27 @@ FSM_DEMO = os.environ.get(
 )
 
 
-def test_connect_disconnect():
+def test_connect_disconnect(mmain_baseline_pids):
     """Managed shutdown завершает ровно PID процесса этой COM-сессии.
 
     Ownership определяется самим COMClient по before/after snapshot, а не
     предположением, что GetProcessID() означает «процесс, порождённый клиентом».
+
+    Тест независим от порядка файлов (issue #17). Чужой процесс (живший до
+    старта прогона) — по-прежнему отказ: работа с ним подменила бы «текущую
+    страницу». А остаток **этого** прогона (сосед ещё держит сессионный
+    `client`) — не падение: клиент к нему подключится, владение обязано быть
+    честным (`EXTERNAL`), и процесс не трогается — его снимет владелец.
     """
     from simintech_api import COMClient
     from simintech_api.core.com_client import SessionOwnership
     from simintech_api.utils.processes import get_mmain_pids
 
     before = set(get_mmain_pids())
-    assert not before, (
-        f"для lifecycle-теста нужен чистый стенд, обнаружены mmain.exe: "
-        f"{sorted(before)}"
+    foreign = before & mmain_baseline_pids
+    assert not foreign, (
+        f"для lifecycle-теста нужен чистый от чужих SimInTech стенд, "
+        f"обнаружены mmain.exe, жившие до прогона: {sorted(foreign)}"
     )
 
     c = COMClient(silent_mode=True)
@@ -49,13 +56,26 @@ def test_connect_disconnect():
     pid = c.get_process_id()
     assert pid > 0
     assert c.session_pid == pid
-    assert c.ownership is SessionOwnership.OWNED
 
-    c.shutdown()
-    assert not c.connected
-
-    assert pid not in set(get_mmain_pids()), (
-        f"процесс {pid}, поднятый этой COM-сессией, остался жив")
+    if c.ownership is SessionOwnership.OWNED:
+        # Стенд был чист: клиент поднял свой процесс — завершаем и
+        # подтверждаем уход.
+        c.shutdown()
+        assert not c.connected
+        assert pid not in set(get_mmain_pids()), (
+            f"процесс {pid}, поднятый этой COM-сессией, остался жив")
+    else:
+        # Подключились к процессу этого прогона: владение обязано быть
+        # честным — EXTERNAL, и процесс не трогается (его снимет владелец).
+        assert c.ownership is SessionOwnership.EXTERNAL, (
+            f"подключение к живому процессу прогона дало ownership="
+            f"{c.ownership.value}")
+        assert pid in before
+        c.disconnect()
+        assert not c.connected
+        assert pid in set(get_mmain_pids()), (
+            f"disconnect завершил процесс {pid}: процесс сессии отпускается, "
+            "а не снимается")
 
 
 def test_new_project_save_close(client):
