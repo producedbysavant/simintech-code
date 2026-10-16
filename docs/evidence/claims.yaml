@@ -1422,11 +1422,9 @@
   status: code-confirmed
   source:
     type: source-code
-    ref: 'simintech-mcp PR #160 (открыт на 16.10.2026): test_surface.py (test_tool_annotations_contract)'
-  reproduction: 'Прогон теста поверхности после мержа PR #160'
+    ref: 'simintech-mcp PR #160 (влит 16.10.2026): test_surface.py (test_tool_annotations_contract)'
+  reproduction: 'Прогон теста поверхности (test_tool_annotations_contract) на main simintech-mcp'
   tests: []
-  caveats:
-  - 'На main контракт появится после мержа simintech-mcp PR #160 (в полёте на дату записи)'
 - id: mcp-readme-counts-contract
   statement: 'Число инструментов в README (59) и перечень имён сверяются с tools/list тестами: README — обещание полноты состава'
   status: code-confirmed
