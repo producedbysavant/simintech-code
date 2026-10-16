@@ -430,6 +430,65 @@ def test_language_functions_are_copies():
     assert language_functions()
 
 
+# ─── Дополнение реестра (вне справки) ─────────────────────────────
+
+#: Функции, подтверждённые живыми прогонами и отсутствующие в срезе справки.
+SUPPLEMENT_NAMES = ("createmodel", "getinportid", "getoutportid")
+
+
+@pytest.mark.parametrize("name", SUPPLEMENT_NAMES)
+def test_supplement_functions_are_found_and_labelled(name):
+    """Дополнение видно поиску и помечено «вне справки», а не выдано за неё.
+
+    Справка отстаёт от среды: эти имена применены в живых измеренных телах,
+    но в срезе справки их нет (запись реестра фактов
+    `createmodel-not-in-vendor-help`). Пометка обязана быть в карточке —
+    иначе запись читалась бы как подтверждённая справкой.
+    """
+    found = find_function(name)
+
+    assert found is not None, f"{name} пропало из дополнения"
+    assert "вне справки" in found.full_category.lower()
+    assert "жив" in found.purpose, "пометка о происхождении потеряна"
+    assert found.syntax, f"{name}: форма вызова не записана"
+
+
+def test_supplement_is_a_separate_file_and_help_slice_untouched():
+    """Срез справки не правится: дополнение — отдельный файл.
+
+    Пересборка из справки пишет срез целиком; живи дополнение внутри среза,
+    она стёрла бы его молча.
+    """
+    ship = json.loads(DEFAULT_REGISTRY_PATH.read_text(encoding="utf-8"))
+    names = {item["name"] for item in ship["functions"]}
+
+    assert not (set(SUPPLEMENT_NAMES) & names), "дополнение попало в срез справки"
+    supplement = json.loads(
+        (DEFAULT_REGISTRY_PATH.parent / "language_functions_supplement.json")
+        .read_text(encoding="utf-8"))
+    assert {item["name"] for item in supplement["functions"]} \
+        >= set(SUPPLEMENT_NAMES)
+
+
+def test_registry_meta_reports_supplement():
+    """Метаданные называют дополнение отдельно от среза справки."""
+    meta = registry_meta()
+    supplement = meta["supplement"]
+
+    assert supplement["count"] >= 3
+    assert set(SUPPLEMENT_NAMES) <= set(supplement["names"])
+
+
+def test_alternate_registry_path_is_not_supplemented(tmp_path):
+    """Явный путь — ровно то, что просили: дополнение к нему не примешивается."""
+    _registry_file(tmp_path)
+
+    functions = language_functions(tmp_path / "functions.json")
+
+    assert not ({function.name for function in functions}
+                & set(SUPPLEMENT_NAMES))
+
+
 # ─── Покрытие наших знаний ────────────────────────────────────────
 
 def _docs(tmp_path, language_md, blocks_md=None):

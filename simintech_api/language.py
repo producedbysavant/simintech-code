@@ -88,6 +88,13 @@ REGISTRY_VERSION = 2
 DATA_DIR = Path(__file__).parent / "data"
 DEFAULT_REGISTRY_PATH = DATA_DIR / "language_functions.json"
 
+#: Дополнение реестра: функции, которых в срезе справки нет, но которые
+#: подтверждены живыми измеренными телами (справка отстаёт от среды — запись
+#: реестра фактов `createmodel-not-in-vendor-help`). Отдельный файл, а не
+#: правка среза: пересборка реестра из справки пишет срез целиком и дополнение
+#: за ним не тронуто — иначе первая же пересборка стёрла бы его молча.
+SUPPLEMENT_PATH = DATA_DIR / "language_functions_supplement.json"
+
 #: Раздел «Синтаксис» — признак страницы функции. Берётся по якорю, а не по
 #: заголовку (`sectiontitle`): сплошная проверка 03.10.2026 показала, что у
 #: пяти страниц **системных переменных** (`globalcolor`, `container_name`, …)
@@ -575,10 +582,42 @@ def _categories(
 
 _registry: Optional[List[LanguageFunction]] = None
 _registry_meta: Dict[str, object] = {}
+_supplement: Optional[List[LanguageFunction]] = None
+
+
+def _supplement_functions() -> List[LanguageFunction]:
+    """Записи дополнения — вне справки (один раз на процесс).
+
+    Файла нет или он не читается — пустой список, а не отказ: дополнение
+    вспомогательное, и его отсутствие не делает базовый реестр нерабочим.
+    """
+    global _supplement
+    if _supplement is not None:
+        return _supplement
+    try:
+        raw = json.loads(SUPPLEMENT_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        _supplement = []
+        return _supplement
+    _supplement = [LanguageFunction.from_dict(item)
+                   for item in raw.get("functions", [])
+                   if isinstance(item, dict)]
+    return _supplement
+
+
+def _supplement_meta() -> Dict[str, object]:
+    """Сводка дополнения для `registry_meta`: сколько и какие имена."""
+    functions = _supplement_functions()
+    return {"count": len(functions), "names": [f.name for f in functions]}
 
 
 def _load(path: Optional[Path] = None) -> List[LanguageFunction]:
-    """Прочитать реестр из JSON (один раз на процесс)."""
+    """Прочитать реестр из JSON (один раз на процесс); дополнение — поверх.
+
+    Дополнение примешивается только к поставляемому реестру (`path=None`):
+    явный путь — ровно то, что попросил вызывающий (тесты, альтернативные
+    реестры), и подмешивать в него реальный файл значило бы врать об источнике.
+    """
     global _registry, _registry_meta
     if _registry is not None and path is None:
         return _registry
@@ -594,15 +633,22 @@ def _load(path: Optional[Path] = None) -> List[LanguageFunction]:
                  for item in raw.get("functions", [])]
     if path is not None:
         return functions
-    _registry = functions
+    _registry = functions + _supplement_functions()
     _registry_meta = {"version": raw.get("version"),
                       "help_version": raw.get("help_version", ""),
-                      "count": raw.get("count"), "counts": raw.get("counts", {})}
+                      "count": raw.get("count"), "counts": raw.get("counts", {}),
+                      "supplement": _supplement_meta()}
     return _registry
 
 
 def language_functions(path: Optional[Path] = None) -> List[LanguageFunction]:
     """Все функции встроенного языка из реестра.
+
+    Поставляемый реестр дополняется файлом
+    `data/language_functions_supplement.json` — функциями вне среза справки,
+    подтверждёнными живыми прогонами (карточка помечает их «Вне справки
+    поставки»). Явный `path` дополнение не получает: он — ровно то, что
+    попросил вызывающий.
 
     Args:
         path: путь к JSON реестра; по умолчанию — поставляемый
