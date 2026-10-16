@@ -1,5 +1,10 @@
 # План реализации: контур языкового слоя — PR-3 «знание агента» (`simintech-skill`)
 
+> **Статус на 16.10.2026: реализовано.** Шаги и чекбоксы ниже отражают ход
+> работы на момент плана и как исторический документ не переписываются.
+> Артефакты: `simintech-skill/skills-catalog/simintech-language-core` (пять
+> исходов контура, правила языка) и указатель на `docs/examples/language-contour.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 > Steps use checkbox (`- [ ]`) syntax for tracking.
