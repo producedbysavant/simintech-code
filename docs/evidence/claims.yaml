@@ -1044,7 +1044,7 @@
     product: SimInTech64
     version: 2.26.9.29
     observed_at: '2026-10-16'
-  reproduction: 'Живые прогоны импорта текста (createmodel) и снятия/ветвления линий (getinportid/getoutportid) проходят; дополнение реестра — simintech-code PR по issue #60'
+  reproduction: 'Живые прогоны импорта текста (createmodel) и снятия/ветвления линий (getinportid/getoutportid) проходят; дополнение реестра — simintech_api/data/language_functions_supplement.json (PR по issue #60)'
   tests: []
 - id: bridge-identifies-its-page-by-snapshot
   statement: 'Мост опознаёт страницу, в которую сам писал, по единственной изменившейся скриптовой записи (снимки до и после + уникальная метка) и возвращает прежний скрипт **в неё же**: скрипт неглавной страницы не теряется'
