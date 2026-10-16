@@ -23,7 +23,8 @@
 
 Смежное: `docs/api.md` (§ `Wire`, § `read_topology`, § «Что считается
 объектом») и реестр `docs/evidence/claims.yaml` — там эти же факты лежат
-записями со статусом `measured`.
+записями со статусами `live-verified`/`vendor-confirmed` (по схеме v3 реестра;
+во время замера тот же статус назывался `measured`).
 
 ## 1. Что измерено
 

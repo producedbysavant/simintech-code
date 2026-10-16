@@ -1,13 +1,28 @@
-"""Проверка реестра утверждений и сборка матрицы проверки.
+"""Проверка реестра фактов и сборка производных видов (матрица, противоречия).
 
-Реестр (`docs/evidence/claims.yaml`) нужен затем, чтобы агент и человек
-различали «подтверждено живым замером», «покрыто тестом на подделке» и
-«предполагается». Без валидатора он превращается в ещё один документ, который
-расходится с кодом: тест переименовали — ссылка на него осталась, и запись
-выглядит подтверждённой, хотя за ней уже ничего нет.
+Реестр (`docs/evidence/claims.yaml`, схема v3) нужен затем, чтобы агент и
+человек различали «подтверждено живым замером», «следует из кода», «покрыто
+тестом на подделке» и «предполагается». Без валидатора он превращается в ещё
+один документ, который расходится с кодом: тест переименовали — ссылка на него
+осталась, и запись выглядит подтверждённой, хотя за ней уже ничего нет.
 
-Матрица (`verification-matrix.md`) — производное: она генерируется отсюда, и
-её расхождение с реестром ловит тест.
+Правила схемы v3 (их и проверяем):
+
+* **статус × источник**: `documented` ← `official-doc`, `live-verified` ←
+  {`live-com`, `controlled-experiment`, `xprt-observation`},
+  `vendor-confirmed` ← `vendor`, `code-confirmed` ← `source-code`;
+* **производный документ не доказывает**: с `derived-doc` (README, скиллы,
+  журналы) допустимы только `hypothesis`/`unknown`/`contradicted` — повторение
+  утверждения в README статус не повышает;
+* **тест на фейке** (`unit-fake`) не может быть единственной опорой
+  `live-verified`;
+* у `live-verified`/`vendor-confirmed` обязательны версия, дата
+  (`environment`) и `reproduction`;
+* ссылки `ref` репо-квалифицированы; локальные пути обязаны существовать;
+* id, названные в таблицах `docs/knowledge/**/*.md`, обязаны существовать.
+
+Производные виды (`verification-matrix.md`, `contradictions.md`) генерируются
+отсюда; их расхождение с реестром ловит тест.
 
 Запуск: `python scripts/evidence.py`
 """
@@ -24,37 +39,59 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 CLAIMS = ROOT / "docs" / "evidence" / "claims.yaml"
 MATRIX = ROOT / "docs" / "evidence" / "verification-matrix.md"
+CONTRADICTIONS = ROOT / "docs" / "evidence" / "contradictions.md"
 
 #: Тип источника: откуда взято утверждение.
 SOURCE_TYPES = {
-    "official-doc",          # справка поставки
-    "live-com",              # живой прогон через COM
-    "xprt-observation",      # наблюдение в выгрузке проекта
-    "source-code",           # следует из кода (в т.ч. чужого — поставки)
+    "official-doc",           # справка поставки, help.simintech.ru
+    "vendor",                 # ответ поддержки вендора, листинг его исходника
+    "live-com",               # живой прогон через COM
     "controlled-experiment",  # поставленный опыт (сравнение вариантов)
-    "inference",             # вывод, не проверенный напрямую
-    "unknown",
+    "xprt-observation",       # наблюдение в выгрузке проекта
+    "source-code",            # следует из кода (нашего или поставки)
+    "derived-doc",            # производный документ: README, скиллы, журналы
 }
 
 STATUSES = {
-    "verified",         # подтверждено источником вне нашего кода
-    "measured",         # живой замер в документе, автотеста нет
-    "unit-only",        # покрыто только тестом на подделке
-    "refuted",          # проверено и опровергнуто
-    "unknown",
-    "version-specific",  # верно для конкретной версии
+    "documented",        # так написано в официальной документации
+    "code-confirmed",    # следует из кода; тест на фейке — контракт кода
+    "live-verified",     # живой прогон / опыт / наблюдение выгрузки
+    "vendor-confirmed",  # вендор подтвердил (поддержка, листинг исходника)
+    "hypothesis",        # предположение
+    "contradicted",      # проверено и опровергнуто
+    "unknown",           # не измерено
 }
 
-TEST_KINDS = {"live", "unit", "distribution"}
+TEST_KINDS = {"live", "unit-fake", "unit-pure", "distribution"}
 
-#: Статусы, для которых источник обязан быть датированным: «проверено» без
-#: версии и даты непроверяемо.
-_DATED_STATUSES = {"verified", "measured", "refuted"}
+#: Какие источники законны для статуса. Статусов вне словаря здесь нет:
+#: hypothesis/contradicted/unknown принимают любой источник.
+_STATUS_SOURCES = {
+    "documented": {"official-doc"},
+    "live-verified": {"live-com", "controlled-experiment", "xprt-observation"},
+    "vendor-confirmed": {"vendor"},
+    "code-confirmed": {"source-code"},
+}
 
-#: Тип источника, при котором автотест не требуется: справка вендора сама
-#: является доказательством.
-_SELF_SUFFICIENT_SOURCES = {"official-doc"}
+#: Статусы, требующие версии и даты: без них «подтверждено» непроверяемо.
+_DATED_STATUSES = {"live-verified", "vendor-confirmed"}
 
+#: С производным документом допустимы только эти статусы.
+_DERIVED_ALLOWED = {"hypothesis", "contradicted", "unknown"}
+
+#: Префиксы чужих репозиториев: существование пути там не проверить (соседний
+#: checkout не обязан лежать рядом) — такие ссылки принимаются с квалификацией
+#: репозитория, а не молчаливым относительным путём.
+_SIBLING_PREFIXES = ("simintech-mcp/", "simintech-skill/")
+
+#: Префиксы локальных путей: обязаны существовать в этом репозитории.
+_LOCAL_PREFIXES = (
+    "docs/", "simintech_api/", "tests/", "scripts/", "automation/",
+    "language/", "blocks/", "patterns/", "tutorials/", "examples/",
+)
+
+_PATH_RE = re.compile(r"([A-Za-z0-9_./-]+\.(?:md|py|json|yaml|inc|txt|pak|tbl))")
+_KNOWLEDGE_CITATION_RE = re.compile(r"^\|\s*`([a-z0-9][a-z0-9-]{2,})`\s*\|")
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{2,63}$")
 
 
@@ -64,7 +101,7 @@ def load_claims(path: Path = CLAIMS) -> List[Dict]:
     if data is None:
         return []
     if not isinstance(data, list):
-        raise ValueError("claims.yaml должен содержать список утверждений")
+        raise ValueError("claims.yaml должен содержать список записей")
     return data
 
 
@@ -72,6 +109,7 @@ def validate(claims: Sequence[Dict], root: Path = ROOT) -> List[str]:
     """Нарушения реестра; пустой список — реестр цел."""
     problems: List[str] = []
     seen: set[str] = set()
+    ids = {str(claim.get("id", "")) for claim in claims}
 
     for claim in claims:
         cid = str(claim.get("id", ""))
@@ -86,35 +124,65 @@ def validate(claims: Sequence[Dict], root: Path = ROOT) -> List[str]:
             problems.append(f"{cid}: неизвестный статус {status!r}")
 
         source = claim.get("source") or {}
-        if source.get("type") not in SOURCE_TYPES:
-            problems.append(f"{cid}: неизвестный тип источника {source.get('type')!r}")
-        if status in _DATED_STATUSES:
-            if not source.get("observed_at"):
-                problems.append(f"{cid}: статус {status} без даты наблюдения")
-            if not source.get("product_version"):
-                problems.append(f"{cid}: статус {status} без версии продукта")
+        stype = source.get("type")
+        if stype not in SOURCE_TYPES:
+            problems.append(f"{cid}: неизвестный тип источника {stype!r}")
 
-        if status == "refuted" and not claim.get("evidence"):
+        allowed = _STATUS_SOURCES.get(str(status))
+        if allowed is not None and stype not in allowed:
             problems.append(
-                f"{cid}: опровергнутое утверждение без записи, чем опровергнуто"
-            )
+                f"{cid}: статус {status!r} требует источник "
+                f"{sorted(allowed)}, а указан {stype!r}")
+
+        if stype == "derived-doc" and status not in _DERIVED_ALLOWED:
+            problems.append(
+                f"{cid}: производный документ не доказывает статус {status!r} "
+                f"(с ним допустимы {sorted(_DERIVED_ALLOWED)})")
+
+        if status in _DATED_STATUSES:
+            environment = claim.get("environment") or {}
+            for field in ("product", "version", "observed_at"):
+                if not environment.get(field):
+                    problems.append(
+                        f"{cid}: статус {status} без {field} в environment — "
+                        f"«подтверждено» без версии и даты непроверяемо")
+            if not str(claim.get("reproduction") or "").strip():
+                problems.append(
+                    f"{cid}: статус {status} без reproduction — не сказано, "
+                    f"чем воспроизвести")
+
+        if status == "contradicted":
+            refuted = claim.get("contradicted_by") or {}
+            if refuted.get("type") not in SOURCE_TYPES or not refuted.get("ref"):
+                problems.append(
+                    f"{cid}: contradicted без contradicted_by (type/ref) — "
+                    f"не сказано, чем опровергнуто")
+
+        for token in _PATH_RE.findall(str(source.get("ref") or "")):
+            if token.startswith(_SIBLING_PREFIXES):
+                continue
+            if token.startswith(_LOCAL_PREFIXES) and not (root / token).exists():
+                problems.append(
+                    f"{cid}: ref указывает на несуществующий путь {token!r}")
+
+        for superseded in claim.get("supersedes") or []:
+            if superseded not in ids:
+                problems.append(
+                    f"{cid}: supersedes ссылается на неизвестную запись "
+                    f"{superseded!r}")
 
         tests = claim.get("tests") or []
-        if status == "verified":
-            if not tests and source.get("type") not in _SELF_SUFFICIENT_SOURCES:
-                problems.append(
-                    f"{cid}: verified без подтверждающего теста — для этого статуса "
-                    f"нужен живой или distribution-тест (или источник official-doc)"
-                )
+        if status == "live-verified" and tests:
             kinds = {test.get("kind") for test in tests}
-            if tests and not kinds & {"live", "distribution"}:
+            if not kinds & {"live", "distribution"} \
+                    and not str(claim.get("reproduction") or "").strip():
                 problems.append(
-                    f"{cid}: verified подтверждён только тестом на подделке — "
-                    f"это статус unit-only, а не verified"
-                )
+                    f"{cid}: live-verified опирается только на тест на фейке — "
+                    f"это код-подтверждение, а не поведение среды")
         for test in tests:
             problems.extend(_test_problems(cid, test, root))
 
+    problems.extend(_knowledge_citation_problems(ids, root))
     return problems
 
 
@@ -136,39 +204,112 @@ def _test_problems(cid: str, test: Dict, root: Path) -> List[str]:
     return problems
 
 
+def _knowledge_citation_problems(ids: set[str], root: Path) -> List[str]:
+    """Id в таблицах `docs/knowledge/**` обязаны существовать в реестре.
+
+    Соглашение простое: первая колонка таблицы факта — `` `id` `` из реестра.
+    Так цитата в базе знаний не может пережить переименование записи. Каталога
+    ещё нет — правило молчит, а не падает: разделы базы знаний приезжают своим
+    PR.
+    """
+    knowledge = root / "docs" / "knowledge"
+    if not knowledge.is_dir():
+        return []
+    problems: List[str] = []
+    for path in sorted(knowledge.rglob("*.md")):
+        text = path.read_text(encoding="utf-8")
+        for number, line in enumerate(text.splitlines(), 1):
+            match = _KNOWLEDGE_CITATION_RE.match(line)
+            if match and match.group(1) not in ids:
+                rel = path.relative_to(root).as_posix()
+                problems.append(
+                    f"{rel}:{number}: id {match.group(1)!r} нет в реестре")
+    return problems
+
+
 def render_matrix(claims: Sequence[Dict]) -> str:
     """Матрица проверки — производная от реестра, а не второй его вид."""
     lines = [
-        "# Матрица проверки утверждений",
+        "# Матрица проверки фактов",
         "",
         "Файл сгенерирован `scripts/evidence.py` из `claims.yaml` — правьте реестр.",
         "",
-        "`kind` показывает, чем утверждение подтверждено: `live` — живой прогон,",
-        "`distribution` — сверка с поставкой, `unit` — тест на подделке (контракт",
-        "кода, не поведение среды).",
+        "`kind` показывает, чем факт подтверждён: `live` — живой прогон,",
+        "`distribution` — сверка с поставкой, `unit-pure` — чистый разбор,",
+        "`unit-fake` — тест на подделке (контракт кода, не поведение среды).",
         "",
         "| id | статус | источник | версия | дата | подтверждение |",
         "|---|---|---|---|---|---|",
     ]
     for claim in claims:
         source = claim.get("source") or {}
+        environment = claim.get("environment") or {}
         tests = claim.get("tests") or []
         if tests:
             proof = ", ".join(
-                f"`{t.get('file')}::{t.get('id')}` ({t.get('kind')})" for t in tests
+                f"`{t.get('file')}::{t.get('id')}` ({t.get('kind')})"
+                for t in tests
             )
         else:
             proof = "—"
         lines.append(
             f"| `{claim.get('id')}` | {claim.get('status')} | "
-            f"{source.get('type')} | {source.get('product_version', '—')} | "
-            f"{source.get('observed_at', '—')} | {proof} |"
+            f"{source.get('type')} | {environment.get('version', '—')} | "
+            f"{environment.get('observed_at', '—')} | {proof} |"
         )
     return "\n".join(lines) + "\n"
 
 
+def render_contradictions(claims: Sequence[Dict]) -> str:
+    """Противоречия и записи на производных источниках — тоже производная."""
+    lines = [
+        "# Противоречия и производные источники",
+        "",
+        "Файл сгенерирован `scripts/evidence.py` из `claims.yaml` — правьте реестр.",
+        "",
+        "Два вопроса, на которые отвечает вид: что уже опровергнуто (чтобы вывод",
+        "не «починили» обратно) и что опирается на производные документы — такие",
+        "источники не являются доказательством.",
+        "",
+        "## Опровергнутые утверждения (`status: contradicted`)",
+        "",
+    ]
+    contradicted = [c for c in claims if c.get("status") == "contradicted"]
+    if not contradicted:
+        lines.append("Опровергнутых записей нет.")
+    for claim in contradicted:
+        refuted = claim.get("contradicted_by") or {}
+        lines += [
+            f"### `{claim.get('id')}`",
+            "",
+            f"{claim.get('statement')}",
+            "",
+            f"Опровергнуто: `{refuted.get('type')}` — {refuted.get('ref')}",
+            "",
+            f"Воспроизведение: {claim.get('reproduction')}",
+            "",
+        ]
+    lines += [
+        "## Записи на производных источниках (`source.type: derived-doc`)",
+        "",
+        "Это не доказательства: производный документ может лишь хранить",
+        "утверждение-гипотезу, опровергнутую версию или открытый вопрос.",
+        "",
+    ]
+    derived = [c for c in claims
+               if (c.get("source") or {}).get("type") == "derived-doc"]
+    if not derived:
+        lines.append("Записей на производных источниках нет.")
+    for claim in derived:
+        source = claim.get("source") or {}
+        lines.append(
+            f"- `{claim.get('id')}` ({claim.get('status')}): "
+            f"{source.get('ref')}")
+    return "\n".join(lines) + "\n"
+
+
 def main() -> int:
-    """0 — реестр цел и матрица обновлена; 1 — нарушения (печатает их)."""
+    """0 — реестр цел и производные обновлены; 1 — нарушения (печатает их)."""
     claims = load_claims()
     problems = validate(claims)
     if problems:
@@ -176,7 +317,8 @@ def main() -> int:
         print(f"\nНарушений: {len(problems)}. Правьте docs/evidence/claims.yaml.")
         return 1
     MATRIX.write_text(render_matrix(claims), encoding="utf-8")
-    print(f"Реестр цел: утверждений {len(claims)}; матрица обновлена.")
+    CONTRADICTIONS.write_text(render_contradictions(claims), encoding="utf-8")
+    print(f"Реестр цел: фактов {len(claims)}; матрица и противоречия обновлены.")
     return 0
 
 

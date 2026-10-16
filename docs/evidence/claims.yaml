@@ -1,884 +1,972 @@
-# Реестр утверждений о SimInTech и библиотеке simintech-api.
+# Реестр фактов о SimInTech и библиотеке simintech-api — схема v3.
 #
 # Зачем это нужно. Утверждения о среде живут в документах, спецификациях и
 # комментариях — то есть в прозе, где «мы измерили» и «мы предполагаем»
 # выглядят одинаково. Агент, действующий по такому тексту, не отличает факт от
-# догадки, а человек не видит, что именно проверено и на какой версии.
-# Здесь у каждого утверждения названы источник, версия и дата, а где есть
-# автотест — и он.
+# догадки, а человек не видит, что именно проверено и на какой версии. Здесь у
+# каждого факта названы источник, версия и дата, а где есть автотест — и он.
 #
-# Статусы (различие принципиальное):
-#   verified         — подтверждено источником вне нашего кода: живой COM-тест,
-#                      сверка с поставкой (маркер distribution), справка или
-#                      ответ технической поддержки вендора (источник
-#                      `official-doc`);
-#   measured         — живой замер, записанный в документе; автотеста нет;
-#   unit-only        — покрыто только тестом на подделке. Это контракт кода,
-#                      но НЕ подтверждение поведения среды: подделка повторяет
-#                      наше допущение, и опровергнуть его она не может;
-#   refuted          — проверено и опровергнуто (хранится, чтобы вывод не
-#                      «починили» обратно);
-#   unknown          — не измерено;
-#   version-specific — верно для конкретной версии среды.
+# Статусы (v3; словарь один для всей базы знаний):
+#   documented        — так написано в официальной документации (справка
+#                       поставки, help.simintech.ru); сам код среды не звали;
+#   code-confirmed    — следует из кода (нашего или вендорского); тест на
+#                       фейке подтверждает контракт кода, НЕ поведение среды;
+#   live-verified     — живой прогон / поставленный опыт / наблюдение выгрузки;
+#   vendor-confirmed  — ответ технической поддержки вендора или листинг его
+#                       исходника (то, чего нет ни в справке, ни в замерах);
+#   hypothesis        — предположение, не проверенное ничем;
+#   contradicted      — проверено и опровергнуто (хранится, чтобы вывод не
+#                       «починили» обратно; обязано нести contradicted_by);
+#   unknown           — не измерено; план проверки — в разделе 10 базы знаний.
 #
-# `docs/evidence/verification-matrix.md` генерируется из этого файла:
-# `python scripts/evidence.py`. Правьте реестр, а не матрицу.
+# Правила (их держит `scripts/evidence.py`, он же гейт в CI):
+#   * статус и источник обязаны сходиться: documented ← official-doc,
+#     live-verified ← {live-com, controlled-experiment, xprt-observation},
+#     vendor-confirmed ← vendor, code-confirmed ← source-code;
+#   * производный документ (`derived-doc`: README, скиллы, журналы) —
+#     НЕ доказательство: с ним допустимы только hypothesis / contradicted /
+#     unknown. Повторение утверждения в README статус не повышает;
+#   * тест на фейке (`unit-fake`) не может быть единственной опорой
+#     `live-verified` — это статус `code-confirmed`;
+#   * у `live-verified` и `vendor-confirmed` обязательны версия и дата
+#     (`environment`), а также `reproduction` — как воспроизвести;
+#   * ссылки `ref` репо-квалифицированы (`simintech-mcp/…`); локальные пути
+#     (`docs/…`, `simintech_api/…`, …) обязаны существовать;
+#   * id, названные в таблицах `docs/knowledge/**/*.md`, обязаны существовать.
+#
+# `docs/evidence/verification-matrix.md` и
+# `docs/evidence/contradictions.md` генерируются из этого файла:
+# `python scripts/evidence.py`. Правьте реестр, а не производные.
 
 - id: constant-param-is-a
-  claim: "У «Константы» значение задаётся параметром `a`; параметра `y0` не существует"
-  status: verified
+  statement: У «Константы» значение задаётся параметром `a`; параметра `y0` не существует
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/roadmap-agentic-ecosystem.md §3.1"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-10
-  evidence: "`a=5` даёт в выгрузке [5]; `y0=5` не меняет ничего и отказа не даёт"
+    ref: simintech-mcp/docs/roadmap-agentic-ecosystem.md §3.1
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-10'
+  reproduction: '`a=5` даёт в выгрузке [5]; `y0=5` не меняет ничего и отказа не даёт'
   tests:
-    - file: tests/integration/test_lifecycle.py
-      id: test_build_simple_model
-      kind: live
-    - file: tests/unit/test_catalog_dumps.py
-      id: test_props_for_keeps_names_from_real_dumps
-      kind: distribution
-
+  - file: tests/integration/test_lifecycle.py
+    id: test_build_simple_model
+    kind: live
+  - file: tests/unit/test_catalog_dumps.py
+    id: test_props_for_keeps_names_from_real_dumps
+    kind: distribution
 - id: setblockprop-ignores-unknown-name
-  claim: "`SetBlockProp` принимает неизвестное имя параметра молча: значение не меняется, отказа нет"
-  status: measured
+  statement: '`SetBlockProp` принимает неизвестное имя параметра молча: значение не меняется, отказа нет'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/roadmap-agentic-ecosystem.md §3.1"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-10
-  evidence: "Запись `Константа.y0 = 5` прошла без ошибки и не изменила ни одного значения — поэтому имена сверяются с каталогом ДО записи"
+    ref: simintech-mcp/docs/roadmap-agentic-ecosystem.md §3.1
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-10'
+  reproduction: Запись `Константа.y0 = 5` прошла без ошибки и не изменила ни одного значения — поэтому имена сверяются с каталогом ДО записи
   tests: []
-
 - id: blocks-are-not-renamed-via-com
-  claim: "`SetBlockProp(\"Name\")` не переименовывает блок: имя остаётся автоматическим (`k_0`, `kx_0`)"
-  status: measured
+  statement: '`SetBlockProp("Name")` не переименовывает блок: имя остаётся автоматическим (`k_0`, `kx_0`)'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/roadmap-agentic-ecosystem.md §6.1"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-15
-  evidence: "Имя не меняется ни в `get_name()`, ни в выгрузке `.xprt`; отдельного метода переименования в COM API нет"
+    ref: simintech-mcp/docs/roadmap-agentic-ecosystem.md §6.1
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-15'
+  reproduction: Имя не меняется ни в `get_name()`, ни в выгрузке `.xprt`; отдельного метода переименования в COM API нет
   tests: []
-
 - id: summator-ports-need-setportcount
-  claim: "Длина массива `a` у «Сумматора» не добавляет входы: число портов меняется только `SetPortCount`"
-  status: measured
+  statement: 'Длина массива `a` у «Сумматора» не добавляет входы: число портов меняется только `SetPortCount`'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/roadmap-agentic-ecosystem.md §6.2"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-15
-  evidence: "При трёх коэффициентах в `a` входов остаётся два; `SetPortCount` получает число портов вместе с выходом (для трёх входов — 4)"
+    ref: simintech-mcp/docs/roadmap-agentic-ecosystem.md §6.2
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-15'
+  reproduction: При трёх коэффициентах в `a` входов остаётся два; `SetPortCount` получает число портов вместе с выходом (для трёх входов — 4)
   tests:
-    - file: tests/unit/test_block.py
-      id: test_set_in_port_count_adds_inputs
-      kind: unit
-
+  - file: tests/unit/test_block.py
+    id: test_set_in_port_count_adds_inputs
+    kind: unit-fake
 - id: new-project-does-not-calculate
-  claim: "Проект из `Project.new()` не считает: в нём нет расчётного слоя и настроек расчёта"
-  status: measured
+  statement: 'Проект из `Project.new()` не считает: в нём нет расчётного слоя и настроек расчёта'
+  status: live-verified
   source:
     type: controlled-experiment
-    ref: "docs/roadmap-agentic-ecosystem.md §6.5"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-15
-  evidence: "У пустого проекта один слой «Нулевой слой» с пустыми `<parameters>`; модельное время не растёт, но и ошибки нет — `run`/`step` возвращают успех"
+    ref: simintech-mcp/docs/roadmap-agentic-ecosystem.md §6.5
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-15'
+  reproduction: У пустого проекта один слой «Нулевой слой» с пустыми `<parameters>`; модельное время не растёт, но и ошибки нет — `run`/`step` возвращают успех
   tests: []
-
 - id: template-project-calculates
-  claim: "Проект из шаблона («Схема модели общего вида») считает; время расчёта задаётся свойством слоя `endtime`"
-  status: measured
+  statement: Проект из шаблона («Схема модели общего вида») считает; время расчёта задаётся свойством слоя `endtime`
+  status: live-verified
   source:
     type: controlled-experiment
-    ref: "docs/roadmap-agentic-ecosystem.md §6.5"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-15
-  evidence: "`OpenTemplate` + `SetLayerProp(endtime)` + модель «Константа → Усилитель → В файл» дала 6 строк результата со значением 6 (2×3)"
+    ref: simintech-mcp/docs/roadmap-agentic-ecosystem.md §6.5
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-15'
+  reproduction: '`OpenTemplate` + `SetLayerProp(endtime)` + модель «Константа → Усилитель → В файл» дала 6 строк результата со значением 6 (2×3)'
   tests: []
-
 - id: floating-input-stops-calculation
-  claim: "Неподключённый вход блока молча останавливает расчёт всей модели: ошибки нет, модельное время стоит"
-  status: measured
+  statement: 'Неподключённый вход блока молча останавливает расчёт всей модели: ошибки нет, модельное время стоит'
+  status: live-verified
   source:
     type: controlled-experiment
-    ref: "docs/roadmap-agentic-ecosystem.md §6.5"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-15
-  evidence: "Одна и та же схема с соединённым входом считает до 1.0, с висящим — остаётся на 0.0; отказ не выдаётся"
+    ref: simintech-mcp/docs/roadmap-agentic-ecosystem.md §6.5
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-15'
+  reproduction: Одна и та же схема с соединённым входом считает до 1.0, с висящим — остаётся на 0.0; отказ не выдаётся
   tests: []
-
 - id: runto-is-not-blocking
-  claim: "`RunTo` в этой сборке не блокирующий, хотя в карте COM API помечен блокирующим"
-  status: measured
+  statement: '`RunTo` в этой сборке не блокирующий, хотя в карте COM API помечен блокирующим'
+  status: live-verified
   source:
     type: controlled-experiment
-    ref: "docs/roadmap-agentic-ecosystem.md §6.4"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-15
-  evidence: "Сразу после `RunTo(0.5)` время 0.240 с, через мгновение — 0.5 с; поэтому достижение отметки подтверждается опросом `GetProjectTime`"
+    ref: simintech-mcp/docs/roadmap-agentic-ecosystem.md §6.4
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-15'
+  reproduction: Сразу после `RunTo(0.5)` время 0.240 с, через мгновение — 0.5 с; поэтому достижение отметки подтверждается опросом `GetProjectTime`
   tests: []
-
 - id: signals-need-signal-base
-  claim: "`get_signal` работает только у проекта с подключённой базой сигналов; у модели из `create_project` базы нет"
-  status: verified
+  statement: '`get_signal` работает только у проекта с подключённой базой сигналов; у модели из `create_project` базы нет'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/roadmap-agentic-ecosystem.md §6.3"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-10
-  evidence: "У проекта без базы `GetProjectSignalList` пуст, источник сигнала не разрешается — инструмент отказывает с объяснением"
+    ref: simintech-mcp/docs/roadmap-agentic-ecosystem.md §6.3
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-10'
+  reproduction: У проекта без базы `GetProjectSignalList` пуст, источник сигнала не разрешается — инструмент отказывает с объяснением
   tests:
-    - file: tests/integration/test_lifecycle.py
-      id: test_signal_by_name_refuses_without_signal_base
-      kind: live
-
+  - file: tests/integration/test_lifecycle.py
+    id: test_signal_by_name_refuses_without_signal_base
+    kind: live
 - id: wires-have-no-ends-via-com
-  claim: "Концы линий через COM не читаются: нет ни методов для портов связи, ни координат (`Points` пуст даже после нормализации)"
-  status: measured
+  statement: 'Концы линий через COM не читаются: нет ни методов для портов связи, ни координат (`Points` пуст даже после нормализации)'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/gap-closure-plan.md, Н3"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-17
-  evidence: "`list_wires` отдаёт количество и идентификаторы; пара «откуда → куда» не восстанавливается — поэтому связь запоминает сам `connect`"
+    ref: simintech-mcp/docs/gap-closure-plan.md, Н3
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-17'
+  reproduction: '`list_wires` отдаёт количество и идентификаторы; пара «откуда → куда» не восстанавливается — поэтому связь запоминает сам `connect`'
   tests: []
-
+  scope: COM-путь; концы линий отдаёт выгрузка контейнера (export_model_text / savemodeltofile)
 - id: findstartport-is-a-signal-resolver
-  claim: "`findstartport` — не оракул электрической смежности: на спорных портах он вернул порт другого контейнера, а вендорский экспортёр его не вызывает вовсе"
-  status: refuted
+  statement: '`findstartport` — не оракул электрической смежности: на спорных портах он вернул порт другого контейнера, а вендорский экспортёр его не вызывает вовсе'
+  status: contradicted
   source:
     type: controlled-experiment
-    ref: "docs/roadmap-agentic-ecosystem.md, раздел 10 (2026-09-23)"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-23
-  evidence: "Гипотеза «findstartport даёт непосредственное ребро» опровергнута: на трёх портах ответ противоречит эталону, а контракт связей в поставке строится на `traceallports` + `min(1, …)` для входов"
+    ref: simintech-mcp/docs/roadmap-agentic-ecosystem.md, раздел 10 (2026-09-23)
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-23'
+  reproduction: 'Гипотеза «findstartport даёт непосредственное ребро» опровергнута: на трёх портах ответ противоречит эталону, а контракт связей в поставке строится на `traceallports` + `min(1, …)` для входов'
   tests: []
-
+  contradicted_by:
+    type: controlled-experiment
+    ref: 'живой замер 2026-09-23: ответ функции противоречит вендорскому эталону (simintech-code/tests/integration/fixtures/vendor_topology_reference.json)'
 - id: conn-describes-wire-ends-pairwise
-  claim: "`conn` описывает концы линии попарно (для k концов — C(k,2) рёбер), а не отдельные физические провода"
-  status: verified
+  statement: '`conn` описывает концы линии попарно (для k концов — C(k,2) рёбер), а не отдельные физические провода'
+  status: live-verified
   source:
     type: controlled-experiment
-    ref: "docs/roadmap-agentic-ecosystem.md, раздел 10.7 (2026-09-23)"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-23
-  evidence: "На развилке из одного выхода вендорская поставка даёт звезду, попарное правило — треугольник; различие воспроизведено живым тестом на трёх формах ветвления"
+    ref: simintech-mcp/docs/roadmap-agentic-ecosystem.md, раздел 10.7 (2026-09-23)
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-23'
+  reproduction: На развилке из одного выхода вендорская поставка даёт звезду, попарное правило — треугольник; различие воспроизведено живым тестом на трёх формах ветвления
   tests:
-    - file: tests/integration/test_topology_live.py
-      id: test_vendor_cardinality_rule_makes_the_branch_a_star
-      kind: live
-
+  - file: tests/integration/test_topology_live.py
+    id: test_vendor_cardinality_rule_makes_the_branch_a_star
+    kind: live
 - id: fsm-blocks-need-full-record-name
-  claim: "Блоки «Конечные автоматы» создаются только по полному имени записи («Конечные автоматы - Состояние автомата»); короткий заголовок с палитры `CreateBlock` не принимает"
-  status: measured
+  statement: Блоки «Конечные автоматы» создаются только по полному имени записи («Конечные автоматы - Состояние автомата»); короткий заголовок с палитры `CreateBlock` не принимает
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/roadmap-agentic-ecosystem.md §3.0"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-15
-  evidence: "Короткое имя возвращает 0 (блок не создан), полное — создаёт запись; поэтому в справке это названо прямо, а не «класс не поддерживается»"
+    ref: simintech-mcp/docs/roadmap-agentic-ecosystem.md §3.0
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-15'
+  reproduction: Короткое имя возвращает 0 (блок не создан), полное — создаёт запись; поэтому в справке это названо прямо, а не «класс не поддерживается»
   tests: []
-
 - id: block-size-covers-few-classes
-  claim: "`standard_block_size` знает размеры лишь части классов: остальным `layout_place` размер не подменяет, а берёт фактический"
-  status: measured
+  statement: '`standard_block_size` знает размеры лишь части классов: остальным `layout_place` размер не подменяет, а берёт фактический'
+  status: code-confirmed
   source:
     type: source-code
-    ref: "docs/gap-closure-plan.md, Н9"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-17
-  evidence: "Размеры заданы правилами разработки SimInTech и для большинства классов неизвестны; подстановка чужого размера исказила бы схему"
+    ref: simintech-mcp/docs/gap-closure-plan.md, Н9
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-17'
+  reproduction: Размеры заданы правилами разработки SimInTech и для большинства классов неизвестны; подстановка чужого размера исказила бы схему
   tests: []
-
+  scope: размеры известны для части классов; остальным размер берётся фактический
 - id: semantic-query-and-inspection-agree
-  claim: "Запрос связей пары и досмотры портов — две проекции одного прочитанного обзора: каждая связь пары видна досмотром **обоих** своих концов, и каждый сосед из досмотра подтверждается запросом пары"
-  status: verified
+  statement: 'Запрос связей пары и досмотры портов — две проекции одного прочитанного обзора: каждая связь пары видна досмотром **обоих** своих концов, и каждый сосед из досмотра подтверждается запросом пары'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/api.md § query_connections"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-26
-  evidence: "Живой прогон по демо вендора (контейнер `acrms_Circuit1`): 7 passed за 92.68 с; связи пары совпали с эталоном, и каждая подтверждена досмотром с обеих сторон"
+    ref: docs/api.md § query_connections
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-26'
+  reproduction: 'Живой прогон по демо вендора (контейнер `acrms_Circuit1`): 7 passed за 92.68 с; связи пары совпали с эталоном, и каждая подтверждена досмотром с обеих сторон'
   tests:
-    - file: tests/integration/test_semantic_live.py
-      id: test_query_connections_matches_vendor_reference
-      kind: live
-
-# Замеры 2026-09-28 (поставка 2.26.6.23). Разбор — в спецификации
-# `docs/superpowers/specs/2026-09-28-wire-level-and-coports.md`; автотестов у
-# них нет: проверить их можно только живым прогоном, а он требует Windows.
-
+  - file: tests/integration/test_semantic_live.py
+    id: test_query_connections_matches_vendor_reference
+    kind: live
 - id: traceallports-second-arg-crosses-container
-  claim: "`traceallports(port, 1)` обходит сопряжённые порты **через границу контейнера**, а с `0` её не переходит"
-  status: measured
+  statement: '`traceallports(port, 1)` обходит сопряжённые порты **через границу контейнера**, а с `0` её не переходит'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.1"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-28
-  evidence: "Опрашивался внешний порт блока «Субмодель» на родительской странице: вызов с `1` вернул внешний источник и два порта страницы субмодели — объект типа 103 («Блок-идентификатор порта») и внутренний блок (у обоих владелец по `getownercontainer` — контейнер субмодели); вызов с `0` — только внешнего соседа. В обратную сторону (опрос внутреннего порта) замер не делался. Вендорский `export_1layer_topology` зовёт функцию с `0`, то есть границу не переходит: её держит аргумент, а не среда"
+    ref: docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.1
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-28'
+  reproduction: 'Опрашивался внешний порт блока «Субмодель» на родительской странице: вызов с `1` вернул внешний источник и два порта страницы субмодели — объект типа 103 («Блок-идентификатор порта») и внутренний блок (у обоих владелец по `getownercontainer` — контейнер субмодели); вызов с `0` — только внешнего соседа. В обратную сторону (опрос внутреннего порта) замер не делался. Вендорский `export_1layer_topology` зовёт функцию с `0`, то есть границу не переходит: её держит аргумент, а не среда'
   tests: []
-
 - id: wire-node-number-is-point-nmb-plus-one
-  claim: "Номер узла родительской линии = `point_nmb` + 1: `createwire(..., point_nmb, ...)` нумерует точки с нуля, `getparentwirenodeindex` — с единицы"
-  status: measured
+  statement: 'Номер узла родительской линии = `point_nmb` + 1: `createwire(..., point_nmb, ...)` нумерует точки с нуля, `getparentwirenodeindex` — с единицы'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.2"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-28
-  evidence: "Замер дал переходы 0 → 1 и 1 → 2; на линии без промежуточных точек (`points_count = 0`) обе ветви приходятся на узел 1 и друг от друга неотличимы. Тот же переход виден в выгрузке: адрес ветви `wire:K` нумеруется с нуля, то есть K = узел − 1"
+    ref: docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.2
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-28'
+  reproduction: 'Замер дал переходы 0 → 1 и 1 → 2; на линии без промежуточных точек (`points_count = 0`) обе ветви приходятся на узел 1 и друг от друга неотличимы. Тот же переход виден в выгрузке: адрес ветви `wire:K` нумеруется с нуля, то есть K = узел − 1'
   tests: []
-
 - id: savemodeltofile-describes-current-container
-  claim: "`savemodeltofile` описывает текущий контейнер: объекты (включая «В память» 104 и «Временной график» 106), провода (`type = \"wire\"`, `src = \"block:out:N\"`, `dst = \"block:in:N\"`) и свойство `script` страницы"
-  status: measured
+  statement: '`savemodeltofile` описывает текущий контейнер: объекты (включая «В память» 104 и «Временной график» 106), провода (`type = "wire"`, `src = "block:out:N"`, `dst = "block:in:N"`) и свойство `script` страницы'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.3"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-28
-  evidence: "Ветвь адресуется как `src = \"wireName:K\"` (K с нуля), что равно `getparentwirenodeindex − 1`. Достаточность этой выгрузки для восстановления дерева сегментов не проверялась"
+    ref: docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.3
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-28'
+  reproduction: Ветвь адресуется как `src = "wireName:K"` (K с нуля), что равно `getparentwirenodeindex − 1`. Достаточность этой выгрузки для восстановления дерева сегментов не проверялась
   tests: []
-
 - id: createprimitiv-object-has-no-ports
-  claim: "Объект, созданный `createprimitiv` по блочному коду (105/109/113), появляется **без портов** — это штатное состояние неконфигурированного блока"
-  status: measured
+  statement: Объект, созданный `createprimitiv` по блочному коду (105/109/113), появляется **без портов** — это штатное состояние неконфигурированного блока
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.4"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-28
-  evidence: "Порт задаётся `setprop(obj, \"PortNames\", \"<имя>\")` + `initobject(obj)`: замер — было 0 портов, стало 1. Класс объекта остаётся внутренним (`FromMem`, `NewBlock`), а не «Из памяти»/«Блок-узел». Прежняя запись «классы 105/109/113 нельзя создать» верна для `CreateBlock`/`add_block`, но не для языка"
+    ref: docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.4
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-28'
+  reproduction: 'Порт задаётся `setprop(obj, "PortNames", "<имя>")` + `initobject(obj)`: замер — было 0 портов, стало 1. Класс объекта остаётся внутренним (`FromMem`, `NewBlock`), а не «Из памяти»/«Блок-узел». Прежняя запись «классы 105/109/113 нельзя создать» верна для `CreateBlock`/`add_block`, но не для языка'
   tests: []
-
 - id: createprimitiv-needs-graphic-container
-  claim: "`createprimitiv` доступна только в графическом контейнере: из макроса среда отвечает «Функция createprimitiv не найдена»"
-  status: measured
+  statement: '`createprimitiv` доступна только в графическом контейнере: из макроса среда отвечает «Функция createprimitiv не найдена»'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.4"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-28
-  evidence: "Замер: тот же вызов в скрипте страницы проходит, в макросе — отказ среды"
+    ref: docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.4
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-28'
+  reproduction: 'Замер: тот же вызов в скрипте страницы проходит, в макросе — отказ среды'
   tests: []
-
 - id: objects-are-created-only-in-initialization
-  claim: "Создавать объекты можно только в секции `initialization` скрипта страницы: во время моделирования установка блока запрещена, `createblock` возвращает 0"
-  status: measured
+  statement: 'Создавать объекты можно только в секции `initialization` скрипта страницы: во время моделирования установка блока запрещена, `createblock` возвращает 0'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.4"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-28
-  evidence: "Во время расчёта `createblock` вернул 0 без сообщения; среда отвечает «Установка блока на схему в процессе моделирования запрещена». Правило «создавать объекты только в `initialization`» подтверждено ответом технической поддержки вендора, 2026-09-28"
+    ref: docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.4
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-28'
+  reproduction: Во время расчёта `createblock` вернул 0 без сообщения; среда отвечает «Установка блока на схему в процессе моделирования запрещена». Правило «создавать объекты только в `initialization`» подтверждено ответом технической поддержки вендора, 2026-09-28
   tests: []
-
+  caveats:
+  - Правило подтверждено также ответом технической поддержки вендора (2026-09-28)
 - id: submodel-ports-are-created-on-its-page
-  claim: "Внешние порты субмодели создаются на её странице: `getsubmodelid(sub)` → `createblock(contid, \"Порт входа\" / \"Порт выхода\")`"
-  status: measured
+  statement: 'Внешние порты субмодели создаются на её странице: `getsubmodelid(sub)` → `createblock(contid, "Порт входа" / "Порт выхода")`'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.4"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-28
-  evidence: "Классы «Порт входа» и «Порт выхода» есть в каталоге поставки. Видимость портов уточнена замером 2026-09-29: без `initsubmodelports` в `initialization` их не видно (`getblockportcount = 0`), а с ним — видно сразу (запись `initsubmodelports-makes-ports-immediately-visible`)"
+    ref: docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.4
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-28'
+  reproduction: 'Классы «Порт входа» и «Порт выхода» есть в каталоге поставки. Видимость портов уточнена замером 2026-09-29: без `initsubmodelports` в `initialization` их не видно (`getblockportcount = 0`), а с ним — видно сразу (запись `initsubmodelports-makes-ports-immediately-visible`)'
   tests: []
-
 - id: tab-is-a-predefined-constant
-  claim: "`TAB` — предопределённая константа языка (`TAB = chr(9)`): присваивание ей в секции ломает компиляцию сообщением «Константу нельзя присваивать»"
-  status: measured
+  statement: '`TAB` — предопределённая константа языка (`TAB = chr(9)`): присваивание ей в секции ломает компиляцию сообщением «Константу нельзя присваивать»'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.5"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-28
-  evidence: "В теле скрипта то же имя работает как локальное: вложенная процедура объявляет собственный `TAB` и компилируется — так написана проба топологии"
+    ref: docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.5
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-28'
+  reproduction: 'В теле скрипта то же имя работает как локальное: вложенная процедура объявляет собственный `TAB` и компилируется — так написана проба топологии'
   tests: []
-
 - id: script-compile-errors-are-silent-via-com
-  claim: "Ошибки компиляции скрипта страницы через COM не читаются: расчёт стартует молча, текст ошибки виден только в окне сообщений редактора"
-  status: measured
+  statement: 'Ошибки компиляции скрипта страницы через COM не читаются: расчёт стартует молча, текст ошибки виден только в окне сообщений редактора'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.5"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-28
-  evidence: "Дополняет уже известное (`SetPageScript` возвращает 1 и на некомпилируемом тексте): отличить компилируемый скрипт от некомпилируемого по возврату нельзя, а признак отказа — нерастущее модельное время"
+    ref: docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.5
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-28'
+  reproduction: 'Дополняет уже известное (`SetPageScript` возвращает 1 и на некомпилируемом тексте): отличить компилируемый скрипт от некомпилируемого по возврату нельзя, а признак отказа — нерастущее модельное время'
   tests: []
-
 - id: savemodeltofile-understands-absolute-path
-  claim: "`savemodeltofile` понимает абсолютный путь, а относительный разрешает от рабочего каталога приложения"
-  status: measured
+  statement: '`savemodeltofile` понимает абсолютный путь, а относительный разрешает от рабочего каталога приложения'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.6"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-28
-  evidence: "Замер: выгрузка с абсолютным путём записалась туда, куда её просили, с относительным — в рабочий каталог приложения"
+    ref: docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §1.6
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-28'
+  reproduction: 'Замер: выгрузка с абсолютным путём записалась туда, куда её просили, с относительным — в рабочий каталог приложения'
   tests: []
-
 - id: createmodelfromfile-did-not-create-objects
-  claim: "`createmodelfromfile` на тексте, собранном по образцу демонстрационного проекта, объектов не создал: счётчик не изменился, сообщений не было"
-  status: refuted
+  statement: '`createmodelfromfile` на тексте, собранном по образцу демонстрационного проекта, объектов не создал: счётчик не изменился, сообщений не было'
+  status: contradicted
   source:
     type: live-com
-    ref: "docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.4"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-29
-  evidence: "Опровергнуто замером 2026-09-29: причина была на нашей стороне — кавычка в тексте модели задавалась неверно. Удвоение `\"\"` в этой сборке даёт **пустую строку**, обратный слэш не экранирует; с `chr(34)` тот же текст принимается и объекты создаются. Пять демонстрационных проектов поставки (`createmodel`, `createmodelfromfile`, `eval` из файла, `loadtextfromfile`, `savemodeltofile`) проходят; дефекта у вендора нет, сигнал снят"
+    ref: docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.4
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-29'
+  reproduction: 'Опровергнуто замером 2026-09-29: причина была на нашей стороне — кавычка в тексте модели задавалась неверно. Удвоение `""` в этой сборке даёт **пустую строку**, обратный слэш не экранирует; с `chr(34)` тот же текст принимается и объекты создаются. Пять демонстрационных проектов поставки (`createmodel`, `createmodelfromfile`, `eval` из файла, `loadtextfromfile`, `savemodeltofile`) проходят; дефекта у вендора нет, сигнал снят'
   tests: []
-
-# Второй ответ технической поддержки вендора, 2026-09-28. Здесь другое, чем
-# выше, основание: это **описания вендора**, а не наши замеры, и статус у них
-# соответствующий — тип источника `official-doc` (тот же, что у первого ответа,
-# см. `docs/evidence/sources.md`), который для статуса `verified` достаточен
-# сам. Разбор — в спецификации
-# `docs/superpowers/specs/2026-09-28-wire-level-and-coports.md`, §2.
-
+  contradicted_by:
+    type: controlled-experiment
+    ref: 'живой замер 2026-09-29: с `chr(34)` тот же текст принимается и создаёт объекты (см. запись model-text-quote-is-chr34)'
 - id: traceallports-order-is-not-a-contract
-  claim: "Порядок объектов в ответе `traceallports` — не контракт: лист строится подъёмом по `ParentWire` до корневой линии (корень всегда первый), затем рекурсивным обходом в глубину (линия добавляется один раз, дочерние — в порядке индексов), затем сопряжениями с обоих концов; **для сложных топологий порядок не гарантирован**"
-  status: verified
+  statement: 'Порядок объектов в ответе `traceallports` — не контракт: лист строится подъёмом по `ParentWire` до корневой линии (корень всегда первый), затем рекурсивным обходом в глубину (линия добавляется один раз, дочерние — в порядке индексов), затем сопряжениями с обоих концов; **для сложных топологий порядок не гарантирован**'
+  status: vendor-confirmed
   source:
-    type: official-doc
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.1"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-28
-  evidence: "Второй ответ технической поддержки вендора, 2026-09-28: «первым идёт источник входа» верно только для топологий **без служебных блоков**, а вендорский `export_1layer_topology` назван обработчиком частного случая, а не рабочим инструментом. Наше основание не отменяется и не подтверждается: взятое у вендора правило кратности берёт у входного порта первого соседа (`min(1, cols(peers))`), то есть порядок для него значим, а на топологии со служебными блоками это не проверялось (см. §4 спецификации)"
+    type: vendor
+    ref: docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.1
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-28'
+  reproduction: 'Второй ответ технической поддержки вендора, 2026-09-28: «первым идёт источник входа» верно только для топологий **без служебных блоков**, а вендорский `export_1layer_topology` назван обработчиком частного случая, а не рабочим инструментом. Наше основание не отменяется и не подтверждается: взятое у вендора правило кратности берёт у входного порта первого соседа (`min(1, cols(peers))`), то есть порядок для него значим, а на топологии со служебными блоками это не проверялось (см. §4 спецификации)'
   tests: []
-
 - id: branch-point-is-not-a-separate-object
-  claim: "Точка ветвления не добавляется в модель отдельным элементом: её роль играет сама линия-родитель"
-  status: verified
+  statement: 'Точка ветвления не добавляется в модель отдельным элементом: её роль играет сама линия-родитель'
+  status: vendor-confirmed
   source:
-    type: official-doc
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.2"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-28
-  evidence: "Второй ответ технической поддержки вендора, 2026-09-28. Согласуется с замером 2026-09-28: ветвь адресуется парой «имя линии + номер точки», а не собственным идентификатором, — искать ветвь среди объектов контейнера нечего"
+    type: vendor
+    ref: docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.2
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-28'
+  reproduction: 'Второй ответ технической поддержки вендора, 2026-09-28. Согласуется с замером 2026-09-28: ветвь адресуется парой «имя линии + номер точки», а не собственным идентификатором, — искать ветвь среди объектов контейнера нечего'
   tests: []
-
 - id: getparentwire-functions-describe-branching
-  claim: "`getparentwireid` отдаёт идентификатор родительской линии, а `getparentwirenodeindex` — номер точки (начиная с 1) на родительской линии, куда подключена дочерняя; идентификатор ветвления вторая функция не возвращает"
-  status: verified
+  statement: '`getparentwireid` отдаёт идентификатор родительской линии, а `getparentwirenodeindex` — номер точки (начиная с 1) на родительской линии, куда подключена дочерняя; идентификатор ветвления вторая функция не возвращает'
+  status: vendor-confirmed
   source:
-    type: official-doc
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.3"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-28
-  evidence: "Второй ответ технической поддержки вендора, 2026-09-28: в его примере видны номера 3, 4 и 5 — то есть нумеруются точки линии, а не ветви. Совпадает с замером 2026-09-28 (`wire-node-number-is-point-nmb-plus-one`) и с адресом ветви в выгрузке (`wire:K`, K = узел − 1)"
+    type: vendor
+    ref: docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.3
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-28'
+  reproduction: 'Второй ответ технической поддержки вендора, 2026-09-28: в его примере видны номера 3, 4 и 5 — то есть нумеруются точки линии, а не ветви. Совпадает с замером 2026-09-28 (`wire-node-number-is-point-nmb-plus-one`) и с адресом ветви в выгрузке (`wire:K`, K = узел − 1)'
   tests: []
-
 - id: getparentwire-functions-return-zero-without-branching
-  claim: "`getparentwireid` и `getparentwirenodeindex` работают только с ветвлением: если линия подключена к порту блока или «висит в воздухе», обе возвращают 0"
-  status: verified
+  statement: '`getparentwireid` и `getparentwirenodeindex` работают только с ветвлением: если линия подключена к порту блока или «висит в воздухе», обе возвращают 0'
+  status: vendor-confirmed
   source:
-    type: official-doc
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.3"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-28
-  evidence: "Второй ответ технической поддержки вендора, 2026-09-28. Следствие для чтения: ноль здесь значит «ветвления нет», а не «идентификатор неизвестен», и отличить его от ошибки вызова нечем"
+    type: vendor
+    ref: docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.3
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-28'
+  reproduction: 'Второй ответ технической поддержки вендора, 2026-09-28. Следствие для чтения: ноль здесь значит «ветвления нет», а не «идентификатор неизвестен», и отличить его от ошибки вызова нечем'
   tests: []
-
 - id: object-type-constants-are-named
-  claim: "У типов объектов есть именованные константы: `otBlock` = 100, `otWire` = 101, `otSubModel` = 102, `otBlockPort` = 103, `otToMem` = 104, `otFromMem` = 105, `otWatchPoint` = 106, `otLineBlock` = 107, `otLabel` = 108, `otNewBlock` = 109, `otCtrlPoint` = 110, `otBridge` = 111, `otInOut` = 112, `otNode` = 113, `otImageFrameBlock` = 114"
-  status: verified
+  statement: 'У типов объектов есть именованные константы: `otBlock` = 100, `otWire` = 101, `otSubModel` = 102, `otBlockPort` = 103, `otToMem` = 104, `otFromMem` = 105, `otWatchPoint` = 106, `otLineBlock` = 107, `otLabel` = 108, `otNewBlock` = 109, `otCtrlPoint` = 110, `otBridge` = 111, `otInOut` = 112, `otNode` = 113, `otImageFrameBlock` = 114'
+  status: vendor-confirmed
   source:
-    type: official-doc
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.4"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-28
-  evidence: "Второй ответ технической поддержки вендора, 2026-09-28; числа совпадают с таблицей справки (`getobjtypeid`). Нового знания здесь нет: те же числа называют отбор по типам и докстринги библиотеки — запись фиксирует, что имена вендора и наши числа об одном"
+    type: vendor
+    ref: docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.4
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-28'
+  reproduction: 'Второй ответ технической поддержки вендора, 2026-09-28; числа совпадают с таблицей справки (`getobjtypeid`). Нового знания здесь нет: те же числа называют отбор по типам и докстринги библиотеки — запись фиксирует, что имена вендора и наши числа об одном'
   tests: []
-
 - id: createblock-creates-by-class-name
-  claim: "`createblock` не привязан к типам объектов: объект создаётся по имени класса из библиотеки блоков — `createblock(getcurrentprojectid, \"Из памяти\")`"
-  status: verified
+  statement: '`createblock` не привязан к типам объектов: объект создаётся по имени класса из библиотеки блоков — `createblock(getcurrentprojectid, "Из памяти")`'
+  status: vendor-confirmed
   source:
-    type: official-doc
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.5"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-28
-  evidence: "Второй ответ технической поддержки вендора, 2026-09-28. Имя класса — часть контракта создания, и проверить его можно по каталогу поставки (`simintech_api/data/block_catalog.json`). Пример вендора называет класс `Из памяти` — тот самый 105, который отвергает COM-путь (`UnsupportedBlockError`); что язык его создаёт, измерено через `createprimitiv` (запись `createprimitiv-object-has-no-ports`). Основание отбора по типам от этого не меняется: у неконфигурированного объекта портов нет"
+    type: vendor
+    ref: docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.5
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-28'
+  reproduction: 'Второй ответ технической поддержки вендора, 2026-09-28. Имя класса — часть контракта создания, и проверить его можно по каталогу поставки (`simintech_api/data/block_catalog.json`). Пример вендора называет класс `Из памяти` — тот самый 105, который отвергает COM-путь (`UnsupportedBlockError`); что язык его создаёт, измерено через `createprimitiv` (запись `createprimitiv-object-has-no-ports`). Основание отбора по типам от этого не меняется: у неконфигурированного объекта портов нет'
   tests: []
-
 - id: port-index-identity-holds-for-blocks-only
-  claim: "Тождество индекса порта (`getportindex(getblockportid(obj, i)) = i`) верно для всех блоков — функции взаимно обратные; граница у него одна: линии (тип 101) блоками не являются, и на них тождество не держится"
-  status: verified
+  statement: 'Тождество индекса порта (`getportindex(getblockportid(obj, i)) = i`) верно для всех блоков — функции взаимно обратные; граница у него одна: линии (тип 101) блоками не являются, и на них тождество не держится'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.6"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-28
-  evidence: "Второй ответ технической поддержки вендора, 2026-09-28 — про все блоки; граница на линиях измерена раньше: `getportindex(getblockportid(wire, 1))` вернул 2 вместо 1 (живой тест `test_line_fails_addressing_round_trip`, замер 2026-09-23). Вывод тот же, что у отбора по типам: линии в адресации портов не участвуют"
+    ref: docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.6
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-28'
+  reproduction: 'Второй ответ технической поддержки вендора, 2026-09-28 — про все блоки; граница на линиях измерена раньше: `getportindex(getblockportid(wire, 1))` вернул 2 вместо 1 (живой тест `test_line_fails_addressing_round_trip`, замер 2026-09-23). Вывод тот же, что у отбора по типам: линии в адресации портов не участвуют'
   tests:
-    - file: tests/integration/test_topology_live.py
-      id: test_port_index_round_trip_is_identity
-      kind: live
-    - file: tests/integration/test_topology_live.py
-      id: test_line_fails_addressing_round_trip
-      kind: live
-
+  - file: tests/integration/test_topology_live.py
+    id: test_port_index_round_trip_is_identity
+    kind: live
+  - file: tests/integration/test_topology_live.py
+    id: test_line_fails_addressing_round_trip
+    kind: live
 - id: model-text-function-family-has-four-names
-  claim: "Семейство функций текста модели вендор называет из четырёх имён: `createmodel`, `createmodelfromfile`, `savemodeltofile`, `savemodeltotext`"
-  status: verified
+  statement: 'Семейство функций текста модели вендор называет из четырёх имён: `createmodel`, `createmodelfromfile`, `savemodeltofile`, `savemodeltotext`'
+  status: vendor-confirmed
   source:
-    type: official-doc
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.7"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-28
-  evidence: "Второй ответ технической поддержки вендора, 2026-09-28. В срезе справки (`simintech_api/data/language_functions.json`, v15.05.2026, 878 имён) нет ни одного из четырёх имён, но там нет и `savemodeltofile` с `createmodelfromfile`, которые отвечали живым вызовом, — поэтому реестр имён для этого семейства не источник ни в ту, ни в другую сторону"
+    type: vendor
+    ref: docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.7
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-28'
+  reproduction: Второй ответ технической поддержки вендора, 2026-09-28. В срезе справки (`simintech_api/data/language_functions.json`, v15.05.2026, 878 имён) нет ни одного из четырёх имён, но там нет и `savemodeltofile` с `createmodelfromfile`, которые отвечали живым вызовом, — поэтому реестр имён для этого семейства не источник ни в ту, ни в другую сторону
   tests: []
-
 - id: savemodeltotext-missing-from-distribution
-  claim: "`savemodeltotext` — то единственное имя семейства, которого мы не нашли в поставке 2.26.6.23"
+  statement: '`savemodeltotext` — то единственное имя семейства, которого мы не нашли в поставке 2.26.6.23'
   status: unknown
   source:
     type: source-code
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.7"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-28
-  evidence: "Расхождение с ответом вендора: он называет четыре функции, в поставке видны три. Сам поиск опирался на срез справки (`simintech_api/data/language_functions.json`, v15.05.2026, 878 имён) — ни одного из четырёх имён там нет, но нет и `savemodeltofile` с `createmodelfromfile`, которые отвечали живым вызовом (§1.6), — значит, отсутствие в реестре ничего не доказывает. Причина не локализована: либо функции нет в этой поставке, либо вендор назвал её иначе. Опираться на это имя в сценарии, пока расхождение не разрешено, не на чем"
+    ref: docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.7
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-28'
+  reproduction: 'Расхождение с ответом вендора: он называет четыре функции, в поставке видны три. Сам поиск опирался на срез справки (`simintech_api/data/language_functions.json`, v15.05.2026, 878 имён) — ни одного из четырёх имён там нет, но нет и `savemodeltofile` с `createmodelfromfile`, которые отвечали живым вызовом (§1.6), — значит, отсутствие в реестре ничего не доказывает. Причина не локализована: либо функции нет в этой поставке, либо вендор назвал её иначе. Опираться на это имя в сценарии, пока расхождение не разрешено, не на чем'
   tests: []
-
 - id: tracestartportwires-walks-service-blocks
-  claim: "`tracestartportwires` учитывает встречающиеся на пути служебные блоки — у которых есть сопряжённые порты: «в память», «из памяти», порты субмоделей, шины"
-  status: verified
+  statement: '`tracestartportwires` учитывает встречающиеся на пути служебные блоки — у которых есть сопряжённые порты: «в память», «из памяти», порты субмоделей, шины'
+  status: vendor-confirmed
   source:
-    type: official-doc
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.8"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-28
-  evidence: "Второй ответ технической поддержки вендора, 2026-09-28 — официальное описание того же механизма, который мы измерили вторым аргументом `traceallports` (запись `traceallports-second-arg-crosses-container`): обход с `1` приносит порты чужого контейнера"
+    type: vendor
+    ref: docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.8
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-28'
+  reproduction: 'Второй ответ технической поддержки вендора, 2026-09-28 — официальное описание того же механизма, который мы измерили вторым аргументом `traceallports` (запись `traceallports-second-arg-crosses-container`): обход с `1` приносит порты чужого контейнера'
   tests: []
-
 - id: page-script-runs-in-initialization
-  claim: "Тело, поставленное скриптом страницы, исполняется в секции `initialization`, и по маркерам `CTX_BEGIN`/`CTX_END` исход различается на пять состояний"
-  status: measured
+  statement: Тело, поставленное скриптом страницы, исполняется в секции `initialization`, и по маркерам `CTX_BEGIN`/`CTX_END` исход различается на пять состояний
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/superpowers/specs/2026-09-29-language-contour.md §3"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-29
-  evidence: "Маркер `CTX_BEGIN` пишется до тела, `CTX_END` — после: наличие первого без второго означает обрыв на исполнении, отсутствие обоих при неподвижном времени — что скрипт не скомпилировался. Живой прогон 2026-09-29, поставка 2.26.6.23: тело исполнилось в `initialization`, прежний (пустой) скрипт страницы возвращён, метки в выгрузке не осталось, проект остановлен — `tests/integration/test_language_contour_live.py`, 1 passed"
+    ref: docs/superpowers/specs/2026-09-29-language-contour.md §3
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-29'
+  reproduction: 'Маркер `CTX_BEGIN` пишется до тела, `CTX_END` — после: наличие первого без второго означает обрыв на исполнении, отсутствие обоих при неподвижном времени — что скрипт не скомпилировался. Живой прогон 2026-09-29, поставка 2.26.6.23: тело исполнилось в `initialization`, прежний (пустой) скрипт страницы возвращён, метки в выгрузке не осталось, проект остановлен — `tests/integration/test_language_contour_live.py`, 1 passed'
   tests:
-    - file: tests/integration/test_language_contour_live.py
-      id: test_body_runs_in_initialization_and_previous_script_returns
-      kind: live
-
+  - file: tests/integration/test_language_contour_live.py
+    id: test_body_runs_in_initialization_and_previous_script_returns
+    kind: live
 - id: language-literal-uses-chr34-and-clrf
-  claim: "Строковый литерал встроенного языка собирается через `chr(34)` для кавычки и `CLRF` для перевода строки; удвоение кавычки даёт пустую строку, обратный слэш не экранирует"
-  status: measured
+  statement: Строковый литерал встроенного языка собирается через `chr(34)` для кавычки и `CLRF` для перевода строки; удвоение кавычки даёт пустую строку, обратный слэш не экранирует
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/superpowers/specs/2026-09-29-language-contour.md §3"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-29
-  evidence: "Замеры 2026-09-28/29: текст модели с `chr(34)` принимается, тот же текст с удвоением — нет; в пробах инжектирования литерал собирался этой же формой и исполнялся"
+    ref: docs/superpowers/specs/2026-09-29-language-contour.md §3
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-29'
+  reproduction: 'Замеры 2026-09-28/29: текст модели с `chr(34)` принимается, тот же текст с удвоением — нет; в пробах инжектирования литерал собирался этой же формой и исполнялся'
   tests:
-    - file: tests/unit/test_model_operations.py
-      id: test_literal_escapes_quotes_and_newlines_the_measured_way
-      kind: unit
-
+  - file: tests/unit/test_model_operations.py
+    id: test_literal_escapes_quotes_and_newlines_the_measured_way
+    kind: unit-pure
 - id: page-script-readable-without-calculation
-  claim: "Скрипт текущей страницы читается снимком выгрузки: страница опознаётся по единственной изменившейся записи с меткой, а расчёт при чтении не запускается"
-  status: measured
+  statement: 'Скрипт текущей страницы читается снимком выгрузки: страница опознаётся по единственной изменившейся записи с меткой, а расчёт при чтении не запускается'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/superpowers/specs/2026-09-29-language-contour.md §4"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-29
-  evidence: "`GetPageScript` в COM API нет вовсе (`docs/reference/com_api_inventory.md`), `SetPageScript` о прежнем содержимом не сообщает. Живой прогон 2026-09-29: поставленный скрипт прочитан дословно, модельное время до и после совпало, состояние проекта осталось нулевым — `tests/integration/test_language_contour_live.py`, 2 passed"
+    ref: docs/superpowers/specs/2026-09-29-language-contour.md §4
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-29'
+  reproduction: '`GetPageScript` в COM API нет вовсе (`docs/reference/com_api_inventory.md`), `SetPageScript` о прежнем содержимом не сообщает. Живой прогон 2026-09-29: поставленный скрипт прочитан дословно, модельное время до и после совпало, состояние проекта осталось нулевым — `tests/integration/test_language_contour_live.py`, 2 passed'
   tests:
-    - file: tests/integration/test_language_contour_live.py
-      id: test_read_page_script_returns_script_and_keeps_model_time
-      kind: live
-# Замеры 2026-09-29: субмодель со скриптом, семейство текста модели, удаление
-# объектов и обход контейнеров (спецификация 2026-09-29-submodel-script-and-model-text.md).
-
+  - file: tests/integration/test_language_contour_live.py
+    id: test_read_page_script_returns_script_and_keeps_model_time
+    kind: live
 - id: submodel-script-injection-needs-reinitsubmodel
-  claim: "Присвоенный субмодели скрипт (`setprop(objid, \"script\", …)`) компилируется и начинает исполняться только после `reinitsubmodel(objid)`"
-  status: measured
+  statement: Присвоенный субмодели скрипт (`setprop(objid, "script", …)`) компилируется и начинает исполняться только после `reinitsubmodel(objid)`
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.1"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-29
-  evidence: "Без третьего шага присвоенный скрипт не исполняется ни телом, ни секцией `finalization` — файла-маркера нет и сообщений нет (три прогона, в том числе с `runproject` и без него). С `reinitsubmodel` тело исполняется на каждом шаге расчёта. Ограничения там же: `floattostr(time)` записи не даёт, `finalization` не срабатывает при остановке расчёта извне"
+    ref: docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.1
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-29'
+  reproduction: 'Без третьего шага присвоенный скрипт не исполняется ни телом, ни секцией `finalization` — файла-маркера нет и сообщений нет (три прогона, в том числе с `runproject` и без него). С `reinitsubmodel` тело исполняется на каждом шаге расчёта. Ограничения там же: `floattostr(time)` записи не даёт, `finalization` не срабатывает при остановке расчёта извне'
   tests: []
-
 - id: initsubmodelports-makes-ports-immediately-visible
-  claim: "`initsubmodelports(sub)` делает внешние порты субмодели видимыми сразу, в `initialization` — без ожидания первого шага расчёта"
-  status: measured
+  statement: '`initsubmodelports(sub)` делает внешние порты субмодели видимыми сразу, в `initialization` — без ожидания первого шага расчёта'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.2"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-29
-  evidence: "Замер: после создания субмодели и добавления на её страницу «Порт входа» и «Порт выхода» `getblockportcount(sub)` = 0; после `initsubmodelports(sub)` (вернула 1) — 2. Отменяет прежнее наблюдение из `submodel-ports-are-created-on-its-page` («видны только с первого шага расчёта»)"
+    ref: docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.2
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-29'
+  reproduction: 'Замер: после создания субмодели и добавления на её страницу «Порт входа» и «Порт выхода» `getblockportcount(sub)` = 0; после `initsubmodelports(sub)` (вернула 1) — 2. Отменяет прежнее наблюдение из `submodel-ports-are-created-on-its-page` («видны только с первого шага расчёта»)'
   tests: []
-
 - id: removeprimitiv-breaks-calculation-start
-  claim: "`removeprimitiv(id)` при удалении блока роняет следующий старт расчёта: `ProjectStart` возвращает access violation в `mbtylib.dll`; на линии дефект не распространяется — см. `wire-removal-keeps-calculation-start`"
-  status: measured
+  statement: '`removeprimitiv(id)` при удалении блока роняет следующий старт расчёта: `ProjectStart` возвращает access violation в `mbtylib.dll`; на линии дефект не распространяется — см. `wire-removal-keeps-calculation-start`'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.3"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-29
-  evidence: "Изоляция 2×2 «удаление × выгрузка модели»: с удалением — падение (в том числе когда сначала удалён провод), без удаления — расчёт идёт. Скрипт при этом отрабатывает целиком: лог дописан до последней строки. Блоки создавались `createmodel` в `initialization`. Воспроизводитель отправлен вендору 2026-09-29. Уточнение 2026-10-03: падение воспроизведено на блоке; удаление линии старт не роняет — см. `wire-removal-keeps-calculation-start`"
+    ref: docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.3
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-29'
+  reproduction: 'Изоляция 2×2 «удаление × выгрузка модели»: с удалением — падение (в том числе когда сначала удалён провод), без удаления — расчёт идёт. Скрипт при этом отрабатывает целиком: лог дописан до последней строки. Блоки создавались `createmodel` в `initialization`. Воспроизводитель отправлен вендору 2026-09-29. Уточнение 2026-10-03: падение воспроизведено на блоке; удаление линии старт не роняет — см. `wire-removal-keeps-calculation-start`'
   tests: []
-
+  caveats:
+  - На линии дефект не распространяется — см. запись wire-removal-keeps-calculation-start
 - id: wire-removal-keeps-calculation-start
-  claim: "Удаление линии языковым путём (`removeprimitiv(wire_id)` или `removeobject(wire_id)` по id) следующий старт расчёта не роняет — в отличие от удаления блока (`removeprimitiv-breaks-calculation-start`); воссозданная линия получает тот же id"
-  status: measured
+  statement: Удаление линии языковым путём (`removeprimitiv(wire_id)` или `removeobject(wire_id)` по id) следующий старт расчёта не роняет — в отличие от удаления блока (`removeprimitiv-breaks-calculation-start`); воссозданная линия получает тот же id
+  status: live-verified
   source:
     type: live-com
-    ref: "живой замер трека правки линий (simintech-mcp#13), проба probe_wire_edit.py"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-03
-  evidence: "Серия r: `removeprimitiv`/`removeobject` по id + немедленное воссоздание — исход контура ok, расчёт идёт, id переиспользован; удаление без воссоздания — процесс жив, расчёт стоит структурно (висячий вход). Адресация только по id: имена линий не уникальны (`MBTYWire`), форма `removeobject` с именем-строкой обрывает тело скрипта"
+    ref: живой замер трека правки линий (simintech-mcp#13), проба probe_wire_edit.py
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-03'
+  reproduction: 'Серия r: `removeprimitiv`/`removeobject` по id + немедленное воссоздание — исход контура ok, расчёт идёт, id переиспользован; удаление без воссоздания — процесс жив, расчёт стоит структурно (висячий вход). Адресация только по id: имена линий не уникальны (`MBTYWire`), форма `removeobject` с именем-строкой обрывает тело скрипта'
   tests: []
-
 - id: model-text-quote-is-chr34
-  claim: "В тексте модели кавычка внутри строкового литерала задаётся `chr(34)`: удвоение `\"\"` даёт пустую строку, а обратный слэш не экранирует"
-  status: measured
+  statement: 'В тексте модели кавычка внутри строкового литерала задаётся `chr(34)`: удвоение `""` даёт пустую строку, а обратный слэш не экранирует'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.4"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-29
-  evidence: "Текст с `chr(34)` принимается и создаёт объекты; тот же текст, собранный удвоением, не создаёт ничего и сообщений не оставляет — именно это дало наш прежний отрицательный результат по `createmodelfromfile`"
+    ref: docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.4
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-29'
+  reproduction: Текст с `chr(34)` принимается и создаёт объекты; тот же текст, собранный удвоением, не создаёт ничего и сообщений не оставляет — именно это дало наш прежний отрицательный результат по `createmodelfromfile`
   tests: []
-
 - id: model-text-loading-creates-objects
-  claim: "`createmodel` и `createmodelfromfile` создают объекты: пять демонстрационных проектов поставки проходят, приросты совпадают с ручными прогонами"
-  status: measured
+  statement: '`createmodel` и `createmodelfromfile` создают объекты: пять демонстрационных проектов поставки проходят, приросты совпадают с ручными прогонами'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.4"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-29
-  evidence: "`Demo/Язык программирования/Функции/Создание схем из скрипта createmodel`: `createmodel` (модель в скрипте), `createmodelfromfile`, `createmodel` через `eval` из файла, `loadtextfromfile`, `savemodeltofile`. BOM файлу не нужен, а вклейке через `eval` мешает"
+    ref: docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.4
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-29'
+  reproduction: '`Demo/Язык программирования/Функции/Создание схем из скрипта createmodel`: `createmodel` (модель в скрипте), `createmodelfromfile`, `createmodel` через `eval` из файла, `loadtextfromfile`, `savemodeltofile`. BOM файлу не нужен, а вклейке через `eval` мешает'
   tests: []
-
 - id: dot-syntax-belongs-to-model-text
-  claim: "`object.property = value` — синтаксис декларативного текста модели; в языке скрипта точка в выражении недопустима"
-  status: measured
+  statement: '`object.property = value` — синтаксис декларативного текста модели; в языке скрипта точка в выражении недопустима'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.5"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-29
-  evidence: "В скрипте компилятор отвечает «В имени локальной переменной точка недопустима: dblock.a», работа продолжается, а присваивание не происходит. В тексте модели точка работает: `a.formula = 10`. Из скрипта параметры пишут `setprop`/`setpropasstring`"
+    ref: docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.5
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-29'
+  reproduction: 'В скрипте компилятор отвечает «В имени локальной переменной точка недопустима: dblock.a», работа продолжается, а присваивание не происходит. В тексте модели точка работает: `a.formula = 10`. Из скрипта параметры пишут `setprop`/`setpropasstring`'
   tests: []
-
 - id: container-traversal-functions-are-used-by-vendor
-  claim: "Обход контейнеров вендор делает функциями `getobj` (индекс с единицы), `getobjcount`, `getsubmodelid`, `getownercontainer`, `submodelbypageid`, `findstartport`, `getportblockid`, `getfullname`"
-  status: measured
+  statement: Обход контейнеров вендор делает функциями `getobj` (индекс с единицы), `getobjcount`, `getsubmodelid`, `getownercontainer`, `submodelbypageid`, `findstartport`, `getportblockid`, `getfullname`
+  status: live-verified
   source:
     type: xprt-observation
-    ref: "docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.6"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-29
-  evidence: "Скрипты прочитаны в демонстрационных проектах поставки: «Конечные автоматы» (`Пример 0.prt` — обход вниз) и `Demo/Приёмы работы/Получение данных, доступа и т. п./Получение имени субмодели через уровень при помощи submodelbypageid` (подъём на уровень). Все имена есть в срезе справки, v15.05.2026. Живым вызовом мы их не проверяли"
+    ref: docs/superpowers/specs/2026-09-29-submodel-script-and-model-text.md §1.6
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-29'
+  reproduction: 'Скрипты прочитаны в демонстрационных проектах поставки: «Конечные автоматы» (`Пример 0.prt` — обход вниз) и `Demo/Приёмы работы/Получение данных, доступа и т. п./Получение имени субмодели через уровень при помощи submodelbypageid` (подъём на уровень). Все имена есть в срезе справки, v15.05.2026. Живым вызовом мы их не проверяли'
   tests: []
-
 - id: traceallports-second-arg-defaults-true
-  claim: "Второй аргумент `traceallports` по умолчанию включён: вызов без второго аргумента обходит сопряжённые порты, как с явной `1`; явный `0` оставляет только внешнего соседа"
-  status: verified
+  statement: 'Второй аргумент `traceallports` по умолчанию включён: вызов без второго аргумента обходит сопряжённые порты, как с явной `1`; явный `0` оставляет только внешнего соседа'
+  status: vendor-confirmed
   source:
-    type: official-doc
-    ref: "docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.10"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-09-28
-  evidence: "Исходник функции (`GetPortAllConnections_run`), полученный от технической поддержки вендора, 2026-09-28: `aWithCoPorts:=True;`, далее `if Length(Args) > 1 then aWithCoPorts:=Boolean(Args[1].Data^);` — значение переопределяет только переданный второй аргумент. Это не замер: измерены формы с `0` и `1` (запись `traceallports-second-arg-crosses-container`), одноаргументную форму живым прогоном не звали; листинг переписан в спецификацию (§2.10)"
+    type: vendor
+    ref: docs/superpowers/specs/2026-09-28-wire-level-and-coports.md §2.10
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-28'
+  reproduction: 'Исходник функции (`GetPortAllConnections_run`), полученный от технической поддержки вендора, 2026-09-28: `aWithCoPorts:=True;`, далее `if Length(Args) > 1 then aWithCoPorts:=Boolean(Args[1].Data^);` — значение переопределяет только переданный второй аргумент. Это не замер: измерены формы с `0` и `1` (запись `traceallports-second-arg-crosses-container`), одноаргументную форму живым прогоном не звали; листинг переписан в спецификацию (§2.10)'
   tests: []
-
+  caveats:
+  - 'Это не замер: измерены формы с `0` и `1`; одноаргументную форму живым прогоном не звали'
 - id: pack-members-are-open-projects
-  claim: "После `OpenPack` участники пакета видны как открытые проекты: `GetProjectCount` растёт, `GetOpenedFileName` участника — полный путь к `.prt`, а операции `Project` по id участника работают"
-  status: measured
+  statement: 'После `OpenPack` участники пакета видны как открытые проекты: `GetProjectCount` растёт, `GetOpenedFileName` участника — полный путь к `.prt`, а операции `Project` по id участника работают'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/roadmap-agentic-ecosystem.md §10.21"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-01
-  evidence: "Копия демо-пакета поставки: `GetProjectCount` 0 → 2; `GetActiveProject` — один из участников; `Project`-обёртка участника отвечает страницей и настройками слоя (83 ключа)"
+    ref: simintech-mcp/docs/roadmap-agentic-ecosystem.md §10.21
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-01'
+  reproduction: 'Копия демо-пакета поставки: `GetProjectCount` 0 → 2; `GetActiveProject` — один из участников; `Project`-обёртка участника отвечает страницей и настройками слоя (83 ключа)'
   tests: []
-
 - id: pack-step-advances-member-time
-  claim: "`PackStep` продвигает модельное время участников пакета; время читается по id участника (`GetProjectTime`), а время пакета — минимум по участникам"
-  status: measured
+  statement: '`PackStep` продвигает модельное время участников пакета; время читается по id участника (`GetProjectTime`), а время пакета — минимум по участникам'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/roadmap-agentic-ecosystem.md §10.21"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-01
-  evidence: "5 шагов: время участников 0/0 → 6e-05/0.001 с; 25 шагов → 0.0003/0.001. Шаги подтверждаются ростом минимума — на этом стоит `pack_step`"
+    ref: simintech-mcp/docs/roadmap-agentic-ecosystem.md §10.21
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-01'
+  reproduction: '5 шагов: время участников 0/0 → 6e-05/0.001 с; 25 шагов → 0.0003/0.001. Шаги подтверждаются ростом минимума — на этом стоит `pack_step`'
   tests: []
-
 - id: packrun-does-not-advance-in-embedding
-  claim: "`PackStart`+`PackRun` в COM-инстансе поднимает время пакета до первого синхрошага и дальше не продвигает; `WaitForTimePack` (внутри `Pack.run_to`) ожидания не завершает"
-  status: measured
+  statement: '`PackStart`+`PackRun` в COM-инстансе поднимает время пакета до первого синхрошага и дальше не продвигает; `WaitForTimePack` (внутри `Pack.run_to`) ожидания не завершает'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/roadmap-agentic-ecosystem.md §10.21"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-01
-  evidence: "Плато на 0.0099/0.01 за ≥2 с наблюдения, и после повторного `PackStart`+`PackRun` — тоже; `RunToPack` без PackRun-цикла даёт тот же стоп-кадр; `WaitForTimePack` не вернулся за ~4 минуты (проба снята внешним таймаутом). Непрерывное продвижение, возможно, требует условий GUI — не проверялось; в инструментах продвижение идёт `pack_step`"
+    ref: simintech-mcp/docs/roadmap-agentic-ecosystem.md §10.21
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-01'
+  reproduction: Плато на 0.0099/0.01 за ≥2 с наблюдения, и после повторного `PackStart`+`PackRun` — тоже; `RunToPack` без PackRun-цикла даёт тот же стоп-кадр; `WaitForTimePack` не вернулся за ~4 минуты (проба снята внешним таймаутом). Непрерывное продвижение, возможно, требует условий GUI — не проверялось; в инструментах продвижение идёт `pack_step`
   tests: []
-
 - id: pack-member-close-removes-from-pack
-  claim: "`CloseProject` участника пакета исключает проект из состава: `PackGetProjCount` уменьшается (2 → 1)"
-  status: measured
+  statement: '`CloseProject` участника пакета исключает проект из состава: `PackGetProjCount` уменьшается (2 → 1)'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/roadmap-agentic-ecosystem.md §10.21"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-01
-  evidence: "После закрытия участника состав перечисляется заново и содержит одного; id оставшегося отличается от прежнего. Поэтому смена текущего проекта между участниками их не закрывает, а `close_project` участнику отказывает"
+    ref: simintech-mcp/docs/roadmap-agentic-ecosystem.md §10.21
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-01'
+  reproduction: После закрытия участника состав перечисляется заново и содержит одного; id оставшегося отличается от прежнего. Поэтому смена текущего проекта между участниками их не закрывает, а `close_project` участнику отказывает
   tests: []
-
 - id: closepack-invalid-id-crashes-server
-  claim: "`ClosePack(-1)` роняет `mmain.exe` (Access violation); `-1` возвращает `GetPackIdByFileName` для неоткрытого пакета"
-  status: measured
+  statement: '`ClosePack(-1)` роняет `mmain.exe` (Access violation); `-1` возвращает `GetPackIdByFileName` для неоткрытого пакета'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/roadmap-agentic-ecosystem.md §10.21"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-01
-  evidence: "`GetPackIdByFileName` неоткрытого файла вернул `-1`; подача этого id в `ClosePack` — RPC_E_SERVERFAULT с Access violation в mmain.exe. Защита: `Pack.close`/`require_open` отвергают id ≤ 0 до COM и не подают такой id вовсе"
+    ref: simintech-mcp/docs/roadmap-agentic-ecosystem.md §10.21
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-01'
+  reproduction: '`GetPackIdByFileName` неоткрытого файла вернул `-1`; подача этого id в `ClosePack` — RPC_E_SERVERFAULT с Access violation в mmain.exe. Защита: `Pack.close`/`require_open` отвергают id ≤ 0 до COM и не подают такой id вовсе'
   tests:
-    - file: tests/unit/test_pack.py
-      id: test_pack_close_refuses_invalid_id
-      kind: unit
-
+  - file: tests/unit/test_pack.py
+    id: test_pack_close_refuses_invalid_id
+    kind: unit-fake
 - id: pack-double-open-creates-second-pack
-  claim: "Открытие одного `.pak` дважды создаёт второй пакет: `OpenPack` не дедуплицирует по файлу"
-  status: measured
+  statement: 'Открытие одного `.pak` дважды создаёт второй пакет: `OpenPack` не дедуплицирует по файлу'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/roadmap-agentic-ecosystem.md §10.21"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-01
-  evidence: "Повторный `OpenPack` того же файла вернул другой id; после закрытия первого `GetPackCount` остался 1 — второй пакет жив. Поэтому повторное открытие закрывает прежний пакет сессии"
+    ref: simintech-mcp/docs/roadmap-agentic-ecosystem.md §10.21
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-01'
+  reproduction: Повторный `OpenPack` того же файла вернул другой id; после закрытия первого `GetPackCount` остался 1 — второй пакет жив. Поэтому повторное открытие закрывает прежний пакет сессии
   tests: []
-
 - id: pack-member-ids-are-unstable
-  claim: "Идентификаторы участников пакета нестабильны: после изменений состава среда выдаёт их заново; мёртвые id продолжают отвечать старым `GetProjectTime`"
-  status: measured
+  statement: 'Идентификаторы участников пакета нестабильны: после изменений состава среда выдаёт их заново; мёртвые id продолжают отвечать старым `GetProjectTime`'
+  status: live-verified
   source:
     type: live-com
-    ref: "docs/roadmap-agentic-ecosystem.md §10.21"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-01
-  evidence: "После close участника id оставшегося не совпал с прежним; после `ClosePack` мёртвые id всё ещё отдают время — признак живости по чтению времени не построить. Поэтому адресация участников — по индексу состава"
+    ref: simintech-mcp/docs/roadmap-agentic-ecosystem.md §10.21
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-01'
+  reproduction: После close участника id оставшегося не совпал с прежним; после `ClosePack` мёртвые id всё ещё отдают время — признак живости по чтению времени не построить. Поэтому адресация участников — по индексу состава
   tests: []
-
 - id: written-pack-opens-in-simintech
-  claim: "Пакет, собранный текстом (писатель `write_pack`), среда открывает: `OpenPack` отвечает ненулевым id, состав читается"
-  status: verified
+  statement: 'Пакет, собранный текстом (писатель `write_pack`), среда открывает: `OpenPack` отвечает ненулевым id, состав читается'
+  status: live-verified
   source:
     type: live-com
-    ref: "simintech_api/pak.py, раздел «Запись»; живой прогон 01.10.2026"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-01
-  evidence: "Писатель положил `.pak` с голыми именами рядом с двумя настоящими `.prt` (копия демо-пакета в Temp); `OpenPack` вернул ненулевой id, `Pack.project_count()` — 2. Самодостаточный живой тест `tests/integration/test_pack_writer_live.py` исполнен 02.10.2026 на свободном поле (владелец снял процессы): 1 passed за 5.3 с, процесс-владелец теста убран фикстурой — статус поднят до verified"
+    ref: simintech_api/pak.py, раздел «Запись»; живой прогон 01.10.2026
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-01'
+  reproduction: 'Писатель положил `.pak` с голыми именами рядом с двумя настоящими `.prt` (копия демо-пакета в Temp); `OpenPack` вернул ненулевой id, `Pack.project_count()` — 2. Самодостаточный живой тест `tests/integration/test_pack_writer_live.py` исполнен 02.10.2026 на свободном поле (владелец снял процессы): 1 passed за 5.3 с, процесс-владелец теста убран фикстурой — статус поднят до verified'
   tests:
-    - file: tests/integration/test_pack_writer_live.py
-      id: test_written_pack_opens_in_simintech
-      kind: live
-
+  - file: tests/integration/test_pack_writer_live.py
+    id: test_written_pack_opens_in_simintech
+    kind: live
 - id: page-init-reruns-on-each-step
-  claim: "На НЕсчитающей модели каждый `ProjectStep` переисполняет секцию `initialization` скрипта страницы: тело исполняется заново на каждом шаге"
-  status: measured
+  statement: 'На НЕсчитающей модели каждый `ProjectStep` переисполняет секцию `initialization` скрипта страницы: тело исполняется заново на каждом шаге'
+  status: live-verified
   source:
     type: live-com
-    ref: "simintech_api/core/script_bridge.py, `_try_start_and_wait`; замер 01.10.2026"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-01
-  evidence: "Тело с одним `createblock` на модели с висячим входом: 663 объекта за 331 шаг цикла ожидания (цикл в продакшене идёт до таймаута 60 с). Вендорский скрипт ПИД (7 объектов на проход) дал 1302. Один голый `ProjectRun` без шагов даёт ровно один проход и на считающей модели (модельное время растёт), и на несчитающей (стоит): опрос `GetProjectTime` ничего не переинициализирует — этим ждёт контур с 01.10.2026"
+    ref: simintech_api/core/script_bridge.py, `_try_start_and_wait`; замер 01.10.2026
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-01'
+  reproduction: 'Тело с одним `createblock` на модели с висячим входом: 663 объекта за 331 шаг цикла ожидания (цикл в продакшене идёт до таймаута 60 с). Вендорский скрипт ПИД (7 объектов на проход) дал 1302. Один голый `ProjectRun` без шагов даёт ровно один проход и на считающей модели (модельное время растёт), и на несчитающей (стоит): опрос `GetProjectTime` ничего не переинициализирует — этим ждёт контур с 01.10.2026'
   tests:
-    - file: tests/unit/test_script_bridge.py
-      id: test_wait_protocol_is_one_run_and_poll
-      kind: unit
-
+  - file: tests/unit/test_script_bridge.py
+    id: test_wait_protocol_is_one_run_and_poll
+    kind: unit-fake
 - id: run-outruns-the-first-time-read
-  claim: "Считающая модель проходит остаток до `endtime` за доли секунды: первое чтение `GetProjectTime` ПОСЛЕ `ProjectRun` уже видит `endtime`, поэтому оракул роста обязан читать базовое время ДО запуска"
-  status: measured
+  statement: 'Считающая модель проходит остаток до `endtime` за доли секунды: первое чтение `GetProjectTime` ПОСЛЕ `ProjectRun` уже видит `endtime`, поэтому оракул роста обязан читать базовое время ДО запуска'
+  status: live-verified
   source:
     type: live-com
-    ref: "simintech_api/core/script_bridge.py, `_try_start_and_wait`; живой прогон 01.10.2026"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-01
-  evidence: "Свежий проект, endtime=2: 2 с модельного времени пройдены за ≈70 мс (ProjectRun + чтение), первое чтение — уже 2.0000. Оракул с базой после запуска давал на том же проекте «не выросло» при фактическом 0 → 2; база до запуска рост подтверждает"
+    ref: simintech_api/core/script_bridge.py, `_try_start_and_wait`; живой прогон 01.10.2026
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-01'
+  reproduction: 'Свежий проект, endtime=2: 2 с модельного времени пройдены за ≈70 мс (ProjectRun + чтение), первое чтение — уже 2.0000. Оракул с базой после запуска давал на том же проекте «не выросло» при фактическом 0 → 2; база до запуска рост подтверждает'
   tests:
-    - file: tests/unit/test_script_bridge.py
-      id: test_wait_reads_baseline_before_run
-      kind: unit
-
+  - file: tests/unit/test_script_bridge.py
+    id: test_wait_reads_baseline_before_run
+    kind: unit-fake
 - id: projectstart-executes-init-and-resets-time
-  claim: "`ProjectStart` исполняет секцию `initialization` скрипта страницы и сбрасывает модельное время; `ProjectRun` из инициализированного состояния (`state` 1) страницу не переинициализирует"
-  status: measured
+  statement: '`ProjectStart` исполняет секцию `initialization` скрипта страницы и сбрасывает модельное время; `ProjectRun` из инициализированного состояния (`state` 1) страницу не переинициализирует'
+  status: live-verified
   source:
     type: live-com
-    ref: "simintech_api/core/script_bridge.py, `_start_and_wait`; живой прогон 01.10.2026"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-01
-  evidence: "Проект на 2.0 с: ProjectStart — время 2.0 → 0.0, объектов +2 (тело initialization исполнено), state 1; следующий ProjectRun добавил 0 проходов. Поэтому проба (тело под `firststep`) начинается с ProjectStart без удвоения тела, а контур (тело в `initialization`) его не зовёт: на несчитающей модели Start возвращает state 0, и Run исполнил бы тело второй раз"
+    ref: simintech_api/core/script_bridge.py, `_start_and_wait`; живой прогон 01.10.2026
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-01'
+  reproduction: 'Проект на 2.0 с: ProjectStart — время 2.0 → 0.0, объектов +2 (тело initialization исполнено), state 1; следующий ProjectRun добавил 0 проходов. Поэтому проба (тело под `firststep`) начинается с ProjectStart без удвоения тела, а контур (тело в `initialization`) его не зовёт: на несчитающей модели Start возвращает state 0, и Run исполнил бы тело второй раз'
   tests:
-    - file: tests/unit/test_script_bridge.py
-      id: test_probe_starts_before_run_and_only_once
-      kind: unit
-
+  - file: tests/unit/test_script_bridge.py
+    id: test_probe_starts_before_run_and_only_once
+    kind: unit-fake
 - id: endtime-run-executes-init-without-growth
-  claim: "На проекте, дошедшем до `endtime`, голый `ProjectRun` исполняет `initialization` один раз, а модельное время не растёт (2.0 → 2.0)"
-  status: measured
+  statement: На проекте, дошедшем до `endtime`, голый `ProjectRun` исполняет `initialization` один раз, а модельное время не растёт (2.0 → 2.0)
+  status: live-verified
   source:
     type: live-com
-    ref: "simintech_api/core/script_bridge.py, `_try_start_and_wait`; живой прогон 01.10.2026"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-01
-  evidence: "После прогона до endtime=2 повторный голый ProjectRun: объектов 2 → 4 (тело исполнено), время осталось 2.0000, состояние 0. Неподвижное время на таком проекте — не «модель не считает»: считать нечего; тексты контура называют обе причины"
+    ref: simintech_api/core/script_bridge.py, `_try_start_and_wait`; живой прогон 01.10.2026
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-01'
+  reproduction: 'После прогона до endtime=2 повторный голый ProjectRun: объектов 2 → 4 (тело исполнено), время осталось 2.0000, состояние 0. Неподвижное время на таком проекте — не «модель не считает»: считать нечего; тексты контура называют обе причины'
   tests: []
-
 - id: langblock-port-array-without-size
-  claim: "У блока «Язык программирования» порт-массив пересобирается формой БЕЗ размера (`a: array`); форма с размером в скобках (`a[3]: array`) дала неполный набор портов (2 входа вместо 3)"
-  status: measured
+  statement: 'У блока «Язык программирования» порт-массив пересобирается формой БЕЗ размера (`a: array`); форма с размером в скобках (`a[3]: array`) дала неполный набор портов (2 входа вместо 3)'
+  status: live-verified
   source:
     type: live-com
-    ref: "контур `setprop(блок, \"script\")` + `reinitlangblock`; живой прогон 02.10.2026 (пересборка проекта в одной сессии)"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-02
-  evidence: "Блок с `input u: double, a[3]: array, s: double` дал 2 входа вместо 3 (воспроизведено дважды); с `a: array` — 3 входа, три соединения встали, расчёт дошёл до 2 с: y = u + a[1] + s = 5 + 1 + ступенька, результат 6 → 7. Форма `a: array = 3#0` тоже пересобрала 3 входа, но прогоном не подтверждена. Для intarray в портах замера нет"
+    ref: контур `setprop(блок, "script")` + `reinitlangblock`; живой прогон 02.10.2026 (пересборка проекта в одной сессии)
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-02'
+  reproduction: 'Блок с `input u: double, a[3]: array, s: double` дал 2 входа вместо 3 (воспроизведено дважды); с `a: array` — 3 входа, три соединения встали, расчёт дошёл до 2 с: y = u + a[1] + s = 5 + 1 + ступенька, результат 6 → 7. Форма `a: array = 3#0` тоже пересобрала 3 входа, но прогоном не подтверждена. Для intarray в портах замера нет'
   tests: []
-
 - id: block-points-first-is-center
-  claim: "Свойство `Points` блока — не контур: первая точка равна центру блока (совпадает с `set_center`), вторая — выходному порту (центр + (16, 0)); min/max точек габаритом не является"
-  status: measured
+  statement: 'Свойство `Points` блока — не контур: первая точка равна центру блока (совпадает с `set_center`), вторая — выходному порту (центр + (16, 0)); min/max точек габаритом не является'
+  status: live-verified
   source:
     type: live-com
-    ref: "живой прогон 02.10.2026 (демо-проект расстановки; пробы — внутреннее хранилище, в репозиторий не переносятся)"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-02
-  evidence: "«Константа» 32×16 после `create_block(0, 0)`: `Points=[(16 , 8),(32 , 8),(16 , 0),(16 , 32)]` — первая точка (16,8) = левый верхний + половина размера, вторая (32,8) = центр + (16,0); после `set_center(7, 11)` первая точка ровно (7, 11). Размах полилинии даёт 16×32 при габарите 32×16 — min/max габаритом не является. Потребитель (mcp) строит габарит как центр ± size/2: PR #36 и #39"
+    ref: живой прогон 02.10.2026 (демо-проект расстановки; пробы — внутреннее хранилище, в репозиторий не переносятся)
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-02'
+  reproduction: '«Константа» 32×16 после `create_block(0, 0)`: `Points=[(16 , 8),(32 , 8),(16 , 0),(16 , 32)]` — первая точка (16,8) = левый верхний + половина размера, вторая (32,8) = центр + (16,0); после `set_center(7, 11)` первая точка ровно (7, 11). Размах полилинии даёт 16×32 при габарите 32×16 — min/max габаритом не является. Потребитель (mcp) строит габарит как центр ± size/2: PR #36 и #39'
   tests: []
-
 - id: block-ports-at-center-row
-  claim: "Порты блока стоят на высоте центра: выходной — `(cx+16, cy)`, входной — `(cx−16, cy)`; `getportpoint` печатает точку в форме «x+yi»"
-  status: measured
+  statement: 'Порты блока стоят на высоте центра: выходной — `(cx+16, cy)`, входной — `(cx−16, cy)`; `getportpoint` печатает точку в форме «x+yi»'
+  status: live-verified
   source:
     type: live-com
-    ref: "живой прогон 02.10.2026 (контур `getportpoint(getblockportid(...))`; пробы — внутреннее хранилище)"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-02
-  evidence: "«Усилитель» с центром (93, 27): порты `109+27i` (выход) и `77+27i` (вход) — ровно cx±16; «Константа» с центром (7, 11): порт `23+11i`. Порядок портов классо-зависим: у «Усилителя» индекс 0 — выход (в отчёте проверки пустой порт `kx_0[0]` — именно выход). Формат «x±yi» разобран потребителем (mcp, PR #39)"
+    ref: живой прогон 02.10.2026 (контур `getportpoint(getblockportid(...))`; пробы — внутреннее хранилище)
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-02'
+  reproduction: '«Усилитель» с центром (93, 27): порты `109+27i` (выход) и `77+27i` (вход) — ровно cx±16; «Константа» с центром (7, 11): порт `23+11i`. Порядок портов классо-зависим: у «Усилителя» индекс 0 — выход (в отчёте проверки пустой порт `kx_0[0]` — именно выход). Формат «x±yi» разобран потребителем (mcp, PR #39)'
   tests: []
-
 - id: block-set-center-is-exact
-  claim: "`set_center`/`set_position` ставят координаты точно, без привязки к сетке; `create_block(x, y)` трактует (x, y) как левый верхний угол"
-  status: measured
+  statement: '`set_center`/`set_position` ставят координаты точно, без привязки к сетке; `create_block(x, y)` трактует (x, y) как левый верхний угол'
+  status: live-verified
   source:
     type: live-com
-    ref: "живой прогон 02.10.2026 (пробы расстановки; внутреннее хранилище)"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-02
-  evidence: "`set_center(7, 11)` → центр ровно (7.00, 11.00) по `Points` — дробные и внесеточные значения приняты без снапа; `create_block(\"Усилитель\", 160, 0)` → центр (176, 16) = (160 + 32/2, 0 + 32/2). Поэтому сетку расстановке задаёт потребитель (mcp: снап центров на 8 px, PR #36)"
+    ref: живой прогон 02.10.2026 (пробы расстановки; внутреннее хранилище)
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-02'
+  reproduction: '`set_center(7, 11)` → центр ровно (7.00, 11.00) по `Points` — дробные и внесеточные значения приняты без снапа; `create_block("Усилитель", 160, 0)` → центр (176, 16) = (160 + 32/2, 0 + 32/2). Поэтому сетку расстановке задаёт потребитель (mcp: снап центров на 8 px, PR #36)'
   tests: []
-
 - id: constlabel-objects-are-anchors
-  claim: "Объекты-подписи (класс `constLabel`) — не блоки: `Points` — один якорь текста, `size` — типовая карточка 60×40, портов нет; подпись следует за своим блоком при его перемещении"
-  status: measured
+  statement: 'Объекты-подписи (класс `constLabel`) — не блоки: `Points` — один якорь текста, `size` — типовая карточка 60×40, портов нет; подпись следует за своим блоком при его перемещении'
+  status: live-verified
   source:
     type: live-com
-    ref: "живой прогон 02.10.2026 (демо-проект: расстановка с подписями; внутреннее хранилище)"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-02
-  evidence: "После создания «Константы»: `TextLabel3 {cls: constLabel, size: (60, 40), points: [(0, −18)], ports: 0}`. Расставленная «как блок» подпись уезжает от блока; после перемещения блока подпись оказывается рядом с ним (её карточка 60×40 накрывает край блока — ложное «наложение» для метрик). Потребитель (mcp) исключает класс из расстановки и проверок: PR #36 и #39"
+    ref: 'живой прогон 02.10.2026 (демо-проект: расстановка с подписями; внутреннее хранилище)'
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-02'
+  reproduction: 'После создания «Константы»: `TextLabel3 {cls: constLabel, size: (60, 40), points: [(0, −18)], ports: 0}`. Расставленная «как блок» подпись уезжает от блока; после перемещения блока подпись оказывается рядом с ним (её карточка 60×40 накрывает край блока — ложное «наложение» для метрик). Потребитель (mcp) исключает класс из расстановки и проверок: PR #36 и #39'
   tests: []
-
 - id: com-release-does-not-terminate-server
-  claim: "Отпускание последней COM-ссылки не завершает `mmain.exe` надёжно: без открытого проекта процесс чаще остаётся живым; с закрытым проектом завершение стабильно"
-  status: measured
+  statement: 'Отпускание последней COM-ссылки не завершает `mmain.exe` надёжно: без открытого проекта процесс чаще остаётся живым; с закрытым проектом завершение стабильно'
+  status: live-verified
   source:
     type: live-com
-    ref: "automation/com-api.md, раздел «Жизненный цикл процесса»; замеры 02.10.2026"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-02
-  evidence: "22 прогона connect → disconnect без открытого проекта: завершение наступало 9 раз (на стенде с зарегистрированными сторонними плагинами каждое из них — падение в финализации, Access violation), 13 процессов остались живы; с проектом, закрытым перед отпусканием, — завершение 6 раз из 6. Жёсткая гибель клиента (taskkill без disconnect) сервер не закрывает: 4 из 4 живы"
+    ref: automation/com-api.md, раздел «Жизненный цикл процесса»; замеры 02.10.2026
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-02'
+  reproduction: '22 прогона connect → disconnect без открытого проекта: завершение наступало 9 раз (на стенде с зарегистрированными сторонними плагинами каждое из них — падение в финализации, Access violation), 13 процессов остались живы; с проектом, закрытым перед отпусканием, — завершение 6 раз из 6. Жёсткая гибель клиента (taskkill без disconnect) сервер не закрывает: 4 из 4 живы'
   tests: []
-
 - id: com-shutdown-on-last-release-is-not-a-mechanism
-  claim: "`SetShutdownOnLastRelease(1)` не даёт детерминированного завершения сервера и не закрывает его при гибели клиента — как механизм управления процессом непригоден"
-  status: measured
+  statement: '`SetShutdownOnLastRelease(1)` не даёт детерминированного завершения сервера и не закрывает его при гибели клиента — как механизм управления процессом непригоден'
+  status: live-verified
   source:
     type: live-com
-    ref: "automation/com-api.md, раздел «Жизненный цикл процесса»; замеры 02.10.2026"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-02
-  evidence: "Все четыре комбинации `SetNoCloseAppFlag`/`SetShutdownOnLastRelease` (0 и 1) вели себя одинаково: завершение оставалось случайным (9 наступлений из 22), а с флагом и убитым клиентом сервер остался жив 4 раза из 4. Поэтому библиотека флаг не выставляет, а управляемое завершение делает по точному PID"
+    ref: automation/com-api.md, раздел «Жизненный цикл процесса»; замеры 02.10.2026
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-02'
+  reproduction: 'Все четыре комбинации `SetNoCloseAppFlag`/`SetShutdownOnLastRelease` (0 и 1) вели себя одинаково: завершение оставалось случайным (9 наступлений из 22), а с флагом и убитым клиентом сервер остался жив 4 раза из 4. Поэтому библиотека флаг не выставляет, а управляемое завершение делает по точному PID'
   tests: []
-
 - id: com-createobject-attaches-to-manual-instance
-  claim: "`CreateObject` подключается к экземпляру, запущенному вручную (GUI), а COM-запущенные экземпляры (`-Embedding`) не переиспользует"
-  status: measured
+  statement: '`CreateObject` подключается к экземпляру, запущенному вручную (GUI), а COM-запущенные экземпляры (`-Embedding`) не переиспользует'
+  status: live-verified
   source:
     type: live-com
-    ref: "simintech_api/core/com_client.py, `SessionOwnership`; automation/com-api.md, раздел «Жизненный цикл процесса»"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-02
-  evidence: "Ручной запуск `mmain.exe` (окно, без `-Embedding`): `GetProcessID()` вернул PID существующего процесса, нового процесса не появилось. Наоборот, у COM-экземпляров 9 попыток активации при живых процессах (остатки после release, остаток после гибели клиента, процесс с активным клиентом) — все 9 дали новый процесс"
+    ref: simintech_api/core/com_client.py, `SessionOwnership`; automation/com-api.md, раздел «Жизненный цикл процесса»
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-02'
+  reproduction: 'Ручной запуск `mmain.exe` (окно, без `-Embedding`): `GetProcessID()` вернул PID существующего процесса, нового процесса не появилось. Наоборот, у COM-экземпляров 9 попыток активации при живых процессах (остатки после release, остаток после гибели клиента, процесс с активным клиентом) — все 9 дали новый процесс'
   tests: []
-
 - id: com-session-ownership-and-managed-shutdown
-  claim: "Владение процессом COM-сессии подтверждается снимками `get_mmain_pids()` до и после `connect()`; `shutdown()` завершает только свой процесс (release → ожидание exact PID → точечное завершение)"
-  status: verified
+  statement: Владение процессом COM-сессии подтверждается снимками `get_mmain_pids()` до и после `connect()`; `shutdown()` завершает только свой процесс (release → ожидание exact PID → точечное завершение)
+  status: live-verified
   source:
     type: live-com
-    ref: "simintech_api/core/com_client.py, `SessionOwnership`/`shutdown`; automation/com-api.md, раздел «Жизненный цикл процесса»"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-02
-  evidence: "Классификация: PID, появившийся между снимками, — `OWNED`; существовавший до подключения — `EXTERNAL`; неподтверждённый — `UNKNOWN`; завершается только `OWNED`. Живой тест: connect → `session_pid`/`ownership` совпали с наблюдением, `shutdown()` убрал процесс (PID исчез из `get_mmain_pids()`). EXTERNAL-сценарий (GUI-экземпляр) проверен пробой на стенде: attach → `ownership=EXTERNAL` → `shutdown()` → процесс жив"
+    ref: simintech_api/core/com_client.py, `SessionOwnership`/`shutdown`; automation/com-api.md, раздел «Жизненный цикл процесса»
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-02'
+  reproduction: 'Классификация: PID, появившийся между снимками, — `OWNED`; существовавший до подключения — `EXTERNAL`; неподтверждённый — `UNKNOWN`; завершается только `OWNED`. Живой тест: connect → `session_pid`/`ownership` совпали с наблюдением, `shutdown()` убрал процесс (PID исчез из `get_mmain_pids()`). EXTERNAL-сценарий (GUI-экземпляр) проверен пробой на стенде: attach → `ownership=EXTERNAL` → `shutdown()` → процесс жив'
   tests:
-    - file: tests/integration/test_lifecycle.py
-      id: test_connect_disconnect
-      kind: live
-
+  - file: tests/integration/test_lifecycle.py
+    id: test_connect_disconnect
+    kind: live
 - id: job-object-reaps-owned-process-on-owner-death
-  claim: "Процесс OWNED-сессии назначается в job-объект с `KILL_ON_JOB_CLOSE`, и смерть процесса-клиента снимает его силами ядра — без своего запуска `mmain` и без сторожа-процесса"
-  status: measured
+  statement: Процесс OWNED-сессии назначается в job-объект с `KILL_ON_JOB_CLOSE`, и смерть процесса-клиента снимает его силами ядра — без своего запуска `mmain` и без сторожа-процесса
+  status: live-verified
   source:
     type: live-com
-    ref: "simintech_api/utils/job_object.py; замеры 02.10.2026 (трек supervisor; проба probe_job_object_owner_death, n=2)"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-02
-  evidence: "`AssignProcessToJobObject` принял существующий `-Embedding`-процесс (родитель — `svchost`): сессия после назначения отвечает и создаёт проект из шаблона; после `taskkill /F` процесса-владельца хэндла процесс `mmain.exe` снят ядром в ту же секунду — 2 прогона из 2. Отказ назначения (процесс уже в несовместимом job'е; вложенность — Windows 8+) в замере не встречался; политика при отказе — неразрушающая"
+    ref: simintech_api/utils/job_object.py; замеры 02.10.2026 (трек supervisor; проба probe_job_object_owner_death, n=2)
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-02'
+  reproduction: '`AssignProcessToJobObject` принял существующий `-Embedding`-процесс (родитель — `svchost`): сессия после назначения отвечает и создаёт проект из шаблона; после `taskkill /F` процесса-владельца хэндла процесс `mmain.exe` снят ядром в ту же секунду — 2 прогона из 2. Отказ назначения (процесс уже в несовместимом job''е; вложенность — Windows 8+) в замере не встречался; политика при отказе — неразрушающая'
   tests: []
-
 - id: mstarter-macros-runs-macro-in-a-new-instance
-  claim: "`mstarter.exe macros \"<файл>\"` исполняет макрос: mstarter передаёт `mmain.exe \"macros\" \"<файл>\"` и завершается за десятые доли секунды; макрос исполняется в поднятом (новом) экземпляре — в уже работающий экземпляр задание не передаётся"
-  status: measured
+  statement: '`mstarter.exe macros "<файл>"` исполняет макрос: mstarter передаёт `mmain.exe "macros" "<файл>"` и завершается за десятые доли секунды; макрос исполняется в поднятом (новом) экземпляре — в уже работающий экземпляр задание не передаётся'
+  status: live-verified
   source:
     type: controlled-experiment
-    ref: "simintech_api/cli_runner.py, `run_macro_via_starter`; automation/macros.md, «Запуск из командной строки»; пробы probes/mstarter (внутренний стенд), 06.10.2026"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-06
-  evidence: "Файл-маркер, записанный макросом, появлялся после каждого запуска; командная строка поднятого процесса — `mmain.exe \"macros\" \"<файл>\"`; при живом COM-экземпляре (`ownership=owned`) запуск поднял второй процесс mmain, живой не тронул. Тем же замером подтверждены формы `mmain.exe macros` и `mmain.exe /macros`; после макроса процесс остаётся жить, `closeapp` внутри макроса завершает его сам"
+    ref: simintech_api/cli_runner.py, `run_macro_via_starter`; automation/macros.md, «Запуск из командной строки»; пробы probes/mstarter (внутренний стенд), 06.10.2026
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-06'
+  reproduction: Файл-маркер, записанный макросом, появлялся после каждого запуска; командная строка поднятого процесса — `mmain.exe "macros" "<файл>"`; при живом COM-экземпляре (`ownership=owned`) запуск поднял второй процесс mmain, живой не тронул. Тем же замером подтверждены формы `mmain.exe macros` и `mmain.exe /macros`; после макроса процесс остаётся жить, `closeapp` внутри макроса завершает его сам
   tests:
-    - file: tests/unit/test_cli_runner.py
-      id: test_run_macro_via_starter_builds_vendor_command
-      kind: unit
-
+  - file: tests/unit/test_cli_runner.py
+    id: test_run_macro_via_starter_builds_vendor_command
+    kind: unit-pure
 - id: projmacros-does-not-run-macro-and-keeps-process-alive
-  claim: "`mmain.exe /projmacros \"<файл>\"` макрос не исполняет и оставляет процесс живым — воспроизведение таймаута, ради которого заведён issue #13"
-  status: measured
+  statement: '`mmain.exe /projmacros "<файл>"` макрос не исполняет и оставляет процесс живым — воспроизведение таймаута, ради которого заведён issue #13'
+  status: live-verified
   source:
     type: controlled-experiment
-    ref: "simintech_api/cli_runner.py, `project_macro`; automation/macros.md, «Запуск из командной строки»; проба H (probes/mstarter), 06.10.2026"
-    product_version: "SimInTech64, поставка 2.26.6.23"
-    observed_at: 2026-10-06
-  evidence: "Через 20 с после запуска файл-маркер макроса отсутствовал, а процесс `mmain.exe /projmacros <файл>` оставался жив (снят точечно по PID). Рабочие формы того же макроса (`/macros`, `macros`, `mstarter macros`) файл-маркер создавали"
+    ref: simintech_api/cli_runner.py, `project_macro`; automation/macros.md, «Запуск из командной строки»; проба H (probes/mstarter), 06.10.2026
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-06'
+  reproduction: Через 20 с после запуска файл-маркер макроса отсутствовал, а процесс `mmain.exe /projmacros <файл>` оставался жив (снят точечно по PID). Рабочие формы того же макроса (`/macros`, `macros`, `mstarter macros`) файл-маркер создавали
   tests: []
