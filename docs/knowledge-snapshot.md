@@ -12,17 +12,18 @@
 |---|---|---|---|---|
 | `simintech_api/data/block_catalog.json` | 958 классов с именами параметров | SimInTech64 2.26.6.23 | `unknown` (дата прогона не записана; выгрузка не сохранена) | `tests/unit/test_catalog_dumps.py` (сверка с реальными выгрузками), `tests/unit/test_knowledge_snapshot.py` (схема) |
 | `simintech_api/data/language_functions.json` | 907 функций встроенного языка, 878 уникальных имён, синтаксис и аргументы (схема 2) | справка v15.05.2026 | 2026-10-03 | `tests/unit/test_language.py` |
-| `docs/reference/com_api_inventory.md` | карта COM API: 176 методов, достижимость | SimInTech64 2.26.6.23 | 2026-09-17 | документ; выборочно — контрактный тест в MCP |
-| `docs/evidence/claims.yaml` | 60 утверждений о поведении среды | SimInTech64 2.26.6.23 | 2026-09-10 … 2026-10-02 | `scripts/evidence.py` + `tests/unit/test_evidence.py` |
+| `docs/reference/com_api_inventory.md` | карта COM API: 198 строк-методов, достижимость | SimInTech64 2.26.6.23 | 2026-09-17 | документ; выборочно — контрактный тест в MCP |
+| `docs/evidence/claims.yaml` | 72 факта о среде и библиотеке (схема v3) | SimInTech64 2.26.6.23 | 2026-09-10 … 2026-10-06 | `scripts/evidence.py` + `tests/unit/test_evidence.py`; производные — `verification-matrix.md`, `contradictions.md` |
 | Разборы форматов: `.pak` (63 файла), `.tbl` (503), `.dblocalconf`/`.dbconf` (77), `.xprt` | структура файлов поставки | SimInTech64 2.26.6.23 | 2026-09-17 | `tests/unit/test_pak.py`, `test_tbl.py`, `test_dbconf.py`, `test_xprt_signals.py` |
 | Семантический слой топологии | объекты, порты, связи одного контейнера | SimInTech64 2.26.6.23 | 2026-09-23 … 2026-09-24 | живые тесты `tests/integration/test_topology_live.py`, `test_semantic_live.py` |
 
 ## Что здесь не автоматизировано
 
-- **Дата прогона каталога и реестра языка.** Оба файла собраны генераторами,
-  которые теперь проставляют `observation` сами (см. `simintech_api/catalog.py`),
-  но текущие файлы собраны раньше — и дату по ним не восстановить. Следующая
-  пересборка это закроет.
+- **Дата прогона каталога.** Файл собран генератором, который теперь проставляет
+  `observation` сам (см. `simintech_api/catalog.py`), но текущий файл собран
+  раньше — дату по нему не восстановить. У реестра языка дата прогона есть
+  (`observation.observed_at = 2026-10-03`, строка выше); у каталога её закроет
+  следующая пересборка.
 - **Сборщик реестра языка живёт вне репозитория**, поэтому его `observation`
   поддерживается вручную — при пересборке поле надо проставить снова.
 - **Живые проверки требуют Windows**: `tests/integration/**` помечены маркером
