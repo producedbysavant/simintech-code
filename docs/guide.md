@@ -9,7 +9,7 @@
   ```
   C:\SimInTech64\bin\mmain.exe /regserver
   ```
-- Python 3.9+, comtypes:
+- Python 3.11+ (`requires-python >= 3.11` в `pyproject.toml`), comtypes:
   ```
   pip install -e ".[test]"
   ```

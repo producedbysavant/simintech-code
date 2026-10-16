@@ -1,5 +1,11 @@
 # План реализации: контур языкового слоя — PR-1 «механика» (`simintech-code`)
 
+> **Статус на 16.10.2026: реализовано.** Шаги и чекбоксы ниже отражают ход
+> работы на момент плана и как исторический документ не переписываются.
+> Артефакты: `simintech_api/script_probe.py`, `model_operations.py`,
+> `core/script_bridge.py` (`run_page_script`, `read_page_script`); живой тест —
+> `tests/integration/test_language_contour_live.py`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 > Steps use checkbox (`- [ ]`) syntax for tracking.
