@@ -970,3 +970,476 @@
     observed_at: '2026-10-06'
   reproduction: Через 20 с после запуска файл-маркер макроса отсутствовал, а процесс `mmain.exe /projmacros <файл>` оставался жив (снят точечно по PID). Рабочие формы того же макроса (`/macros`, `macros`, `mstarter macros`) файл-маркер создавали
   tests: []
+- id: openproject-succeeds-on-missing-path
+  statement: '`OpenProject` на несуществующем пути отчитывается успехом: среда показывает модальное «Cannot open file…», наружу это не выходит, а `GetOpenedFileName` возвращает тот же несуществующий путь — промах от успеха по COM не отличим'
+  status: live-verified
+  source:
+    type: live-com
+    ref: simintech-mcp/simintech_mcp/tools/project.py:224-231 (живой замер 2026-10-03); предпроверка пути — simintech_api/core/project.py:108-117
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-03'
+  reproduction: Подать `OpenProject` несуществующий путь и прочитать `GetOpenedFileName` открытого проекта — вернёт тот же путь
+  tests: []
+- id: no-block-deletion-in-com-api
+  statement: Метода удаления блока (DeleteBlock) в COM API нет вовсе; удаление живёт только в языке (`removeprimitiv`), и у блока тот вызов роняет следующий старт расчёта
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: docs/reference/com_api_inventory.md; simintech_api/core/com_client.py
+  reproduction: 'Просмотр IDL/инвентаря: методов удаления нет; ср. записи removeprimitiv-breaks-calculation-start и wire-removal-keeps-calculation-start'
+  tests: []
+- id: setpagescript-returns-one-always
+  statement: '`SetPageScript` возвращает 1 и при синтаксически неверном скрипте: как признак успеха бесполезен; прежний скрипт затирается, пустая строка его стирает'
+  status: live-verified
+  source:
+    type: live-com
+    ref: 'simintech_api/core/script_bridge.py:1-21; CLAUDE.md, раздел «Библиотека: ключевые факты» (замер 2026-09-21)'
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-21'
+  reproduction: 'Поставить некомпилируемый скрипт и прочитать возврат: 1'
+  tests: []
+- id: no-getpagescript-in-com-api
+  statement: '`GetPageScript` в COM API нет: чтение скрипта страницы возможно только снимком выгрузки (механизм `read_page_script`), поэтому и инструмент чтения не тривиален'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: docs/reference/com_api_inventory.md; simintech_api/core/script_bridge.py:335-410
+  reproduction: 'Просмотр инвентаря: метода чтения скрипта страницы нет'
+  tests: []
+- id: com-cannot-list-block-properties
+  statement: 'COM не умеет перечислять свойства блока (нет пары «получить количество/имя свойства»): имена приходят из каталога, собранного генератором по живому SimInTech'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/catalog.py (генератор каталога); simintech-mcp/simintech_mcp/catalog.py (сверка имён до записи)
+  reproduction: 'Сверка с инвентарём COM API: методов перечисления свойств нет; генерация каталога — `simintech-generate-catalog`'
+  tests: []
+- id: catalog-provenance-unknown
+  statement: 'Провенанс закоммиченного `block_catalog.json` неполон: `meta.observation.observed_at` и `dump_sha256` — `unknown` (прогон генератора дату не записал, выгрузка не сохранена)'
+  status: unknown
+  source:
+    type: source-code
+    ref: simintech_api/data/block_catalog.json (meta.observation); docs/knowledge-snapshot.md
+  reproduction: Пересборка каталога генератором на живом стенде — `observation` заполнится сам; план — раздел 10 базы знаний
+  tests: []
+- id: catalog-failed-classes-not-created
+  statement: '156 классов каталога помечены `failed`: среда их создать не смогла (нелицензированные модули и подобное) — это состояние среды на дату прогона, а не пробел генератора'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/data/block_catalog.json (meta.failed); simintech-mcp/docs/gap-closure-plan.md, Н1
+  reproduction: Прогон `simintech-generate-catalog --coverage` на живом стенде
+  tests: []
+- id: createmodel-not-in-vendor-help
+  statement: 'Функции `createmodel`, `getinportid`, `getoutportid` отсутствуют в реестре имён справки поставки (`language_functions.json`), но применяются в живых измеренных телах: справка отстаёт от фактической функциональности среды — работают подтверждённо'
+  status: live-verified
+  source:
+    type: live-com
+    ref: 'сверка реестра 2026-10-16: simintech_api/data/language_functions.json; использование — simintech_api/model_operations.py, simintech-mcp/simintech_mcp/tools/wires.py'
+  environment:
+    product: SimInTech64
+    version: 2.26.9.29
+    observed_at: '2026-10-16'
+  reproduction: 'Живые прогоны импорта текста (createmodel) и снятия/ветвления линий (getinportid/getoutportid) проходят; дополнение реестра — simintech-code PR по issue #60'
+  tests: []
+- id: bridge-identifies-its-page-by-snapshot
+  statement: 'Мост опознаёт страницу, в которую сам писал, по единственной изменившейся скриптовой записи (снимки до и после + уникальная метка) и возвращает прежний скрипт **в неё же**: скрипт неглавной страницы не теряется'
+  status: live-verified
+  source:
+    type: live-com
+    ref: simintech_api/core/script_bridge.py:238-284 (_prepare), 682-727 (_restore_script)
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-01'
+  reproduction: 'Поставить пробу на неглавную страницу и снять скрипт-снимок до/после: изменившаяся запись одна, возврат — в неё'
+  tests:
+  - file: tests/integration/test_topology_live.py
+    id: test_reading_topology_inside_container_keeps_its_script
+    kind: live
+- id: live-tests-run-only-locally
+  statement: 'Живые COM-тесты (маркер `integration`) в CI не идут: Windows-раннера нет, CI — ubuntu; «написаны, но не исполнены» — отдельное состояние от «зелёно»'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: .github/workflows/ci.yml; tests/conftest.py (маркеры и --run-simintech)
+  reproduction: 'Просмотр ci.yml: джобы ubuntu; запуск живых — `pytest tests/integration -m integration` на Windows'
+  tests: []
+- id: project-restart-group-unverified
+  statement: Поведение рестарт-группы `Project` (перезапуск проекта и связанные методы) на живом SimInTech не измерялось — в коде помечено «не проверено»
+  status: unknown
+  source:
+    type: source-code
+    ref: simintech_api/core/project.py:326-434
+  reproduction: Живой прогон на тестовом проекте; план — раздел 10 базы знаний
+  tests: []
+- id: submodel-load-assign-unverified
+  statement: Различие `load_submodel` и `assign_submodel` по RIDL не видно и практикой не проверялось — оба помечены «на живом SimInTech не проверено»
+  status: unknown
+  source:
+    type: source-code
+    ref: simintech_api/core/project.py:450-522
+  reproduction: 'Живой прогон: загрузить субмодель обоими путями и сравнить состояние блока'
+  tests: []
+- id: wire-branch-to-unverified
+  statement: '`Wire.branch_to` в коде библиотеки нигде не вызывается; ветка нуля не проверена — живой замер отсутствует'
+  status: unknown
+  source:
+    type: source-code
+    ref: simintech_api/core/wire.py:123-124
+  reproduction: 'Живой прогон: создать ветвь через библиотечный метод и сверить с connect_branch'
+  tests: []
+- id: comclient-project-enumeration-unverified
+  statement: Группа перечисления открытых проектов в `COMClient` (GetProjectCount/IdByNumber/IdByFileName/ActiveProject) на живом SimInTech не проверялась
+  status: unknown
+  source:
+    type: source-code
+    ref: simintech_api/core/com_client.py:477-540
+  reproduction: Живой прогон с двумя открытыми проектами
+  tests: []
+- id: pack-run-to-semantics-unverified
+  statement: '`Pack.run_to` возвращает `WaitForTimePack` «как есть»: значение False не интерпретировано (ожидание не подтверждено) — семантика не выяснена'
+  status: unknown
+  source:
+    type: source-code
+    ref: simintech_api/core/pack.py:105-117
+  reproduction: Живой прогон на пакете с заведомо недостижимым временем; ср. packrun-does-not-advance-in-embedding
+  tests: []
+- id: topology-goes-blind-after-removals
+  statement: 'После серии `removeprimitiv` по id (например, снятия линий циклом в одном контурном прогоне) среда может «ослепнуть» на порты: `getportwireid` отдаёт 0 при живой линии в данных; сохранение и переоткрытие проекта это снимает'
+  status: live-verified
+  source:
+    type: live-com
+    ref: simintech-mcp/simintech_mcp/tools/wires.py:390-398 (наблюдения 2026-10-06); лечение — save_project + reload_project
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-06'
+  reproduction: Серия removeprimitiv по линиям в одном прогоне, затем чтение getportwireid до и после переоткрытия проекта
+  tests: []
+- id: predicted-polyline-is-normalizewire-shape
+  statement: 'Предсказание маршрута (`predicted_polyline`) — форма той же ортогонали, которой линию ведёт NormalizeWire: вылет из порта STUB=16, горизонталь до середины канала, вертикаль, заход; у портов на одной высоте — прямая'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech-mcp/simintech_mcp/geometry.py:146-170; канон — simintech_api/layout/canon.py
+  reproduction: Тест simintech-mcp/tests/unit/test_geometry.py (чистые функции); сверка с каноном
+  tests: []
+- id: backward-links-not-predicted
+  statement: Обратные связи (приёмник левее источника) не предсказываются — маршрут ведёт среда; такие линии честно уходят в «не проверено», а не в чистый вердикт
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech-mcp/simintech_mcp/geometry.py:159-163; tools/check_model.py:912-919
+  reproduction: 'Тест геометрии: обратная связь → None (не догадка)'
+  tests: []
+- id: channel-track-order-is-model
+  statement: 'Порядок треков внутри канала в аудите маршрутов — модель (сортировка по Y приёмника/источника), а не замер: как среда укладывает треки, не измерялось; проверка — снимком'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech-mcp/simintech_mcp/tools/check_model.py:832-837 («предсказание, не замер»)
+  reproduction: save_screenshot страницы с несколькими невыровненными связями в одном зазоре; сверить порядок треков
+  tests: []
+- id: far-link-midpoint-vertical-live
+  statement: Дальнюю связь (через две и более колонок) среда ведёт вертикалью у (x_src + x_dst)/2 и препятствия не обходит
+  status: live-verified
+  source:
+    type: live-com
+    ref: simintech-mcp/simintech_mcp/tools/check_model.py:822-831 (снимки 08.10.2026)
+  environment:
+    product: SimInTech64
+    version: 2.26.9.29
+    observed_at: '2026-10-08'
+  reproduction: 'save_screenshot: k0 (0,0) → kx1 (1200,400), блок-препятствие в средней колонке'
+  tests: []
+- id: normalize-fills-empty-routes
+  statement: Пустой маршрут линии (`points = []` — так приходит часть проводов после импорта текста) нормализация заполняет; результат переживает save + reload
+  status: live-verified
+  source:
+    type: live-com
+    ref: 'simintech-mcp/simintech_mcp/tools/layout.py:437-451 (замеры 03–04.10.2026: 18 из 132)'
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-04'
+  reproduction: Импорт текста с проводами, layout_place(normalize_only=True), затем export_model_text — точки появились
+  tests: []
+- id: normalize-does-not-repair-filled-routes
+  statement: 'Заполненный маршрут нормализация не перестраивает: предельное вмешательство — дотянуть конец к колонке приёмника, мусорные звенья остаются'
+  status: live-verified
+  source:
+    type: live-com
+    ref: simintech-mcp/simintech_mcp/tools/model_text.py:722-760 (замеры 10.10.2026)
+  environment:
+    product: SimInTech64
+    version: 2.26.9.29
+    observed_at: '2026-10-10'
+  reproduction: Проверить маршрут импортированного провода выгрузкой до и после normalize_only
+  tests: []
+- id: baked-import-wire-geometry-not-repairable
+  statement: Геометрия проводов, импортированных текстом, запекается мусорной (звенья вида (-160,-992) вне рабочей области, одинаковые при любых позициях блоков) и не лечится ничем, кроме пересоздания линии; адреса концов при этом корректны
+  status: live-verified
+  source:
+    type: live-com
+    ref: simintech-mcp/simintech_mcp/tools/model_text.py:722-760 (живое воспроизведение 10.10.2026)
+  environment:
+    product: SimInTech64
+    version: 2.26.9.29
+    observed_at: '2026-10-10'
+  reproduction: 'Импорт блоков с проводами одним текстом → export_model_text: звенья вдали от схемы; пересоздание через connect лечит'
+  tests: []
+- id: node-limit-three-lines
+  statement: 'Правило оформления: в точку ветвления не больше трёх линий (сквозная линия даёт два противоположных луча, поэтому «плюс» из четырёх лучей — это три линии, норма)'
+  status: live-verified
+  source:
+    type: live-com
+    ref: simintech-mcp/simintech_mcp/rules.py:8-14 (уточнение владельца 08.10.2026); проверка — check_model.node_overflow, audit_routing
+  environment:
+    product: SimInTech64
+    version: 2.26.9.29
+    observed_at: '2026-10-08'
+  reproduction: Три connect_branch от одного выхода садятся в один узел родителя — четыре линии; audit_routing называет перегруженные узлы
+  tests: []
+- id: empty-branch-pair-0-0i
+  statement: 'connect_branch рождает к ветви пару — линию без приёмника (конечная точка 0+0i): она невидима, в расчёте не участвует, в счёт линий узла не входит и переживает снятие ветви'
+  status: live-verified
+  source:
+    type: live-com
+    ref: simintech-mcp/simintech_mcp/tools/wires.py:43-47, 259-274
+  environment:
+    product: SimInTech64
+    version: 2.26.9.29
+    observed_at: '2026-10-08'
+  reproduction: 'Создать ветвь и пересчитать линии страницы: +2; в выгрузке — запись без dst и конец 0+0i'
+  tests: []
+- id: branch-k-outside-points-silently-collapses
+  statement: 'K вне существующих точек данных родительской линии среда молча сворачивает к первой: инструмент обязан проверять диапазон до вызова (K=0 допустим всегда)'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech-mcp/simintech_mcp/tools/wires.py:586-589 (замер 07.10.2026; версия поставки в источнике не названа)
+  reproduction: 'Подать K=1 при одной точке: узел 1, адрес ветви «:0» — свёрнуто к первой'
+  tests: []
+- id: screenshot-canvas-is-window
+  statement: 'Размер снимка равен клиентской области окна графического контейнера: минус 32 px по ширине и 200 по высоте (1920×903 → PNG 1888×703); потолок высоты окна — 1100'
+  status: live-verified
+  source:
+    type: live-com
+    ref: simintech-mcp/simintech_mcp/tools/screenshot.py:17-23
+  environment:
+    product: SimInTech64
+    version: 2.26.9.29
+    observed_at: '2026-10-08'
+  reproduction: 'Сравнить размер PNG (IHDR) с границами окна: смещение постоянно'
+  tests: []
+- id: screenshot-zoom-tiles
+  statement: Режим zoom снимает крупным планом плитками с перекрытием, пачками за один прогон контура; SVG — настоящий вектор, к нему hires/zoom неприменимы
+  status: live-verified
+  source:
+    type: live-com
+    ref: 'simintech-mcp/simintech_mcp/tools/screenshot.py:93-105 (замер: схема 1672×2368 — три плитки 1696×900)'
+  environment:
+    product: SimInTech64
+    version: 2.26.9.29
+    observed_at: '2026-10-08'
+  reproduction: 'save_screenshot(zoom=1.0) на схеме выше полотна: файлы screenshot-NofM'
+  tests: []
+- id: mcp-failure-is-exception
+  statement: 'Любой отказ MCP-инструмента превращается в ToolError (isError у клиента): и исключение, и строка «ERROR: …» — обе формы'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech-mcp/simintech_mcp/runtime.py:163-183
+  reproduction: Тесты simintech-mcp/tests/unit/test_runtime.py
+  tests: []
+- id: mcp-error-prefix-contract
+  statement: 'Отказ строкой обязан начинаться с ERROR:; текст вида «Error: …» уходит клиенту успехом и пишется в журнал как contract-drift'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech-mcp/simintech_mcp/runtime.py:49-50, 179-198
+  reproduction: 'Подать строку без префикса: isError не выставляется, в журнале contract-drift'
+  tests: []
+- id: mcp-contract-drift-logging
+  statement: 'Детектор contract-drift (текст, похожий на отказ, но без префикса) не покрыт ни одним тестом: контракт держится только кодом'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech-mcp/simintech_mcp/runtime.py:186-198
+  reproduction: Юнит-теста нет; проверить журналом (SIMINTECH_MCP_LOG)
+  tests: []
+  caveats:
+  - Ни позитивного, ни негативного случая в тестах нет (находка аудита 16.10.2026)
+- id: mcp-single-com-thread
+  statement: 'Все COM-вызовы MCP-сервера идут через один выделенный поток (max_workers=1): чужой поток для COM-объекта даёт CO_E_OBJNOTCONNECTED'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech-mcp/simintech_mcp/runtime.py:36-47
+  reproduction: Тест единственного потока — simintech-mcp/tests/unit/test_runtime.py:17
+  tests: []
+- id: mcp-com-timeout-not-interrupting
+  statement: 'Таймаут COM_CALL_TIMEOUT (120 с) не прерывает COM-вызов: клиент получает отказ, а работа может ещё идти; штатный долгий run восстанавливается disconnect + пересозданием проекта'
+  status: live-verified
+  source:
+    type: live-com
+    ref: simintech-mcp/simintech_mcp/runtime.py:337-350 (замер на SimInTech64 2026-09-17)
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-09-17'
+  reproduction: 'Штатный run дольше таймаута: отказ клиенту, время доходит позже'
+  tests: []
+- id: mcp-stuck-call-instant-refusal
+  statement: 'Зависший COM-вызов запоминается: следующие вызовы отказывают мгновенно с диагнозом живости mmain (вне COM), а disconnect (rescue) не отсекается — встаёт в очередь'
+  status: live-verified
+  source:
+    type: live-com
+    ref: 'simintech-mcp/simintech_mcp/runtime.py:75-160, 327-335 (репорт fdd002 08.10.2026: add_block залип на 120 с, mmain мёртв)'
+  environment:
+    product: SimInTech64
+    version: 2.26.9.29
+    observed_at: '2026-10-08'
+  reproduction: Воспроизведение — репорт fdd002 (внутреннее хранилище); механика закрыта тестами test_runtime.py
+  tests: []
+- id: mcp-contour-reads-shift-model-time
+  statement: «Читающие» контурные инструменты (export_model_text, check_model_layout, audit_routing, save_screenshot) перезапускают расчёт и сдвигают модельное время — как step; это названо в их докстрингах
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech-mcp/simintech_mcp/tools/page_script.py:193-226; докстринги инструментов
+  reproduction: get_time до и после check_model_layout на остановленном проекте
+  tests: []
+- id: mcp-ownership-gate-fail-closed
+  statement: 'MCP-сессия принимает только свой процесс (OWNED): EXTERNAL и UNKNOWN — отказ; чужой экземпляр SimInTech не тронут'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech-mcp/simintech_mcp/session.py:211-254; ср. com-session-ownership-and-managed-shutdown
+  reproduction: Тесты simintech-mcp/tests/unit/test_session.py (гейт EXTERNAL/UNKNOWN с рецептами)
+  tests: []
+- id: mcp-project-change-only-via-set-project
+  statement: 'Проект сессии меняется только через session.set_project: вместе с ним сбрасываются линии сессии, курсоры фитов и счёт несохранённого'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech-mcp/simintech_mcp/session.py:286-313
+  reproduction: Тесты session на смену проекта
+  tests: []
+- id: mcp-pack-member-protection
+  statement: 'Участник открытого пакета не закрывается: CloseProject исключил бы его из состава; «состав не читается» трактуется как запрет закрытия (fail closed)'
+  status: live-verified
+  source:
+    type: live-com
+    ref: simintech-mcp/simintech_mcp/session.py:430-517; ср. pack-member-close-removes-from-pack (замер 01.10.2026)
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-01'
+  reproduction: 'Закрыть участника пакета и перечислить состав: 2 → 1'
+  tests: []
+- id: mcp-session-scene-degradation
+  statement: 'После save_project возможна деградация сцены mmain: выгрузка «успешна» без файла, далее AV в SetCurrentPage/CloseProject; правило — сохранили, переоткрыли (reload_project/open_project), потом page-вызовы'
+  status: live-verified
+  source:
+    type: live-com
+    ref: simintech-mcp/simintech_mcp/tools/project.py:714-722 (живые случаи 06.10.2026, 2 из 3 подряд)
+  environment:
+    product: SimInTech64
+    version: 2.26.6.23
+    observed_at: '2026-10-06'
+  reproduction: save_project → сразу page-вызов (выгрузка/снимок) — на деградировавшей сцене файл выгрузки не появляется
+  tests: []
+- id: mcp-save-atomic-temp-file
+  statement: 'save_project пишет проект во временный файл рядом (<имя>.tmp.<ext>) и заменяет целевой одним os.replace: обрыв записи не трогает боевой файл; нулевая длина — отказ, не успех'
+  status: live-verified
+  source:
+    type: live-com
+    ref: 'simintech-mcp/simintech_mcp/tools/project.py:480-779 (репорт 08.10.2026: целевой .prt остался 0 байт; замеры 13.10.2026)'
+  environment:
+    product: SimInTech64
+    version: 2.26.9.29
+    observed_at: '2026-10-08'
+  reproduction: Сорвать запись (AV/убийство процесса) — целевой файл цел; повторная запись идентичным содержимым на грубой ФС — остаточный риск ложного отказа (см. caveats)
+  tests: []
+  caveats:
+  - Перезапись идентичным содержимым с той же меткой и размером неотличима от залипания (ложный отказ, не успех)
+- id: mcp-mutation-note
+  statement: 'Успешный ответ мутирующего инструмента несёт хвост «Изменения внесены в: … Не сохранено: …»: хвост ставит обвязка по метке mutates_project=True, а не инструмент'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech-mcp/simintech_mcp/runtime.py:200-218; session.py:388-406
+  reproduction: Тесты mutation-note в simintech-mcp/tests/unit/test_runtime.py
+  tests: []
+- id: mcp-mutating-set-is-contract
+  statement: 'Список мутирующих инструментов — контракт поверхности, сверяемый равенством: лишняя метка — ложь, пропавшая — слепой ответ'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech-mcp/tests/unit/test_surface.py (test_mutating_tools_are_marked)
+  reproduction: Прогон теста поверхности
+  tests: []
+- id: mcp-sandbox-limit-before-read
+  statement: Чтение файлов MCP — только из каталога результатов (SIMINTECH_OUTPUT_DIR); предел объёма применяется до чтения; симлинк-подмена каталога отвергается
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech-mcp/simintech_mcp/sandbox.py:37-120
+  reproduction: Тесты simintech-mcp/tests/unit/test_sandbox.py
+  tests: []
+- id: mcp-sandbox-env-fail-closed
+  statement: SIMINTECH_OUTPUT_DIR, заданный в несуществующий каталог, — отказ чтения (fail closed), а не молчаливый другой каталог
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech-mcp/simintech_mcp/sandbox.py:65-84
+  reproduction: Задать переменную в несуществующий путь и прочитать файл — отказ
+  tests: []
+- id: mcp-every-tool-wrapped
+  statement: 'Каждый MCP-инструмент обёрнут com_threaded или plain_tool: без декоратора отказ уходит клиенту успехом и вызова нет в журнале'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech-mcp/tests/unit/test_surface.py (test_all_tools_have_failure_contract)
+  reproduction: Прогон теста поверхности
+  tests: []
+- id: mcp-plain-tools-exactly-eight
+  statement: plain_tool — ровно восемь инструментов без COM; список закреплён равенством в тесте поверхности
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech-mcp/tests/unit/test_surface.py:202-218
+  reproduction: Прогон теста поверхности
+  tests: []
+- id: mcp-tool-annotations-contract
+  statement: 'У каждого MCP-инструмента — заголовок и readOnlyHint; destructiveHint: True — ровно семь; save_screenshot — readOnlyHint: False без мутирующей метки'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: 'simintech-mcp PR #160 (открыт на 16.10.2026): test_surface.py (test_tool_annotations_contract)'
+  reproduction: 'Прогон теста поверхности после мержа PR #160'
+  tests: []
+  caveats:
+  - 'На main контракт появится после мержа simintech-mcp PR #160 (в полёте на дату записи)'
+- id: mcp-readme-counts-contract
+  statement: 'Число инструментов в README (59) и перечень имён сверяются с tools/list тестами: README — обещание полноты состава'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech-mcp/tests/unit/test_surface.py:129-163
+  reproduction: Прогон теста поверхности
+  tests: []
+- id: mcp-contour-core-single-entry
+  statement: 'Мост вызывается только через page_script.run_contour (исключение — check_model.py, отчётным протоколом): единая точка рецепта «мост → ToolError»'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech-mcp/simintech_mcp/tools/page_script.py:193-226; simintech-mcp/tests/unit/test_dependency_contract.py:166
+  reproduction: Архитектурный тест контракта зависимостей
+  tests: []
