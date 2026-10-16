@@ -88,6 +88,7 @@ _SIBLING_PREFIXES = ("simintech-mcp/", "simintech-skill/")
 _LOCAL_PREFIXES = (
     "docs/", "simintech_api/", "tests/", "scripts/", "automation/",
     "language/", "blocks/", "patterns/", "tutorials/", "examples/",
+    ".github/",
 )
 
 _PATH_RE = re.compile(r"([A-Za-z0-9_./-]+\.(?:md|py|json|yaml|inc|txt|pak|tbl))")

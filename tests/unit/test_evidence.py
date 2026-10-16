@@ -100,9 +100,15 @@ def test_derived_doc_does_not_raise_status():
     assert any("производный документ" in problem for problem in problems)
 
 
-def test_derived_hypothesis_is_allowed():
-    """Гипотеза на производном источнике — законная запись."""
-    assert validate([_derived(status="hypothesis")]) == []
+def test_derived_hypothesis_is_allowed(tmp_path):
+    """Гипотеза на производном источнике — законная запись.
+
+    Корень — пустой (`tmp_path`): проверка цитат базы знаний сверяет id
+    документа `docs/knowledge/**` с **полным** реестром, а здесь реестр
+    синтетический из одной записи — на реальном каталоге это заведомо
+    расхождение, не относящееся к проверяемому правилу.
+    """
+    assert validate([_derived(status="hypothesis")], root=tmp_path) == []
 
 
 def test_live_verified_without_environment_is_caught():
@@ -142,10 +148,11 @@ def test_ref_to_missing_local_path_is_caught():
     assert any("несуществующий путь" in problem for problem in problems)
 
 
-def test_sibling_ref_is_accepted():
+def test_sibling_ref_is_accepted(tmp_path):
     """Ссылка в соседний репозиторий принимается с квалификацией репозитория."""
     source = {"type": "derived-doc", "ref": "simintech-skill/README.md"}
-    assert validate([_derived(status="hypothesis", source=source)]) == []
+    assert validate([_derived(status="hypothesis", source=source)],
+                    root=tmp_path) == []
 
 
 def test_supersedes_unknown_id_is_caught():
