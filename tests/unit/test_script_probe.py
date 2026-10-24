@@ -410,16 +410,24 @@ def test_parse_script_records_accepts_empty_name_without_backticks():
     assert parse_xprt_script_records(_dump([("", "`x`")])) == ["`x`"]
 
 
-def test_parse_script_records_refuses_dump_with_unparsed_page():
-    """Число записей обязано сойтись с числом страниц: пропуск — не «меньше».
-
-    Разбор, молча пропустивший страницу, сдвинул бы нумерацию записей, и
-    возврат положил бы чужой скрипт. Поэтому расхождение — отказ.
-    """
+def test_parse_script_records_keeps_slot_for_page_without_name():
+    """Страница без `<name>` не пропадает: её запись остаётся в слоте."""
     text = _dump([("`a`", "`x`")]) + "<page>\n <script>no name</script>\n</page>\n"
-    with pytest.raises(ScriptBridgeError) as exc:
-        parse_xprt_script_records(text)
-    assert "страниц" in str(exc.value)
+    assert parse_xprt_script_records(text) == ["`x`", "no name"]
+
+
+def test_parse_script_records_accepts_unquoted_nonempty_name():
+    """Непустое имя без кавычек - тоже форма страницы, а не отказ."""
+    text = ("<project>\n<page>\n <name>Page 1</name>\n"
+            " <script>`x`</script>\n</page>\n</project>\n")
+    assert parse_xprt_script_records(text) == ["`x`"]
+
+
+def test_parse_script_records_finds_script_after_prologue_elements():
+    """Элемент между name и script не прячет страничный скрипт."""
+    text = ("<project>\n<page>\n <name>`p`</name>\n <visible>`1`</visible>\n"
+            " <script>`x`</script>\n</page>\n</project>\n")
+    assert parse_xprt_script_records(text) == ["`x`"]
 
 
 def test_parse_script_records_does_not_take_data_script_for_page_script():
@@ -435,27 +443,28 @@ def test_parse_script_records_does_not_take_data_script_for_page_script():
     assert parse_xprt_script_records(text) == ["`page`"]
 
 
-def test_parse_script_records_refuses_page_without_its_own_script():
-    """Правило «`<script>` сразу за `</name>`» — не украшение, и оно проверяется.
+def test_parse_script_records_keeps_empty_slot_for_page_without_own_script():
+    """Страница без собственного script даёт пустой слот, а не сдвиг.
 
-    Форма синтетическая: в поставке страницы без собственного скрипта не
-    встречается (0 из 1534 — у каждой ровно один страничный `<script>`, и он
-    всегда идёт сразу за `</name>`). Но именно она отделяет верный разбор от
-    ослабленного: если снять примыкание к `</name>`, разбор вернёт **скрипт
-    свойства** под видом скрипта страницы, а самопроверка по числу записей этого
-    не увидит — числа сойдутся. Возврат же чужого скрипта в текущую страницу и
-    есть та порча, ради запрета которой всё делается.
-
-    Измерено ревью: без этого теста ослабленные формы
-    (`<name>.*?</name>.*?<script>`, `</name>.*?<script>`) проходят все тесты и
-    на всех 1534 страницах поставки неотличимы от верного разбора.
+    Пролог страницы заканчивается на первом object: скрипт свойства оттуда не
+    берётся. Слот остаётся, чтобы номера записей не сдвинулись.
     """
     text = ("<project>\n<page>\n <name>`p`</name>\n <object>\n  <data>\n"
             "   <script>`prop`</script>\n  </data>\n </object>\n</page>\n"
             "</project>\n")
-    with pytest.raises(ScriptBridgeError) as exc:
-        parse_xprt_script_records(text)
-    assert "страниц" in str(exc.value)
+    assert parse_xprt_script_records(text) == [""]
+
+
+def test_parse_script_records_aligns_slots_on_mixed_pages():
+    """Слотов ровно столько же, сколько страниц, включая страницу без script."""
+    text = ("<project>\n"
+            "<page>\n <name>`a`</name>\n <script>`x`</script>\n</page>\n"
+            "<page>\n <name>`b`</name>\n</page>\n"
+            "<page>\n <name>`c`</name>\n <script>`z`</script>\n</page>\n"
+            "</project>\n")
+    records = parse_xprt_script_records(text)
+    assert records == ["`x`", "", "`z`"]
+    assert len(records) == text.count("<page>")
 
 
 def test_token_present_in_finds_token_in_any_record():
@@ -472,6 +481,13 @@ TOKEN = "//SCRIPT_BRIDGE_TARGET_aabbccdd"
 
 def test_find_changed_script_record_accepts_single_changed_with_token():
     before = ["`main`", "`sub`"]
+    after = ["`main`", f"`{TOKEN}`#10`probe`"]
+    assert find_changed_script_record(before, after, TOKEN) == 1
+
+
+def test_find_changed_script_record_accepts_empty_before_slot():
+    """Страница без скрипта опознаётся по метке и возвращается пустой."""
+    before = ["`main`", ""]
     after = ["`main`", f"`{TOKEN}`#10`probe`"]
     assert find_changed_script_record(before, after, TOKEN) == 1
 
