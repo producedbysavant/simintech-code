@@ -36,6 +36,7 @@ from .errors import (
     ModelIRLimitError,
     ModelQueryError,
     ModelTextParseError,
+    SystemSpecError,
     XprtParseError,
 )
 from .ids import content_hash, structure_hash
@@ -60,6 +61,16 @@ from .ir import (
 from .graph import ModelIndex, QueryResult
 from .manifest import build_manifest
 from .merge import build_model_ir
+from .system_spec import (
+    CompiledSpec,
+    ExpectedLevel,
+    ExpectedModel,
+    ExpectedObject,
+    ExpectedPort,
+    ExpectedWire,
+    compile_system_spec,
+)
+from .verify import VerificationReport, verify_model
 from .text_model import parse_model_text
 from .topology_model import topology_to_ir
 from .xprt_model import Limits, parse_xprt, parse_xprt_file
@@ -71,8 +82,14 @@ __all__ = [
     "BoundaryPort",
     "Constraint",
     "Container",
+    "CompiledSpec",
     "ContractCoverage",
     "CreationPath",
+    "ExpectedLevel",
+    "ExpectedModel",
+    "ExpectedObject",
+    "ExpectedPort",
+    "ExpectedWire",
     "ContainerKind",
     "Coverage",
     "Decoration",
@@ -86,6 +103,7 @@ __all__ = [
     "ModelIndex",
     "ModelQueryError",
     "ModelTextParseError",
+    "SystemSpecError",
     "ModelMeta",
     "ModelObject",
     "ModelPort",
@@ -107,8 +125,10 @@ __all__ = [
     "WireEndKind",
     "WireKind",
     "XprtParseError",
+    "VerificationReport",
     "build_manifest",
     "build_model_ir",
+    "compile_system_spec",
     "content_hash",
     "load_default_contracts",
     "parse_model_text",
@@ -117,4 +137,5 @@ __all__ = [
     "structure_hash",
     "topology_to_ir",
     "validate_contract_data",
+    "verify_model",
 ]

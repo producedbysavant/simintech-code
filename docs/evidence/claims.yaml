@@ -1618,3 +1618,36 @@
   - file: tests/unit/test_model_ir_contracts.py
     id: test_validator_accepts_registry_and_rejects_mutations
     kind: unit-pure
+- id: model-ir-system-spec-compile
+  statement: 'SystemSpec проверяется до SimInTech: классы, свойства, ссылки, концы проводов, инварианты и assertions; ошибки собираются все, а не первая'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/system_spec.py
+  reproduction: 'test_compile_collects_all_errors: неизвестный класс, повтор имени, чужое свойство, самопетля, неизвестный блок, инвариант, проверка и операция дают все коды сразу'
+  tests:
+  - file: tests/unit/test_model_ir_system_spec.py
+    id: test_compile_collects_all_errors
+    kind: unit-pure
+- id: model-ir-verify-verdict
+  statement: 'Сверка фактической модели с ExpectedModel даёт passed только при всех пройденных проверках, partial при unknown/not_evaluated и failed при любом расхождении'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/verify.py
+  reproduction: 'test_compile_chain_and_verify_passed, test_missing_wire_fails_verification, test_unknown_contract_is_partial_not_failed: три вердикта на согласованной, повреждённой и неизмеренной модели'
+  tests:
+  - file: tests/unit/test_model_ir_system_spec.py
+    id: test_missing_wire_fails_verification
+    kind: unit-pure
+- id: model-ir-verify-does-not-execute-code
+  statement: 'Верификация не исполняет произвольный код: assertions без расчётного испытания остаются not_evaluated, а partial не маскируется под passed'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/verify.py
+  reproduction: 'test_requirement_and_assertion_statuses: assertion not_evaluated, словесное требование not_evaluated, verdict partial'
+  tests:
+  - file: tests/unit/test_model_ir_system_spec.py
+    id: test_requirement_and_assertion_statuses
+    kind: unit-pure

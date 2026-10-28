@@ -144,3 +144,6 @@
 | `model-ir-contracts-958-classes` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_contracts.py::test_registry_covers_all_catalog_classes` (unit-pure) |
 | `model-ir-contracts-nport` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_contracts.py::test_nport_and_portnames_contracts` (unit-pure) |
 | `model-ir-contracts-unknown-not-guessed` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_contracts.py::test_validator_accepts_registry_and_rejects_mutations` (unit-pure) |
+| `model-ir-system-spec-compile` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_system_spec.py::test_compile_collects_all_errors` (unit-pure) |
+| `model-ir-verify-verdict` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_system_spec.py::test_missing_wire_fails_verification` (unit-pure) |
+| `model-ir-verify-does-not-execute-code` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_system_spec.py::test_requirement_and_assertion_statuses` (unit-pure) |

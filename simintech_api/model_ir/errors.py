@@ -31,3 +31,13 @@ class ModelIRConflictError(ModelIRError):
 
 class ModelQueryError(ModelIRError):
     """Запрос к IR не может быть выполнен однозначно."""
+
+
+class SystemSpecError(ModelIRError):
+    """SystemSpec не скомпилирован: ошибки собраны все, а не первая."""
+
+    def __init__(self, problems: list[dict[str, str]]) -> None:
+        self.problems = problems
+        super().__init__(
+            "SystemSpec: " + "; ".join(
+                f"{item['path']}: {item['message']}" for item in problems))
