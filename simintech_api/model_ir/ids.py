@@ -80,12 +80,14 @@ def _structure_payload(model: "ModelIR") -> list[Any]:
             item.kind.value,
             [
                 item.start.kind.value,
+                item.start.object_id,
                 item.start.object_name,
                 item.start.port_index,
                 item.start.resolved,
             ],
             [
                 item.end.kind.value,
+                item.end.object_id,
                 item.end.object_name,
                 item.end.port_index,
                 item.end.resolved,
@@ -140,10 +142,11 @@ def _content_payload(model: "ModelIR") -> list[Any]:
     objects = [
         [
             item.address,
-            sorted([name, prop.value, prop.section]
+            sorted([name, prop.value, prop.section, prop.script_hash]
                    for name, prop in item.props.items()),
-            sorted([name, prop.value]
-                   for name, prop in item.visual_props.items()),
+            sorted([name, prop.value, prop.script_hash]
+                   for name, prop in item.visual_props.items()
+                   if name not in ("Width", "Height")),
             sorted([slot, script.sha256, script.length]
                    for slot, script in item.scripts.items()),
             item.points,
@@ -171,7 +174,7 @@ def _content_payload(model: "ModelIR") -> list[Any]:
             item.node_points,
             list(item.start_xy),
             list(item.end_xy),
-            sorted([name, prop.value]
+            sorted([name, prop.value, prop.script_hash]
                    for name, prop in item.props.items()),
         ]
         for item in model.wires

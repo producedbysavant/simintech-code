@@ -99,6 +99,7 @@ DISCREPANCY_CODES = frozenset({
     "end_index_name_conflict",
     "legacy_containerblock",
     "memory_name_missing",
+    "memory_port_missing",
     "memory_unpaired",
     "port_order_hypothesis",
     "unknown_object_type",

@@ -24,8 +24,14 @@ MINIMAL = """<Header><project><page>
 </page></project></Header>"""
 
 TWO_OBJECTS = """<Header><project><page>
-  <object><name>`A`</name><class_name>`Ступенька`</class_name><obj_type>`100`</obj_type></object>
-  <object><name>`B`</name><class_name>`Усилитель`</class_name><obj_type>`100`</obj_type></object>
+  <object>
+    <name>`A`</name>
+    <class_name>`Ступенька`</class_name>
+    <obj_type>`100`</obj_type></object>
+  <object>
+    <name>`B`</name>
+    <class_name>`Усилитель`</class_name>
+    <obj_type>`100`</obj_type></object>
 </page></project></Header>"""
 
 DUPLICATES = """<Header><project><page>
@@ -166,3 +172,101 @@ def test_xml_declaration_is_accepted():
     text = '<?xml version="1.0" encoding="utf-8"?>\n' + MINIMAL
     ir = parse_xprt(text)
     assert len(ir.objects) == 1
+
+
+LEGACY_CONTAINER = """<Header><project><page>
+  <object>
+    <name>`S`</name><class_name>`Субмодель`</class_name><obj_type>`102`</obj_type>
+    <containerblock>
+      <object><name>`K`</name><class_name>`Усилитель`</class_name><obj_type>`100`</obj_type></object>
+    </containerblock>
+  </object>
+</page></project></Header>"""
+
+BRANCH_AMBIGUOUS = """<Header><project><page>
+  <object>
+    <name>`A`</name>
+    <class_name>`Ступенька`</class_name>
+    <obj_type>`100`</obj_type>
+    <ports><port><name>`y`</name><mode>`1`</mode></port></ports>
+  </object>
+  <object>
+    <name>`B`</name>
+    <class_name>`Усилитель`</class_name>
+    <obj_type>`100`</obj_type>
+    <ports>
+      <port><name>`u1`</name><mode>`0`</mode></port>
+      <port><name>`u2`</name><mode>`0`</mode></port>
+    </ports>
+  </object>
+  <object>
+    <name>`P`</name>
+    <class_name>`Математическая связь`</class_name>
+    <obj_type>`101`</obj_type>
+    <start_bl_index>`0`</start_bl_index><end_bl_index>`1`</end_bl_index>
+    <end_port_index>`0`</end_port_index>
+  </object>
+  <object>
+    <name>`P`</name>
+    <class_name>`Математическая связь`</class_name>
+    <obj_type>`101`</obj_type>
+    <start_bl_index>`0`</start_bl_index><end_bl_index>`1`</end_bl_index>
+    <end_port_index>`0`</end_port_index>
+  </object>
+  <object>
+    <name>`BR`</name>
+    <class_name>`Математическая связь`</class_name>
+    <obj_type>`101`</obj_type>
+    <start_bl_index>`-1`</start_bl_index><start_port_index>`-1`</start_port_index>
+    <parent_wire_name>`P`</parent_wire_name><parentwirenode>`0`</parentwirenode>
+    <end_bl_index>`1`</end_bl_index><end_port_index>`1`</end_port_index>
+  </object>
+</page></project></Header>"""
+
+MEMORY_NO_PORT = """<Header><project><page>
+  <object>
+    <name>`To`</name><class_name>`В память`</class_name><obj_type>`104`</obj_type>
+    <visual_props><data><name>`PortNames`</name><value>`VAR`</value></data></visual_props>
+  </object>
+</page></project></Header>"""
+
+WIDTH_MODEL = """<Header><project><page>
+  <object>
+    <name>`K`</name><class_name>`Константа`</class_name><obj_type>`100`</obj_type>
+    <visual_props><data><name>`Width`</name><value>`60`</value></data></visual_props>
+  </object>
+</page></project></Header>"""
+
+
+def test_legacy_containerblock_is_counted_not_kept_as_object():
+    ir = parse_xprt(LEGACY_CONTAINER)
+    assert len(ir.objects) == 1
+    assert ir.object_by_address("main::S") is not None
+    assert ir.coverage.skipped["legacy_containerblock_objects"] == 1
+
+
+def test_ambiguous_branch_parent_is_unresolved():
+    ir = parse_xprt(BRANCH_AMBIGUOUS)
+    branch = next(item for item in ir.wires if item.name == "BR")
+    assert branch.start.resolved is False
+    assert branch.start.reason == "branch_parent_not_found"
+    assert ir.coverage.unresolved_branches == 1
+    details = [item.detail for item in ir.discrepancies
+               if item.code == "branch_parent_unresolved"]
+    assert any("неоднозначен" in item for item in details)
+
+
+def test_memory_cell_without_port_is_unresolved():
+    ir = parse_xprt(MEMORY_NO_PORT)
+    link = next(item for item in ir.memory_links if item.variable == "VAR")
+    assert link.resolved is False
+    assert link.reason == "port_missing"
+    assert ir.coverage.discrepancy_counts["memory_port_missing"] == 1
+
+
+def test_width_does_not_change_content_hash():
+    base = parse_xprt(WIDTH_MODEL)
+    changed = parse_xprt(WIDTH_MODEL.replace("<value>`60`</value>",
+                                             "<value>`100`</value>"))
+    assert changed.meta.structure_hash == base.meta.structure_hash
+    assert changed.meta.content_hash == base.meta.content_hash

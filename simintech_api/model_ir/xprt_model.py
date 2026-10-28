@@ -655,15 +655,24 @@ class _Converter:
         parent_status = ProvenanceStatus.UNKNOWN
         kind = WireKind.WIRE
         if start_index == -1:
-            parent_entity = None
+            parent_entity: _Entity | None = None
+            ambiguous = False
             if parent_name:
-                for wire_candidate in entities.values():
-                    if wire_candidate.kind == "wire" and (
-                            wire_candidate.raw.fields.get("name", "")
-                            == parent_name):
-                        parent_entity = wire_candidate
-                        break
-            if parent_entity is None and 0 <= parent_index < len(entities):
+                matches = [
+                    candidate for candidate in entities.values()
+                    if candidate.kind == "wire"
+                    and candidate.raw.fields.get("name", "") == parent_name
+                ]
+                if len(matches) == 1:
+                    parent_entity = matches[0]
+                elif len(matches) > 1:
+                    index_candidate = entities.get(parent_index)
+                    if index_candidate in matches:
+                        parent_entity = index_candidate
+                    else:
+                        ambiguous = True
+            if (parent_entity is None and not ambiguous
+                    and 0 <= parent_index < len(entities)):
                 index_candidate = entities.get(parent_index)
                 if index_candidate is not None and index_candidate.kind == "wire":
                     parent_entity = index_candidate
@@ -682,9 +691,10 @@ class _Converter:
             else:
                 self.unresolved_branches += 1
                 parent_label = parent_name or parent_index
+                reason = ("родитель ветви неоднозначен" if ambiguous
+                          else f"родитель ветви не найден: {parent_label}")
                 self._discrepancy("branch_parent_unresolved", Severity.ERROR,
-                                  entity.address,
-                                  f"родитель ветви не найден: {parent_label}")
+                                  entity.address, reason)
                 start = WireEnd(
                     kind=WireEndKind.UNRESOLVED,
                     object_name=parent_name, port_index=parent_node,
@@ -825,10 +835,14 @@ class _Converter:
                         if item.container_id == container.id
                         and item.kind is ObjectKind.PORT_BLOCK]
             for port in obj.ports:
+                if port.direction is PortDirection.OUT:
+                    wanted = {"Порт выхода"}
+                elif port.direction is PortDirection.IN:
+                    wanted = {"Порт входа"}
+                else:
+                    wanted = {"Порт входа", "Порт выхода"}
                 candidates = [item for item in internal
-                              if (item.class_name == "Порт выхода"
-                                  if port.direction is PortDirection.OUT
-                                  else item.class_name == "Порт входа")
+                              if item.class_name in wanted
                               and item.ports
                               and item.ports[0].name == port.name]
                 chosen = candidates[0] if len(candidates) == 1 else None
@@ -876,6 +890,20 @@ class _Converter:
                     provenance=Provenance(SourceKind.DERIVED,
                                           ProvenanceStatus.DERIVED, obj.address)))
                 continue
+            if port is None:
+                self._discrepancy("memory_port_missing", Severity.WARNING,
+                                  obj.address,
+                                  "у ячейки памяти нет порта")
+                self._memory_cache.append(MemoryLink(
+                    id=ids.memory_id(obj.address), variable=variable,
+                    writers=((obj.address,) if obj.class_name == "В память"
+                             else ()),
+                    readers=((obj.address,) if obj.class_name == "Из памяти"
+                             else ()),
+                    resolved=False, reason="port_missing",
+                    provenance=Provenance(SourceKind.DERIVED,
+                                          ProvenanceStatus.DERIVED, obj.address)))
+                continue
             writers, readers = groups.setdefault(variable, ([], []))
             if obj.class_name == "В память":
                 writers.append(address)
@@ -900,6 +928,9 @@ def _merge_skipped(page: _RawPage) -> dict[str, int]:
     for item in page.objects:
         for key, value in item.skipped.items():
             result[key] = result.get(key, 0) + value
+        if item.child_page is not None:
+            for key, value in _merge_skipped(item.child_page).items():
+                result[key] = result.get(key, 0) + value
     return result
 
 
@@ -952,11 +983,15 @@ def _parse_stream(stream: BinaryIO | TextIO, *, source_name: str,
             tag = elem.tag
             if tag == "object":
                 order = object_orders.pop(id(elem), 0)
-                raw = _parse_object(elem, order, "")
-                raw_objects[id(elem)] = raw
+                parent_tag = elems[-2].tag if len(elems) >= 2 else ""
                 objects_seen += 1
-                if raw.fields.get("obj_type") == "101":
-                    wires_seen += 1
+                if parent_tag != "containerblock":
+                    # Старая вложенность: объект не является прямым объектом
+                    # страницы. Родитель уже учёл его в покрытии.
+                    raw = _parse_object(elem, order, "")
+                    raw_objects[id(elem)] = raw
+                    if raw.fields.get("obj_type") == "101":
+                        wires_seen += 1
                 if objects_seen > limits.max_objects:
                     raise ModelIRLimitError(
                         f"объектов больше предела {limits.max_objects}")
@@ -970,7 +1005,11 @@ def _parse_stream(stream: BinaryIO | TextIO, *, source_name: str,
                                   if item.tag == "object"), None)
                     if owner is not None:
                         block_images[id(owner)] = _parse_decor_page(elem)
-                    pages_seen += 1
+                    for obj in _numbered(elem, "object"):
+                        raw_objects.pop(id(obj), None)
+                        object_orders.pop(id(obj), None)
+                        obj.clear()
+                    elem.clear()
                 elif parent is not None and parent.tag == "object":
                     page = _parse_page(elem)
                     for obj in _numbered(elem, "object"):
