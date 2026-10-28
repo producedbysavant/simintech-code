@@ -7,6 +7,18 @@
 
 from __future__ import annotations
 
+from .contracts import (
+    BlockContract,
+    BlockContractRegistry,
+    Constraint,
+    ContractCoverage,
+    CreationPath,
+    PortContract,
+    PortSpec,
+    PropertyContract,
+    load_default_contracts,
+    validate_contract_data,
+)
 from .codes import (
     ContainerKind,
     ObjectKind,
@@ -54,8 +66,13 @@ from .xprt_model import Limits, parse_xprt, parse_xprt_file
 
 __all__ = [
     "IR_SCHEMA_VERSION",
+    "BlockContract",
+    "BlockContractRegistry",
     "BoundaryPort",
+    "Constraint",
     "Container",
+    "ContractCoverage",
+    "CreationPath",
     "ContainerKind",
     "Coverage",
     "Decoration",
@@ -74,8 +91,11 @@ __all__ = [
     "ModelPort",
     "ModelWire",
     "ObjectKind",
+    "PortContract",
     "PortDirection",
+    "PortSpec",
     "Property",
+    "PropertyContract",
     "Provenance",
     "ProvenanceStatus",
     "QueryResult",
@@ -90,9 +110,11 @@ __all__ = [
     "build_manifest",
     "build_model_ir",
     "content_hash",
+    "load_default_contracts",
     "parse_model_text",
     "parse_xprt",
     "parse_xprt_file",
     "structure_hash",
     "topology_to_ir",
+    "validate_contract_data",
 ]
