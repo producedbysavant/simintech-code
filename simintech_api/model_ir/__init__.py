@@ -18,7 +18,13 @@ from .codes import (
     WireEndKind,
     WireKind,
 )
-from .errors import ModelIRError, ModelIRLimitError, XprtParseError
+from .errors import (
+    ModelIRConflictError,
+    ModelIRError,
+    ModelIRLimitError,
+    ModelTextParseError,
+    XprtParseError,
+)
 from .ids import content_hash, structure_hash
 from .ir import (
     IR_SCHEMA_VERSION,
@@ -38,6 +44,9 @@ from .ir import (
     ScriptInfo,
     WireEnd,
 )
+from .merge import build_model_ir
+from .text_model import parse_model_text
+from .topology_model import topology_to_ir
 from .xprt_model import Limits, parse_xprt, parse_xprt_file
 
 __all__ = [
@@ -51,8 +60,10 @@ __all__ = [
     "Limits",
     "MemoryLink",
     "ModelIR",
+    "ModelIRConflictError",
     "ModelIRError",
     "ModelIRLimitError",
+    "ModelTextParseError",
     "ModelMeta",
     "ModelObject",
     "ModelPort",
@@ -70,8 +81,11 @@ __all__ = [
     "WireEndKind",
     "WireKind",
     "XprtParseError",
+    "build_model_ir",
     "content_hash",
+    "parse_model_text",
     "parse_xprt",
     "parse_xprt_file",
     "structure_hash",
+    "topology_to_ir",
 ]

@@ -19,3 +19,11 @@ class XprtParseError(ModelIRError):
 
 class ModelIRLimitError(ModelIRError):
     """Проект превысил байтовый, объектный или проводной предел."""
+
+
+class ModelTextParseError(ModelIRError):
+    """Декларативный текст модели не разобран."""
+
+
+class ModelIRConflictError(ModelIRError):
+    """Расхождение источников в строгом режиме."""
