@@ -252,11 +252,11 @@ def render_matrix(claims: Sequence[Dict]) -> str:
                 for t in tests
             )
         else:
-            proof = "—"
+            proof = "-"
         lines.append(
             f"| `{claim.get('id')}` | {claim.get('status')} | "
-            f"{source.get('type')} | {environment.get('version', '—')} | "
-            f"{environment.get('observed_at', '—')} | {proof} |"
+            f"{source.get('type')} | {environment.get('version', '-')} | "
+            f"{environment.get('observed_at', '-')} | {proof} |"
         )
     return "\n".join(lines) + "\n"
 

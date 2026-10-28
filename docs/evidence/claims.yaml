@@ -1441,3 +1441,81 @@
     ref: simintech-mcp/simintech_mcp/tools/page_script.py:193-226; simintech-mcp/tests/unit/test_dependency_contract.py:166
   reproduction: Архитектурный тест контракта зависимостей
   tests: []
+- id: model-ir-xprt-wire-endpoints
+  statement: 'В .xprt провод хранит start/end_bl_index, start/end_bl_name, port_index и base_points; на выгрузке поставки 30 МБ все провода и ветви разрешаются без неразрешённых концов'
+  status: live-verified
+  source:
+    type: xprt-observation
+    ref: docs/knowledge/11-model-ir.md
+  environment:
+    product: SimInTech64
+    version: not recorded in source file
+    observed_at: '2026-10-28'
+  reproduction: 'parse_xprt_file на выгрузке поставки: coverage.unresolved_ends = 0, coverage.branches = 35, coverage.wires = 433'
+  tests:
+  - file: tests/unit/test_model_ir_xprt.py
+    id: test_wire_and_branch_resolve_to_objects_and_ports
+    kind: unit-pure
+- id: model-ir-blockimage-is-decoration
+  statement: 'Страницы blockimage в .xprt содержат иконки блоков (Line, PolyLine, TextLabel) и не являются модельными контейнерами: на выгрузке поставки 270 таких страниц'
+  status: live-verified
+  source:
+    type: xprt-observation
+    ref: docs/knowledge/11-model-ir.md
+  environment:
+    product: SimInTech64
+    version: not recorded in source file
+    observed_at: '2026-10-28'
+  reproduction: 'parse_xprt_file: coverage.block_image_pages = 270, в objects нет адресов иконок, coverage.containers не включает blockimage'
+  tests:
+  - file: tests/unit/test_model_ir_xprt.py
+    id: test_submodel_page_is_container_and_blockimage_is_excluded
+    kind: unit-pure
+- id: model-ir-wire-names-are-not-identity
+  statement: 'Имена проводов в .xprt повторяются (MBTYWire), uid заполнен не у всех объектов; идентичность IR строится по контейнеру и порядку, а не по имени или uid'
+  status: live-verified
+  source:
+    type: xprt-observation
+    ref: docs/knowledge/11-model-ir.md
+  environment:
+    product: SimInTech64
+    version: not recorded in source file
+    observed_at: '2026-10-28'
+  reproduction: 'parse_xprt_file: discrepancy duplicate_wire_name, адреса проводов различны, objects и wires сохраняются по порядку'
+  tests:
+  - file: tests/unit/test_model_ir_xprt_edges.py
+    id: test_duplicate_names_get_distinct_addresses_and_info
+    kind: unit-pure
+- id: model-ir-hashes-exclude-volatile
+  statement: 'structure_hash Model IR не зависит от custom_params, скриптов и геометрии; content_hash дополнительно включает стабильные свойства, PortNames, геометрию и хеши скриптов'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/ids.py
+  reproduction: 'Прогон теста test_properties_scripts_and_volatile_values: смена custom_params не меняет content_hash, смена a, Script или points меняет content_hash'
+  tests:
+  - file: tests/unit/test_model_ir_xprt.py
+    id: test_properties_scripts_and_volatile_values
+    kind: unit-pure
+- id: model-ir-xprt-streaming-limits
+  statement: 'Разбор .xprt потоковый (defusedxml.iterparse); повреждённый XML, превышение байтового, объектного или страничного предела дают отказ, а не пустую модель'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/xprt_model.py
+  reproduction: 'Прогон тестов test_broken_xml_is_refusal_not_empty_model, test_object_limit_is_refusal, test_byte_limit_is_refusal, test_depth_limit_is_refusal'
+  tests:
+  - file: tests/unit/test_model_ir_xprt_edges.py
+    id: test_broken_xml_is_refusal_not_empty_model
+    kind: unit-pure
+- id: model-ir-numbered-tags
+  statement: 'Разбор .xprt принимает обе формы тегов (<object>/<object_N>, <page>/<page_N>, <blockimage>/<blockimage_N>); порядок объектов, пределы и идентификаторы не зависят от формы тега'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/xprt_model.py
+  reproduction: 'Прогон test_numbered_object_tags_keep_order_and_wires: два номерных объекта дают два разных id и разрешённый провод; max_objects и max_wires срабатывают'
+  tests:
+  - file: tests/unit/test_model_ir_xprt_edges.py
+    id: test_numbered_object_tags_keep_order_and_wires
+    kind: unit-pure
