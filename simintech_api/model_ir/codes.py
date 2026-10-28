@@ -101,6 +101,7 @@ DISCREPANCY_CODES = frozenset({
     "memory_name_missing",
     "memory_port_missing",
     "memory_unpaired",
+    "points_unparsed",
     "port_order_hypothesis",
     "unknown_object_type",
     "wire_direction_mismatch",

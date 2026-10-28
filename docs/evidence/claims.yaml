@@ -1508,3 +1508,14 @@
   - file: tests/unit/test_model_ir_xprt_edges.py
     id: test_broken_xml_is_refusal_not_empty_model
     kind: unit-pure
+- id: model-ir-numbered-tags
+  statement: 'Разбор .xprt принимает обе формы тегов (<object>/<object_N>, <page>/<page_N>, <blockimage>/<blockimage_N>); порядок объектов, пределы и идентификаторы не зависят от формы тега'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/xprt_model.py
+  reproduction: 'Прогон test_numbered_object_tags_keep_order_and_wires: два номерных объекта дают два разных id и разрешённый провод; max_objects и max_wires срабатывают'
+  tests:
+  - file: tests/unit/test_model_ir_xprt_edges.py
+    id: test_numbered_object_tags_keep_order_and_wires
+    kind: unit-pure

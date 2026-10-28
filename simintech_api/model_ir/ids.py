@@ -69,6 +69,7 @@ def _structure_payload(model: "ModelIR") -> list[Any]:
             item.class_name,
             item.obj_type,
             item.kind.value,
+            item.filename,
             [[port.index, port.name, port.direction.value]
              for port in item.ports],
         ]
@@ -138,17 +139,30 @@ _PAGE_VIEW_PROPS = frozenset({
 })
 
 
+#: Скалярные поля объекта, которые описывают вид, а не модель.
+_OBJECT_VIEW_FIELDS = frozenset({
+    "width", "height", "angle", "visuallayer", "color", "freeze",
+    "active_element", "is_child", "containerblock", "invisibleprops",
+    "readonlyprops", "extmodulname", "calctemplate", "helpkeyword",
+    "helpfile", "ownerfilter", "blockverid",
+})
+
+
 def _content_payload(model: "ModelIR") -> list[Any]:
     objects = [
         [
             item.address,
-            sorted([name, prop.value, prop.section, prop.script_hash]
+            sorted([name, prop.value, prop.section, prop.script_hash,
+                    prop.sha256, prop.raw_len, prop.truncated]
                    for name, prop in item.props.items()),
-            sorted([name, prop.value, prop.script_hash]
+            sorted([name, prop.value, prop.script_hash, prop.sha256,
+                    prop.raw_len, prop.truncated]
                    for name, prop in item.visual_props.items()
                    if name not in ("Width", "Height")),
             sorted([slot, script.sha256, script.length]
                    for slot, script in item.scripts.items()),
+            sorted([name, value] for name, value in item.extra.items()
+                   if name not in _OBJECT_VIEW_FIELDS),
             item.points,
             [port.index for port in item.ports],
             [[port.index, port.x, port.y, port.x_glob, port.y_glob]

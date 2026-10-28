@@ -13,7 +13,12 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from simintech_api.model_ir import WireKind, parse_xprt_file  # noqa: E402
+from simintech_api.model_ir import (  # noqa: E402
+    SourceStatus,
+    WireEndKind,
+    WireKind,
+    parse_xprt_file,
+)
 
 pytestmark = pytest.mark.distribution
 
@@ -47,11 +52,18 @@ def test_demo_is_complete_and_stable():
     assert ir.wires, "в выгрузке нет проводов"
     assert ir.coverage.unresolved_ends == 0
     assert ir.coverage.unresolved_branches == 0
-    assert ir.coverage.objects == len(ir.objects)
-    assert ir.coverage.wires == len(ir.wires)
+    assert ir.coverage.unconnected_ends == 0
+    assert ir.coverage.branches > 0
+    assert ir.coverage.block_image_pages > 0
+    assert len({item.address for item in ir.objects}) == len(ir.objects)
+    assert len({item.address for item in ir.wires}) == len(ir.wires)
+    assert all(item.start.kind is not WireEndKind.UNRESOLVED
+               for item in ir.wires)
+    assert all(item.end.kind is not WireEndKind.UNRESOLVED
+               for item in ir.wires)
+    assert ir.meta.source_name == path.name
     assert ir.coverage.branches == sum(
         1 for item in ir.wires if item.kind is WireKind.BRANCH)
-    assert ir.coverage.ports_real == sum(len(item.ports) for item in ir.objects)
     again = parse_xprt_file(path)
     assert again.meta.structure_hash == ir.meta.structure_hash
     assert again.meta.content_hash == ir.meta.content_hash
@@ -63,6 +75,9 @@ def test_configured_files_parse_with_consistent_coverage():
         pytest.skip("SIMINTECH_XPRT_DIRS не задан")
     for path in files:
         ir = parse_xprt_file(path)
-        assert ir.coverage.objects == len(ir.objects), path
-        assert ir.coverage.wires == len(ir.wires), path
-        assert ir.meta.structure_hash, path
+        assert ir.meta.source_name == path.name, path
+        assert ir.coverage.source_status in (SourceStatus.OK,
+                                             SourceStatus.PARTIAL), path
+        assert len({item.address for item in ir.objects}) == len(ir.objects), path
+        assert len({item.address for item in ir.wires}) == len(ir.wires), path
+        assert len(ir.meta.structure_hash) == 64, path

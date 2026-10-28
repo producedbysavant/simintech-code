@@ -134,3 +134,4 @@
 | `model-ir-wire-names-are-not-identity` | live-verified | xprt-observation | not recorded in source file | 2026-10-28 | `tests/unit/test_model_ir_xprt_edges.py::test_duplicate_names_get_distinct_addresses_and_info` (unit-pure) |
 | `model-ir-hashes-exclude-volatile` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_xprt.py::test_properties_scripts_and_volatile_values` (unit-pure) |
 | `model-ir-xprt-streaming-limits` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_xprt_edges.py::test_broken_xml_is_refusal_not_empty_model` (unit-pure) |
+| `model-ir-numbered-tags` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_xprt_edges.py::test_numbered_object_tags_keep_order_and_wires` (unit-pure) |

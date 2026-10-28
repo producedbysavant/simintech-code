@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import hashlib
 import io
+import os
 import re
+from collections import Counter
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, BinaryIO, Iterator, TextIO
@@ -130,6 +132,8 @@ class _RawObject:
     fields: dict[str, str]
     points: tuple[tuple[float, float], ...]
     base_points: tuple[tuple[float, float], ...]
+    points_unparsed: bool
+    base_points_unparsed: bool
     props: dict[str, Property]
     visual_props: dict[str, Property]
     scripts: dict[str, ScriptInfo]
@@ -168,9 +172,14 @@ def _clean(value: str | None) -> str:
 
 def _decode(value: str) -> str:
     try:
-        return decode_xprt_value(value)
+        decoded = decode_xprt_value(value)
     except Exception:  # noqa: BLE001 - поврежденное значение не должно терять запись
         return _clean(value)
+    if decoded == "" and value.strip() not in ("", "``", "''"):
+        # decode_xprt_value возвращает только найденные токены: скаляр без
+        # кавычек и без кодов #NN он не считает значением.
+        return _clean(value)
+    return decoded
 
 
 def _sha(value: str) -> str:
@@ -200,13 +209,21 @@ def _points(value: str) -> tuple[tuple[float, float], ...]:
     return tuple((float(x), float(y)) for x, y in _POINT_RE.findall(value))
 
 
-def _points_of(elem: Any, tag: str) -> tuple[tuple[float, float], ...]:
+def _points_with_status(
+        elem: Any, tag: str) -> tuple[tuple[tuple[float, float], ...], bool]:
     child = elem.find(tag)
     if child is None:
-        return ()
+        return (), False
     value = child.find("value")
-    raw = "".join(value.itertext()) if value is not None else "".join(child.itertext())
-    return _points(_clean(raw))
+    raw = ("".join(value.itertext()) if value is not None
+           else "".join(child.itertext()))
+    cleaned = _clean(raw)
+    points = _points(cleaned)
+    return points, bool(cleaned.strip()) and not points
+
+
+def _points_of(elem: Any, tag: str) -> tuple[tuple[float, float], ...]:
+    return _points_with_status(elem, tag)[0]
 
 
 def _tag_base(tag: Any) -> str | None:
@@ -261,7 +278,8 @@ def _parse_props(elem: Any, section: str, ref: str,
         caption = _text(data, "caption")
         text_value = _text(data, "textvalue")
         script_elem = data.find("script")
-        script_text = "".join(script_elem.itertext()) if script_elem is not None else ""
+        script_text = (_decode("".join(script_elem.itertext()))
+                       if script_elem is not None else "")
         if name in SCRIPT_SLOTS and not script_text:
             script_text = raw_value
         script_hash = _sha(script_text) if script_text else ""
@@ -317,6 +335,8 @@ def _parse_object(elem: Any, order: int, ref: str) -> _RawObject:
     scripts: dict[str, ScriptInfo] = {}
     points: tuple[tuple[float, float], ...] = ()
     base_points: tuple[tuple[float, float], ...] = ()
+    points_unparsed = False
+    base_points_unparsed = False
     ports: tuple[_RawPort, ...] = ()
     nested = 0
     for child in elem:
@@ -324,10 +344,11 @@ def _parse_object(elem: Any, order: int, ref: str) -> _RawObject:
         if tag is None:
             continue
         if tag == "points":
-            points = _points_of(elem, "points")
+            points, points_unparsed = _points_with_status(elem, "points")
             continue
         if tag == "base_points":
-            base_points = _points_of(elem, "base_points")
+            base_points, base_points_unparsed = _points_with_status(
+                elem, "base_points")
             continue
         if tag == "ports":
             ports = _parse_ports(elem)
@@ -339,7 +360,7 @@ def _parse_object(elem: Any, order: int, ref: str) -> _RawObject:
             scripts.update(s)
             continue
         if tag == "script":
-            text = _clean("".join(child.itertext()))
+            text = _decode("".join(child.itertext()))
             scripts["script"] = ScriptInfo(
                 slot="script", section="object", present=bool(text),
                 sha256=_sha(text) if text else "", length=len(text),
@@ -358,6 +379,8 @@ def _parse_object(elem: Any, order: int, ref: str) -> _RawObject:
         skipped["legacy_containerblock_objects"] = nested
     return _RawObject(
         order=order, fields=fields, points=points, base_points=base_points,
+        points_unparsed=points_unparsed,
+        base_points_unparsed=base_points_unparsed,
         props=props, visual_props=visual, scripts=scripts, ports=ports,
         skipped=skipped, nested_objects=nested)
 
@@ -392,7 +415,7 @@ def _parse_page(elem: Any) -> _RawPage:
         if tag == "object":
             continue
         if tag == "script":
-            text = _clean("".join(child.itertext()))
+            text = _decode("".join(child.itertext()))
             script = ScriptInfo(
                 slot="page_script", section="page", present=bool(text),
                 sha256=_sha(text) if text else "", length=len(text),
@@ -416,6 +439,9 @@ def _classify(raw: _RawObject, has_page: bool) -> ObjectKind:
     class_name = raw.fields.get("class_name", "")
     obj_type = raw.fields.get("obj_type", "")
     if has_page:
+        return ObjectKind.SUBMODEL
+    if (raw.fields.get("filename")
+            and (obj_type == "102" or class_name == "Субмодель")):
         return ObjectKind.SUBMODEL
     if obj_type == "103" or class_name in PORT_BLOCKS:
         return ObjectKind.PORT_BLOCK
@@ -466,8 +492,9 @@ def _build_port(raw: _RawPort, object_id: str, ref: str) -> ModelPort:
 
 
 class _Converter:
-    def __init__(self, source_hash: str) -> None:
+    def __init__(self, source_hash: str, source_name: str = "") -> None:
         self.source_hash = source_hash
+        self.source_name = source_name
         self.containers: list[Container] = []
         self.objects: list[ModelObject] = []
         self.wires: list[ModelWire] = []
@@ -479,7 +506,9 @@ class _Converter:
         self.unknown_types = 0
         self.block_image_pages = 0
         self.unresolved_ends = 0
+        self.unconnected_ends = 0
         self.unresolved_branches = 0
+        self.external_submodels = 0
 
     def _discrepancy(self, code: str, severity: Severity, subject: str,
                      detail: str) -> None:
@@ -496,11 +525,12 @@ class _Converter:
         container_id = ids.container_id(address)
         names = [item.fields.get("name", "") for item in page.objects
                  if item.fields.get("obj_type", "") != "101"]
-        duplicates = {name for name in names if names.count(name) > 1 and name}
+        duplicates = {name for name, count in Counter(names).items()
+                      if count > 1 and name}
         wire_names = [item.fields.get("name", "") for item in page.objects
                       if item.fields.get("obj_type", "") == "101"]
-        wire_duplicates = {name for name in wire_names
-                           if wire_names.count(name) > 1 and name}
+        wire_duplicates = {name for name, count in Counter(wire_names).items()
+                           if count > 1 and name}
         for name in sorted(duplicates):
             self._discrepancy("duplicate_object_name", Severity.INFO,
                               address, f"имя объекта повторяется: {name}")
@@ -522,6 +552,8 @@ class _Converter:
             else:
                 has_page = raw.child_page is not None
                 kind_obj = _classify(raw, has_page)
+                if kind_obj is ObjectKind.SUBMODEL and not has_page:
+                    self.external_submodels += 1
                 segment = _segment(name, raw.order, duplicates)
                 obj_address = f"{address}::{segment}"
                 obj_id = ids.object_id(container_id, raw.order)
@@ -577,6 +609,10 @@ class _Converter:
                                if k not in ("name", "class_name", "obj_type")},
                         provenance=Provenance(SourceKind.XPRT,
                                               ProvenanceStatus.MEASURED, ref))
+                    if raw.points_unparsed:
+                        self._discrepancy("points_unparsed", Severity.WARNING,
+                                          obj_address,
+                                          "точки объекта не разобраны")
                     self.objects.append(obj)
                     self.objects_by_id[obj.id] = obj
                     entity = _Entity(order=raw.order, raw=raw, kind="object",
@@ -654,7 +690,8 @@ class _Converter:
         parent_node = _int(fields.get("parentwirenode", ""))
         parent_status = ProvenanceStatus.UNKNOWN
         kind = WireKind.WIRE
-        if start_index == -1:
+        parent_hint = bool(parent_name) or parent_index >= 0
+        if start_index == -1 and parent_hint:
             parent_entity: _Entity | None = None
             ambiguous = False
             if parent_name:
@@ -680,9 +717,11 @@ class _Converter:
                 parent_id = parent_entity.id
                 parent_status = ProvenanceStatus.HYPOTHESIS
                 kind = WireKind.BRANCH
+                parent_label = (parent_name
+                                or parent_entity.raw.fields.get("name", ""))
                 start = WireEnd(
                     kind=WireEndKind.BRANCH, object_id=parent_id,
-                    object_name=parent_name or parent_entity.raw.fields.get("name", ""),
+                    object_name=parent_label,
                     port_index=parent_node, container_id=container_id,
                     resolved=True,
                     provenance=Provenance(SourceKind.XPRT,
@@ -690,9 +729,9 @@ class _Converter:
                                           entity.address))
             else:
                 self.unresolved_branches += 1
-                parent_label = parent_name or parent_index
+                parent_ref = parent_name or str(parent_index)
                 reason = ("родитель ветви неоднозначен" if ambiguous
-                          else f"родитель ветви не найден: {parent_label}")
+                          else f"родитель ветви не найден: {parent_ref}")
                 self._discrepancy("branch_parent_unresolved", Severity.ERROR,
                                   entity.address, reason)
                 start = WireEnd(
@@ -707,6 +746,14 @@ class _Converter:
             self.unresolved_ends += 1
         if end.kind is WireEndKind.UNRESOLVED:
             self.unresolved_ends += 1
+        if start.kind is WireEndKind.UNCONNECTED:
+            self.unconnected_ends += 1
+        if end.kind is WireEndKind.UNCONNECTED:
+            self.unconnected_ends += 1
+        if raw.base_points_unparsed or raw.points_unparsed:
+            self._discrepancy("wire_points_unparsed", Severity.WARNING,
+                              entity.address,
+                              "точки провода не разобраны")
         wire = ModelWire(
             id=entity.id, address=entity.address, container_id=container_id,
             order=raw.order, name=fields.get("name", ""), kind=kind,
@@ -793,8 +840,10 @@ class _Converter:
             block_image_pages=self.block_image_pages,
             block_image_objects=len(self.block_image_objects),
             unresolved_ends=self.unresolved_ends,
+            unconnected_ends=self.unconnected_ends,
             unresolved_branches=self.unresolved_branches,
             unknown_object_types=self.unknown_types,
+            external_submodels=self.external_submodels,
             source_status=SourceStatus.OK,
             port_order_status=ProvenanceStatus.HYPOTHESIS,
             skipped=_merge_skipped(root_page),
@@ -803,7 +852,8 @@ class _Converter:
             ir_schema=IR_SCHEMA_VERSION, primary_source=SourceKind.XPRT,
             source_set=(SourceKind.XPRT,),
             source_hashes={"xprt": self.source_hash},
-            structure_hash="", content_hash="")
+            structure_hash="", content_hash="",
+            source_name=self.source_name)
         model = ModelIR(
             meta=meta, containers=tuple(sorted(self.containers,
                                                key=lambda item: item.address)),
@@ -962,28 +1012,31 @@ def _parse_stream(stream: BinaryIO | TextIO, *, source_name: str,
             if event == "start":
                 stack.append(elem.tag)
                 elems.append(elem)
-                if elem.tag == "page":
+                tag_name = _tag_base(elem.tag)
+                if tag_name == "page":
                     pages_seen += 1
-                    depth = sum(1 for tag in stack if tag == "page")
+                    depth = sum(1 for tag in stack
+                                if _tag_base(tag) == "page")
                     if depth > limits.max_depth:
                         raise ModelIRLimitError(
                             f"глубина страниц {depth} больше предела "
                             f"{limits.max_depth}")
                     page_orders[id(elem)] = 0
-                elif elem.tag == "object":
+                elif tag_name == "object":
                     order = 0
                     for parent in reversed(elems[:-1]):
-                        if parent.tag == "page":
+                        if _tag_base(parent.tag) == "page":
                             order = page_orders.get(id(parent), 0)
                             page_orders[id(parent)] = order + 1
                             break
                     object_orders[id(elem)] = order
                 continue
 
-            tag = elem.tag
+            tag = _tag_base(elem.tag) or ""
             if tag == "object":
                 order = object_orders.pop(id(elem), 0)
-                parent_tag = elems[-2].tag if len(elems) >= 2 else ""
+                parent_tag = (_tag_base(elems[-2].tag) or ""
+                              if len(elems) >= 2 else "")
                 objects_seen += 1
                 if parent_tag != "containerblock":
                     # Старая вложенность: объект не является прямым объектом
@@ -1000,9 +1053,10 @@ def _parse_stream(stream: BinaryIO | TextIO, *, source_name: str,
                         f"проводов больше предела {limits.max_wires}")
             elif tag == "page":
                 parent = elems[-2] if len(elems) >= 2 else None
-                if parent is not None and parent.tag == "blockimage":
+                parent_name = _tag_base(parent.tag) if parent is not None else ""
+                if parent is not None and parent_name == "blockimage":
                     owner = next((item for item in reversed(elems[:-2])
-                                  if item.tag == "object"), None)
+                                  if _tag_base(item.tag) == "object"), None)
                     if owner is not None:
                         block_images[id(owner)] = _parse_decor_page(elem)
                     for obj in _numbered(elem, "object"):
@@ -1010,7 +1064,7 @@ def _parse_stream(stream: BinaryIO | TextIO, *, source_name: str,
                         object_orders.pop(id(obj), None)
                         obj.clear()
                     elem.clear()
-                elif parent is not None and parent.tag == "object":
+                elif parent is not None and parent_name == "object":
                     page = _parse_page(elem)
                     for obj in _numbered(elem, "object"):
                         raw_obj = raw_objects.get(id(obj))
@@ -1028,7 +1082,7 @@ def _parse_stream(stream: BinaryIO | TextIO, *, source_name: str,
                         obj.clear()
                     page_containers[id(parent)] = page
                     elem.clear()
-                elif parent is not None and parent.tag == "project":
+                elif parent is not None and parent_name == "project":
                     root_page = _parse_page(elem)
                     for obj in _numbered(elem, "object"):
                         raw_obj = raw_objects.get(id(obj))
@@ -1077,10 +1131,10 @@ def _parse_stream(stream: BinaryIO | TextIO, *, source_name: str,
             f"{exc})") from exc
 
     if root_page is None:
-        root_page = _RawPage(props={}, script=ScriptInfo(
-            slot="page_script", section="page", present=False),
-            objects=[])
-    converter = _Converter(source_hash)
+        raise XprtParseError(
+            "в выгрузке нет главной страницы <page>: это не экспорт "
+            "SimInTech или файл повреждён")
+    converter = _Converter(source_hash, source_name)
     return converter.finish(root_page)
 
 
@@ -1110,16 +1164,17 @@ def parse_xprt_file(path: str | Path, *, limits: Limits | None = None) -> ModelI
     limits = limits or Limits()
     file_path = Path(path)
     try:
-        size = file_path.stat().st_size
+        with file_path.open("rb") as handle:
+            size = os.fstat(handle.fileno()).st_size
+            if size > limits.max_bytes:
+                raise ModelIRLimitError(
+                    f"размер выгрузки {size} больше предела "
+                    f"{limits.max_bytes}")
+            digest = hashlib.sha256()
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+            handle.seek(0)
+            return _parse_stream(handle, source_name=file_path.name,
+                                 limits=limits, source_hash=digest.hexdigest())
     except OSError as exc:
         raise XprtParseError(f"файл выгрузки не открыт: {exc}") from exc
-    if size > limits.max_bytes:
-        raise ModelIRLimitError(
-            f"размер выгрузки {size} больше предела {limits.max_bytes}")
-    digest = hashlib.sha256()
-    with file_path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    with file_path.open("rb") as handle:
-        return _parse_stream(handle, source_name=file_path.name, limits=limits,
-                             source_hash=digest.hexdigest())

@@ -264,8 +264,10 @@ class Coverage:
     block_image_pages: int = 0
     block_image_objects: int = 0
     unresolved_ends: int = 0
+    unconnected_ends: int = 0
     unresolved_branches: int = 0
     unknown_object_types: int = 0
+    external_submodels: int = 0
     source_status: SourceStatus = SourceStatus.OK
     port_order_status: ProvenanceStatus = ProvenanceStatus.HYPOTHESIS
     skipped: dict[str, int] = field(default_factory=dict)
@@ -282,6 +284,7 @@ class ModelMeta:
     source_hashes: dict[str, str]
     structure_hash: str
     content_hash: str
+    source_name: str = ""
     created_at: str = ""
     warnings: tuple[str, ...] = ()
 
