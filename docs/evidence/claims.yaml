@@ -1519,3 +1519,36 @@
   - file: tests/unit/test_model_ir_xprt_edges.py
     id: test_numbered_object_tags_keep_order_and_wires
     kind: unit-pure
+- id: model-ir-text-source-synthetic-ports
+  statement: 'Текст savemodeltofile не несёт контракта портов: IR синтезирует порты из адресов block:out:N и block:in:N, помечает их synthetic и разделяет входные и выходные текстовые индексы'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/text_model.py
+  reproduction: 'test_text_model_builds_containers_objects_and_synthetic_ports: 7 синтетических портов; у K вход и выход с одинаковым текстовым индексом 0 получают разные индексы IR'
+  tests:
+  - file: tests/unit/test_model_ir_text.py
+    id: test_text_model_builds_containers_objects_and_synthetic_ports
+    kind: unit-pure
+- id: model-ir-merge-primary-xprt
+  statement: 'Сборка Model IR сохраняет .xprt первичным; текст и топология дают Discrepancy, а strict превращает структурные ошибки в ModelIRConflictError'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/merge.py
+  reproduction: 'test_xprt_and_text_are_consistent и test_class_mismatch_is_strict_refusal: согласованная пара источников не даёт ошибок, расхождение класса даёт отказ'
+  tests:
+  - file: tests/unit/test_model_ir_merge.py
+    id: test_class_mismatch_is_strict_refusal
+    kind: unit-pure
+- id: model-ir-topology-edge-only
+  statement: 'Протокол topology даёт объекты, порты и неориентированные рёбра topology_edge без геометрии, ветвей, свойств и скриптов'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/topology_model.py
+  reproduction: 'test_topology_to_ir_builds_objects_ports_and_edges: два объекта, два порта и одно ребро topology_edge; в coverage.skipped названы геометрия, ветви, свойства и скрипты'
+  tests:
+  - file: tests/unit/test_model_ir_topology.py
+    id: test_topology_to_ir_builds_objects_ports_and_edges
+    kind: unit-pure

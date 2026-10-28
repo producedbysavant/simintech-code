@@ -22,6 +22,9 @@ XML-выгрузка и текст модели велики, не нормал�
 | `model-ir-hashes-exclude-volatile` | `structure_hash` не зависит от `custom_params`, скриптов и геометрии; `content_hash` включает стабильные свойства, `PortNames`, геометрию и хеши скриптов | code-confirmed |
 | `model-ir-xprt-streaming-limits` | Разбор потоковый; повреждённый XML, байтовый, объектный и страничный пределы дают отказ, а не пустую модель | code-confirmed |
 | `model-ir-numbered-tags` | Обе формы тегов (`<object>`/`<object_N>`, `<page>`/`<page_N>`, `<blockimage>`/`<blockimage_N>`) дают один порядок и одни пределы | code-confirmed |
+| `model-ir-text-source-synthetic-ports` | Текст `savemodeltofile` не несёт контракта портов: порты синтезируются из концов проводов, помечаются `synthetic`, входные и выходные текстовые индексы разделяются | code-confirmed |
+| `model-ir-merge-primary-xprt` | `.xprt` остаётся первичным; текст и топология дают `Discrepancy`, `strict` превращает структурные ошибки в `ModelIRConflictError` | code-confirmed |
+| `model-ir-topology-edge-only` | `topology` даёт объекты, порты и неориентированные рёбра `topology_edge` без геометрии, ветвей, свойств и скриптов | code-confirmed |
 
 Версия поставки в файлах поставки не записана. Это названо в `environment`
 явно: дата наблюдения есть, версию файла восстановить нечем. Живой замер на
@@ -65,6 +68,31 @@ XML-выгрузка и текст модели велики, не нормал�
 Несовпадение версии схемы `IR_SCHEMA_VERSION` - отказ, а не попытка
 прочитать по-своему.
 
+## Текст модели и топология
+
+`parse_model_text` разбирает декларативный текст `savemodeltofile`: записи
+`Имя: (type = "Класс", ...)`, вложенные `subsystem`, провода `src`/`dst`,
+ветви `src = "wire:K"`, комментарии и экранированную кавычку
+`"+chr(34)+"`. Текст не содержит контракта портов: порты синтезируются из
+адресов концов, получают `synthetic=True`, а исходный текстовый индекс
+сохраняется в `fields["text_index"]`. Входные и выходные индексы текста
+разделены: один и тот же `0` у `in` и `out` даёт два разных порта IR.
+Скрипт страницы в тексте временный (контур), поэтому он не считается
+скриптом проекта и попадает в `skipped`.
+
+`topology_to_ir` превращает протокол `object/port/conn` в частичный IR:
+рёбра имеют вид `topology_edge`, геометрия, ветви, свойства и скрипты
+отсутствуют и названы в `coverage.skipped`. Направление порта берётся из
+`getportinfo`, адрес порта остаётся `(объект, индекс)`.
+
+`build_model_ir` собирает источники: `.xprt` первичен, текст и топология
+только сверяются. Расхождения (`object_missing_in_source`,
+`object_extra_in_source`, `class_mismatch`, `wire_missing_in_source`,
+`wire_extra_in_source`, `wire_end_conflict`, `source_scope_unmatched`)
+остаются в IR; `strict=True` превращает ошибки в `ModelIRConflictError`.
+Область текста и топологии сопоставляется с контейнером `.xprt` по набору
+имён; неоднозначность даёт `source_scope_unmatched`, а не догадку.
+
 ## Границы и открытые вопросы
 
 - Порядок `<port>` в `<ports>` считается равным индексу порта; живого
@@ -77,8 +105,12 @@ XML-выгрузка и текст модели велики, не нормал�
   границы без внутреннего порт-блока дают `boundary_unresolved`.
 - Ячейки памяти связываются по точному `PortNames`; несовпадение имён даёт
   `memory_unpaired` или `memory_name_missing`.
-- Текстовый источник `savemodeltofile` и протокол `topology` входят
-  следующим срезом; XML остаётся первичным.
+- Текст описывает текущий контейнер, а не весь проект; полная сверка по
+  дереву достигается отдельными вызовами по контейнерам.
+- Текстовые индексы портов синтетические; сопоставление с индексами `.xprt`
+  идёт по направлению и исходному `text_index`, а не по номеру IR.
+- Ячейки памяти в текстовом источнике пока не связываются в `MemoryLink`:
+  `PortNames` есть, пары строятся в следующем срезе.
 
 ## Проверки
 
@@ -87,6 +119,11 @@ XML-выгрузка и текст модели велики, не нормал�
 - `tests/unit/test_model_ir_xprt_edges.py` - отказы, пределы, дубли имён,
   память, границы и файловый разбор;
 - `tests/unit/test_model_ir_purity.py` - ядро не импортирует COM и `core`;
+- `tests/unit/test_model_ir_text.py` - разбор `savemodeltofile`,
+  синтетические порты, ветви, вложенные `subsystem`, отказы и пределы;
+- `tests/unit/test_model_ir_topology.py` - адаптер `object/port/conn`;
+- `tests/unit/test_model_ir_merge.py` - сборка источников, расхождения и
+  строгий отказ;
 - `tests/unit/test_model_ir_distribution.py` - реальные выгрузки через
   `SIMINTECH_IR_DEMO` и `SIMINTECH_XPRT_DIRS`, только явный прогон
   `pytest -m distribution`.

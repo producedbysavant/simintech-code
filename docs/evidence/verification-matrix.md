@@ -135,3 +135,6 @@
 | `model-ir-hashes-exclude-volatile` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_xprt.py::test_properties_scripts_and_volatile_values` (unit-pure) |
 | `model-ir-xprt-streaming-limits` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_xprt_edges.py::test_broken_xml_is_refusal_not_empty_model` (unit-pure) |
 | `model-ir-numbered-tags` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_xprt_edges.py::test_numbered_object_tags_keep_order_and_wires` (unit-pure) |
+| `model-ir-text-source-synthetic-ports` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_text.py::test_text_model_builds_containers_objects_and_synthetic_ports` (unit-pure) |
+| `model-ir-merge-primary-xprt` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_merge.py::test_class_mismatch_is_strict_refusal` (unit-pure) |
+| `model-ir-topology-edge-only` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_topology.py::test_topology_to_ir_builds_objects_ports_and_edges` (unit-pure) |
