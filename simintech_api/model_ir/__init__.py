@@ -22,6 +22,7 @@ from .errors import (
     ModelIRConflictError,
     ModelIRError,
     ModelIRLimitError,
+    ModelQueryError,
     ModelTextParseError,
     XprtParseError,
 )
@@ -44,6 +45,8 @@ from .ir import (
     ScriptInfo,
     WireEnd,
 )
+from .graph import ModelIndex, QueryResult
+from .manifest import build_manifest
 from .merge import build_model_ir
 from .text_model import parse_model_text
 from .topology_model import topology_to_ir
@@ -63,6 +66,8 @@ __all__ = [
     "ModelIRConflictError",
     "ModelIRError",
     "ModelIRLimitError",
+    "ModelIndex",
+    "ModelQueryError",
     "ModelTextParseError",
     "ModelMeta",
     "ModelObject",
@@ -73,6 +78,7 @@ __all__ = [
     "Property",
     "Provenance",
     "ProvenanceStatus",
+    "QueryResult",
     "ScriptInfo",
     "Severity",
     "SourceKind",
@@ -81,6 +87,7 @@ __all__ = [
     "WireEndKind",
     "WireKind",
     "XprtParseError",
+    "build_manifest",
     "build_model_ir",
     "content_hash",
     "parse_model_text",

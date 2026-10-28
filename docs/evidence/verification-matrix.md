@@ -138,3 +138,6 @@
 | `model-ir-text-source-synthetic-ports` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_text.py::test_text_model_builds_containers_objects_and_synthetic_ports` (unit-pure) |
 | `model-ir-merge-primary-xprt` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_merge.py::test_class_mismatch_is_strict_refusal` (unit-pure) |
 | `model-ir-topology-edge-only` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_topology.py::test_topology_to_ir_builds_objects_ports_and_edges` (unit-pure) |
+| `model-ir-signal-graph-block-edges` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_graph.py::test_inspect_trace_path_and_ancestors` (unit-pure) |
+| `model-ir-manifest-budget` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_manifest.py::test_manifest_omits_what_does_not_fit` (unit-pure) |
+| `model-ir-query-evidence` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_graph.py::test_find_objects_compare_and_unknown_query` (unit-pure) |
