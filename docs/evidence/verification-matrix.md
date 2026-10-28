@@ -129,3 +129,8 @@
 | `mcp-tool-annotations-contract` | code-confirmed | source-code | — | — | — |
 | `mcp-readme-counts-contract` | code-confirmed | source-code | — | — | — |
 | `mcp-contour-core-single-entry` | code-confirmed | source-code | — | — | — |
+| `model-ir-xprt-wire-endpoints` | live-verified | xprt-observation | not recorded in source file | 2026-10-28 | `tests/unit/test_model_ir_xprt.py::test_wire_and_branch_resolve_to_objects_and_ports` (unit-pure) |
+| `model-ir-blockimage-is-decoration` | live-verified | xprt-observation | not recorded in source file | 2026-10-28 | `tests/unit/test_model_ir_xprt.py::test_submodel_page_is_container_and_blockimage_is_excluded` (unit-pure) |
+| `model-ir-wire-names-are-not-identity` | live-verified | xprt-observation | not recorded in source file | 2026-10-28 | `tests/unit/test_model_ir_xprt_edges.py::test_duplicate_names_get_distinct_addresses_and_info` (unit-pure) |
+| `model-ir-hashes-exclude-volatile` | code-confirmed | source-code | — | — | `tests/unit/test_model_ir_xprt.py::test_properties_scripts_and_volatile_values` (unit-pure) |
+| `model-ir-xprt-streaming-limits` | code-confirmed | source-code | — | — | `tests/unit/test_model_ir_xprt_edges.py::test_broken_xml_is_refusal_not_empty_model` (unit-pure) |
