@@ -27,3 +27,7 @@ class ModelTextParseError(ModelIRError):
 
 class ModelIRConflictError(ModelIRError):
     """Расхождение источников в строгом режиме."""
+
+
+class ModelQueryError(ModelIRError):
+    """Запрос к IR не может быть выполнен однозначно."""

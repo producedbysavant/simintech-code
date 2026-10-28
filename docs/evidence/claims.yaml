@@ -1552,3 +1552,36 @@
   - file: tests/unit/test_model_ir_topology.py
     id: test_topology_to_ir_builds_objects_ports_and_edges
     kind: unit-pure
+- id: model-ir-signal-graph-block-edges
+  statement: 'Граф Model IR связывает входы и выходы обычного блока внутренним ребром, а границы субмоделей и ячейки памяти отдельными рёбрами; trace_signal проходит от источника до приёмника через эти рёбра'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/graph.py
+  reproduction: 'test_inspect_trace_path_and_ancestors и test_memory_signal_crosses_portnames: Step доходит до Sink через субмодель, VAR связывает To и From'
+  tests:
+  - file: tests/unit/test_model_ir_graph.py
+    id: test_inspect_trace_path_and_ancestors
+    kind: unit-pure
+- id: model-ir-manifest-budget
+  statement: 'Паспорт Model IR ограничен budget_tokens 2000..5000, содержит заголовок, покрытие, структуру, классы, сигналы и блок Omitted; XML, скрипты и полные значения свойств в него не попадают'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/manifest.py
+  reproduction: 'test_manifest_has_header_coverage_and_no_xml и test_manifest_omits_what_does_not_fit: бюджет 2000 держится, лишние секции названы в Omitted'
+  tests:
+  - file: tests/unit/test_model_ir_manifest.py
+    id: test_manifest_omits_what_does_not_fit
+    kind: unit-pure
+- id: model-ir-query-evidence
+  statement: 'Ответ графового запроса несёт scope, model_hash, покрытие, unknown и truncated; пустой ответ и неизвестность различаются'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/graph.py
+  reproduction: 'test_check_connections_and_invariants и test_find_objects_compare_and_unknown_query: QueryResult.to_dict содержит evidence.unknown и evidence.coverage'
+  tests:
+  - file: tests/unit/test_model_ir_graph.py
+    id: test_find_objects_compare_and_unknown_query
+    kind: unit-pure
