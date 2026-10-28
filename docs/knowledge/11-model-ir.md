@@ -28,6 +28,9 @@ XML-выгрузка и текст модели велики, не нормал�
 | `model-ir-signal-graph-block-edges` | Граф связывает входы и выходы обычного блока, границы субмоделей и ячейки памяти отдельными рёбрами; `trace_signal` проходит всю цепочку | code-confirmed |
 | `model-ir-manifest-budget` | Паспорт ограничен 2000..5000 токенами, содержит заголовок, покрытие, структуру, классы и `Omitted`; XML, скрипты и полные значения не выводит | code-confirmed |
 | `model-ir-query-evidence` | Ответ запроса несёт `scope`, `model_hash`, покрытие, `unknown` и `truncated`; пусто и неизвестно различаются | code-confirmed |
+| `model-ir-contracts-958-classes` | Реестр контрактов покрывает все 958 классов каталога; свойства из каталога, порты из корпуса выгрузок, неизмеренное `unknown` с причиной | code-confirmed |
+| `model-ir-contracts-nport` | `ports_for` для nport синтезирует N входов с уникальными индексами и выход; ноль и нечисло это отказ | code-confirmed |
+| `model-ir-contracts-unknown-not-guessed` | Неизмеренный портовый контракт возвращается как `unknown` с причиной; валидатор отвергает unknown без причины и чужой `nport_property` | code-confirmed |
 
 Версия поставки в файлах поставки не записана. Это названо в `environment`
 явно: дата наблюдения есть, версию файла восстановить нечем. Живой замер на
@@ -118,6 +121,31 @@ XML-выгрузка и текст модели велики, не нормал�
 горячие узлы, расхождения и обязательный `Omitted` при усечении. XML,
 скрипты и полные значения свойств в паспорт не попадают.
 
+## Контракты блоков
+
+`BlockContractRegistry` читает `simintech_api/data/block_contracts.json`
+(схема `block-contract/1`, версия 1). На каждый класс каталога есть запись:
+свойства и умолчания из `block_catalog.json`, проверка `readonly`, портовая
+модель, пути создания, ограничения и провенанс. Портовая модель принимает
+значения `fixed`, `nport`, `portnames`, `submodel`, `unknown`.
+
+Текущее покрытие: 958 классов, из них `fixed` 23, `nport` 7, `portnames` 4,
+`submodel` 13, `unknown` 911. Неизмеренные портовые схемы не достраиваются:
+у них есть `reason` (`not_observed_in_corpus`, `varied_signatures`,
+`no_ports_in_corpus` и т. п.). Полное покрытие портов достигается живым
+обходом каталога: `simintech-generate-catalog --dump all-blocks.xprt`, затем
+`generate_block_contracts.py --corpus all-blocks.xprt`.
+
+`ports_for` учитывает `nport`: для `Перемножитель` при `nport=3` получаются
+входы 1, 2, 3 и выход; ноль и нечисло это отказ. `PortNames` даёт модель
+`portnames` для порт-блоков и ячеек памяти; внешние порты субмодели
+описываются порт-блоками внутри и не угадываются.
+
+`validate_block_contracts.py` сверяет набор классов с каталогом, свойства,
+`readonly`, портовые модели, причины `unknown`, `catalog_sha256` и отсутствие
+U+2014 в авторских описаниях. Генератор детерминирован: дата наблюдения
+задаётся аргументом, а не текущим временем.
+
 ## Границы и открытые вопросы
 
 - Порядок `<port>` в `<ports>` считается равным индексу порта; живого
@@ -153,6 +181,8 @@ XML-выгрузка и текст модели велики, не нормал�
   и сравнение моделей;
 - `tests/unit/test_model_ir_manifest.py` - паспорт, бюджет, фокус и
   `Omitted`;
+- `tests/unit/test_model_ir_contracts.py` - реестр 958 классов, nport,
+  portnames, unknown и мутации валидатора;
 - `tests/unit/test_model_ir_distribution.py` - реальные выгрузки через
   `SIMINTECH_IR_DEMO` и `SIMINTECH_XPRT_DIRS`, только явный прогон
   `pytest -m distribution`.

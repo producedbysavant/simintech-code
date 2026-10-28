@@ -141,3 +141,6 @@
 | `model-ir-signal-graph-block-edges` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_graph.py::test_inspect_trace_path_and_ancestors` (unit-pure) |
 | `model-ir-manifest-budget` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_manifest.py::test_manifest_omits_what_does_not_fit` (unit-pure) |
 | `model-ir-query-evidence` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_graph.py::test_find_objects_compare_and_unknown_query` (unit-pure) |
+| `model-ir-contracts-958-classes` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_contracts.py::test_registry_covers_all_catalog_classes` (unit-pure) |
+| `model-ir-contracts-nport` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_contracts.py::test_nport_and_portnames_contracts` (unit-pure) |
+| `model-ir-contracts-unknown-not-guessed` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_contracts.py::test_validator_accepts_registry_and_rejects_mutations` (unit-pure) |

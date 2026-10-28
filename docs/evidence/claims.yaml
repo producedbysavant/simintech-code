@@ -1585,3 +1585,36 @@
   - file: tests/unit/test_model_ir_graph.py
     id: test_find_objects_compare_and_unknown_query
     kind: unit-pure
+- id: model-ir-contracts-958-classes
+  statement: 'Реестр контрактов покрывает все 958 классов block_catalog.json; свойства и умолчания берутся из каталога, порты наблюдаются в корпусе выгрузок, а неизмеренное остаётся unknown с причиной'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/contracts.py
+  reproduction: 'test_registry_covers_all_catalog_classes: 958 классов и сумма port_models равна 958; validate_block_contracts.py принимает файл'
+  tests:
+  - file: tests/unit/test_model_ir_contracts.py
+    id: test_registry_covers_all_catalog_classes
+    kind: unit-pure
+- id: model-ir-contracts-nport
+  statement: 'ports_for для nport синтезирует N входов с уникальными индексами и оставляет выход; значения nport проверяются до выдачи, нечисло и ноль это отказ'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/contracts.py
+  reproduction: 'test_nport_and_portnames_contracts: Перемножитель nport=3 даёт входы 1,2,3 и выход; test_ports_for_refuses_bad_nport_and_unknown_class отказывает на 0 и строке'
+  tests:
+  - file: tests/unit/test_model_ir_contracts.py
+    id: test_nport_and_portnames_contracts
+    kind: unit-pure
+- id: model-ir-contracts-unknown-not-guessed
+  statement: 'Неизмеренный портовый контракт возвращается как unknown с reason; валидатор краснеет, если unknown без причины или nport_property стоит вне nport'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/contracts.py
+  reproduction: 'test_blocked_creation_and_unknown_ports и test_validator_accepts_registry_and_rejects_mutations: unknown с reason, мутации без reason и с чужим nport_property отвергнуты'
+  tests:
+  - file: tests/unit/test_model_ir_contracts.py
+    id: test_validator_accepts_registry_and_rejects_mutations
+    kind: unit-pure
