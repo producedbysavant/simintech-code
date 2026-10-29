@@ -15,6 +15,8 @@ from .graph import ModelIndex
 from .ir import Container, ModelIR, ModelObject
 from .system_spec import CompiledSpec, ExpectedLevel, ExpectedObject
 
+_MAX_ITEMS = 200
+
 
 @dataclass(frozen=True, slots=True)
 class VerificationReport:
@@ -24,6 +26,7 @@ class VerificationReport:
     items: tuple[dict[str, Any], ...]
     counts: dict[str, int]
     scope: str = "full_model"
+    truncated: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -33,6 +36,7 @@ class VerificationReport:
             "scope": self.scope,
             "items": list(self.items),
             "counts": dict(self.counts),
+            "truncated": self.truncated,
         }
 
 
@@ -247,5 +251,6 @@ def verify_model(actual: ModelIR, compiled: CompiledSpec) -> VerificationReport:
         verdict = "passed"
     return VerificationReport(
         verdict=verdict, spec_name=compiled.name,
-        model_hash=actual.meta.structure_hash, items=tuple(items),
-        counts=counts)
+        model_hash=actual.meta.structure_hash,
+        items=tuple(items[:_MAX_ITEMS]),
+        counts=counts, truncated=len(items) > _MAX_ITEMS)

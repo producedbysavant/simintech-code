@@ -121,14 +121,16 @@ class ModelIndex:
         self.wires_by_name: dict[str, list[ModelWire]] = {}
         for wire in model.wires:
             self.wires_by_name.setdefault(wire.name, []).append(wire)
-        self.objects_in: dict[str, tuple[ModelObject, ...]] = {}
+        grouped_objects: dict[str, list[ModelObject]] = {}
         for obj in model.objects:
-            self.objects_in.setdefault(obj.container_id, ())
-            self.objects_in[obj.container_id] += (obj,)
-        self.wires_in: dict[str, tuple[ModelWire, ...]] = {}
+            grouped_objects.setdefault(obj.container_id, []).append(obj)
+        self.objects_in: dict[str, tuple[ModelObject, ...]] = {
+            key: tuple(value) for key, value in grouped_objects.items()}
+        grouped_wires: dict[str, list[ModelWire]] = {}
         for wire in model.wires:
-            self.wires_in.setdefault(wire.container_id, ())
-            self.wires_in[wire.container_id] += (wire,)
+            grouped_wires.setdefault(wire.container_id, []).append(wire)
+        self.wires_in: dict[str, tuple[ModelWire, ...]] = {
+            key: tuple(value) for key, value in grouped_wires.items()}
         self.signal: dict[str, list[SignalEdge]] = {}
         self.reverse: dict[str, list[SignalEdge]] = {}
         self.unknown: list[str] = []
@@ -308,9 +310,14 @@ class ModelIndex:
     def _result(self, query: str, items: Iterable[dict[str, Any]],
                 unknown: Iterable[str] = (), truncated: bool = False,
                 scope: str = "full_model") -> QueryResult:
+        item_list = list(items)
+        unknown_list = list(unknown)
+        truncated = (truncated or len(item_list) > _MAX_ITEMS
+                     or len(unknown_list) > _MAX_ITEMS)
         return QueryResult(
             query=query, scope=scope, model_hash=self.model.meta.structure_hash,
-            items=tuple(items), unknown=tuple(unknown),
+            items=tuple(item_list[:_MAX_ITEMS]),
+            unknown=tuple(unknown_list[:_MAX_ITEMS]),
             truncated=truncated,
             evidence={"coverage": coverage_dict(self.model.coverage),
                       "sources": [kind.value for kind in
@@ -395,6 +402,11 @@ class ModelIndex:
         wires = [item for item in self.model.wires
                  if item.start.object_id == obj.id
                  or item.end.object_id == obj.id]
+        ports = [
+            {"index": port.index, "name": port.name,
+             "direction": port.direction.value}
+            for port in obj.ports]
+        truncated = (len(ports) > _MAX_ITEMS or len(wires) > _MAX_ITEMS)
         return self._result("inspect_node", [{
             "address": obj.address,
             "name": obj.name,
@@ -403,14 +415,13 @@ class ModelIndex:
             "kind": obj.kind.value,
             "container": self.containers[obj.container_id].address
             if obj.container_id in self.containers else "",
-            "ports": [
-                {"index": port.index, "name": port.name,
-                 "direction": port.direction.value}
-                for port in obj.ports],
-            "wires": [item.address for item in wires],
+            "ports": ports[:_MAX_ITEMS],
+            "ports_total": len(ports),
+            "wires": [item.address for item in wires[:_MAX_ITEMS]],
+            "wires_total": len(wires),
             "uid": obj.uid,
             "filename": obj.filename,
-        }])
+        }], truncated=truncated)
 
     def find_objects(self, query: str = "", class_name: str = "",
                      kind: str = "", limit: int = 50) -> QueryResult:
@@ -515,8 +526,14 @@ class ModelIndex:
         for edge in (item for edges in self.signal.values() for item in edges):
             src = self.node_object(edge.src)
             dst = self.node_object(edge.dst)
-            if src is not None and dst is not None:
-                graph.setdefault(src.id, set()).add(dst.id)
+            if src is None or dst is None:
+                continue
+            # Внутреннее ребро блока вход -> выход не является обратной
+            # связью: на уровне объектов это петля того же блока. Настоящая
+            # петля провода остаётся в графе и будет найдена.
+            if src.id == dst.id and edge.kind == "block":
+                continue
+            graph.setdefault(src.id, set()).add(dst.id)
         index = 0
         stack: list[str] = []
         on_stack: set[str] = set()
@@ -524,20 +541,35 @@ class ModelIndex:
         low: dict[str, int] = {}
         cycles: list[list[str]] = []
 
-        def visit(node: str) -> None:
-            nonlocal index
-            indices[node] = index
-            low[node] = index
-            index += 1
-            stack.append(node)
-            on_stack.add(node)
-            for peer in graph.get(node, ()):
-                if peer not in indices:
-                    visit(peer)
-                    low[node] = min(low[node], low[peer])
-                elif peer in on_stack:
-                    low[node] = min(low[node], indices[peer])
-            if low[node] == indices[node]:
+        # Итеративный Tarjan: рекурсивный падал RecursionError на цепочке
+        # из 1200 объектов, то есть отказ уходил мимо ModelQueryError.
+        for start in sorted(graph):
+            if start in indices:
+                continue
+            work: list[tuple[str, int]] = [(start, 0)]
+            while work:
+                node, position = work[-1]
+                if position == 0:
+                    indices[node] = index
+                    low[node] = index
+                    index += 1
+                    stack.append(node)
+                    on_stack.add(node)
+                peers = sorted(graph.get(node, ()))
+                if position < len(peers):
+                    peer = peers[position]
+                    work[-1] = (node, position + 1)
+                    if peer not in indices:
+                        work.append((peer, 0))
+                    elif peer in on_stack:
+                        low[node] = min(low[node], indices[peer])
+                    continue
+                work.pop()
+                if work:
+                    parent = work[-1][0]
+                    low[parent] = min(low[parent], low[node])
+                if low[node] != indices[node]:
+                    continue
                 component: list[str] = []
                 while True:
                     item = stack.pop()
@@ -545,12 +577,9 @@ class ModelIndex:
                     component.append(item)
                     if item == node:
                         break
+                component.sort()
                 if len(component) > 1 or node in graph.get(node, ()):
                     cycles.append(component)
-
-        for node in list(graph):
-            if node not in indices:
-                visit(node)
         cycles.sort(key=lambda item: (-len(item), item))
         items = [
             {"objects": [self.objects[item].address for item in cycle]}
@@ -616,12 +645,18 @@ class ModelIndex:
             "checked_objects": len(self.model.objects),
             "checked_ports": len(self.ports),
             "checked_connections": len(self.model.wires),
+            "violations_total": len(unique),
+            "unconnected_inputs": sum(
+                1 for item in unique
+                if item.get("code") == "unconnected_input"),
             "coverage": coverage_dict(self.model.coverage),
         }
         return QueryResult(
             query="check_connections", scope="full_model",
             model_hash=self.model.meta.structure_hash,
-            items=tuple(unique), evidence=evidence)
+            items=tuple(unique[:_MAX_ITEMS]),
+            truncated=len(unique) > _MAX_ITEMS,
+            evidence=evidence)
 
     def validate_invariants(
             self, invariants: Iterable[dict[str, Any]]) -> QueryResult:
@@ -631,12 +666,14 @@ class ModelIndex:
             ident = str(invariant.get("id", kind))
             if kind == "required_inputs_connected":
                 check = self.check_connections()
-                failed = [item for item in check.items
-                          if item.get("code") == "unconnected_input"]
+                failed = int(check.evidence.get(
+                    "unconnected_inputs",
+                    sum(1 for item in check.items
+                        if item.get("code") == "unconnected_input")))
                 results.append({
                     "id": ident, "kind": kind,
                     "status": "failed" if failed else "passed",
-                    "detail": f"входов без источника: {len(failed)}"})
+                    "detail": f"входов без источника: {failed}"})
             elif kind == "no_self_loops":
                 loops = [wire.address for wire in self.model.wires
                          if wire.start.object_id

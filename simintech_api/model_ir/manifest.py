@@ -165,6 +165,10 @@ def _geometry(index: ModelIndex) -> list[str]:
     return lines
 
 
+def _join(blocks: list[list[str]]) -> str:
+    return "\n".join(line for lines in blocks for line in lines)
+
+
 def build_manifest(model: ModelIR, budget_tokens: int = 3000,
                    focus: str = "") -> str:
     """Собрать Markdown-паспорт в жёстком бюджете токенов."""
@@ -193,17 +197,28 @@ def build_manifest(model: ModelIR, budget_tokens: int = 3000,
                 if not focus or item[0] == focus or (
                     focus in ("containers", "geometry")
                     and item[0] == "containers")]
-    text = "\n".join(line for _, lines in sections for line in lines)
+    base = [sections[0][1], sections[1][1]]
+    extra: list[list[str]] = []
+    included: list[str] = []
     omitted: list[str] = []
     for name, lines in selected:
-        block = "\n".join(lines)
-        if len(text) + 1 + len(block) <= limit:
-            text += "\n" + block
+        if len(_join(base + extra + [lines])) <= limit:
+            extra.append(lines)
+            included.append(name)
         else:
             omitted.append(name)
-    if omitted:
+    # Omitted - такое же обещание, как и секции: если он не помещается,
+    # вытесняем последнюю добавленную секцию, пока не освободится место.
+    while omitted:
         block = ("## Omitted\n" + ", ".join(omitted) +
-                 "\nПолные данные: query_model.")
-        if len(text) + 1 + len(block) <= limit:
-            text += "\n" + block
-    return text
+                 "\nПолные данные: query_model.").splitlines()
+        if len(_join(base + extra + [block])) <= limit:
+            extra.append(block)
+            break
+        if not extra:
+            raise ModelQueryError(
+                "паспорт не помещается в бюджет: заголовок и покрытие "
+                "занимают весь лимит")
+        extra.pop()
+        omitted.append(included.pop())
+    return _join(base + extra)
