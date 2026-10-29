@@ -308,6 +308,58 @@ def test_wire_indices_are_direction_ordinals():
     assert report.counts["failed"] == 0
 
 
+def test_undirected_ports_do_not_shift_direction_ordinals():
+    """connect нумерует только направленные порты, как и сверка."""
+    xml = """<Header><project><page>
+  <object><name>`Step`</name><class_name>`Константа`</class_name>
+    <obj_type>`100`</obj_type>
+    <ports><port><name>`outport`</name><mode>`1`</mode></port></ports>
+  </object>
+  <object><name>`Motor`</name>
+    <class_name>`ЭЦД2 - Двигатель постоянного тока`</class_name>
+    <obj_type>`100`</obj_type>
+    <ports>
+      <port><name>`a-`</name><mode>`2`</mode></port>
+      <port><name>`a+`</name><mode>`2`</mode></port>
+      <port><name>`Tm`</name><mode>`0`</mode></port>
+      <port><name>`w`</name><mode>`1`</mode></port>
+    </ports>
+  </object>
+  <object><name>`Scope`</name><class_name>`Временной график`</class_name>
+    <obj_type>`106`</obj_type>
+    <ports><port><name>`inport_1`</name><mode>`0`</mode></port></ports>
+  </object>
+  <object><name>`W1`</name><class_name>`Математическая связь`</class_name>
+    <obj_type>`101`</obj_type>
+    <start_bl_index>`0`</start_bl_index><start_port_index>`0`</start_port_index>
+    <end_bl_index>`1`</end_bl_index><end_port_index>`2`</end_port_index>
+  </object>
+  <object><name>`W2`</name><class_name>`Математическая связь`</class_name>
+    <obj_type>`101`</obj_type>
+    <start_bl_index>`1`</start_bl_index><start_port_index>`3`</start_port_index>
+    <end_bl_index>`2`</end_bl_index><end_port_index>`0`</end_port_index>
+  </object>
+</page></project></Header>"""
+    spec = {
+        "schema": "system-spec/1",
+        "blocks": [
+            {"name": "Step", "class": "Константа",
+             "ports": {"outputs": ["outport"]}},
+            {"name": "Motor", "class": "ЭЦД2 - Двигатель постоянного тока",
+             "ports": {"inputs": ["Tm"], "outputs": ["w"]}},
+            {"name": "Scope", "class": "Временной график",
+             "ports": {"inputs": ["inport_1"]}},
+        ],
+        "wires": [
+            {"src": "Step:out:0", "dst": "Motor:in:0"},
+            {"src": "Motor:out:0", "dst": "Scope:in:0"},
+        ],
+    }
+    report = verify_model(parse_xprt(xml), compile_system_spec(spec))
+    assert report.verdict == "passed", report.items
+    assert report.counts["failed"] == 0
+
+
 def test_verification_report_keeps_failed_items_when_truncated():
     class_name = "Arduino - I2C - Ведомый I2C"
     objects = "".join(

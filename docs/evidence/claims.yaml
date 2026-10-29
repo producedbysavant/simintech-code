@@ -1716,6 +1716,17 @@
   - file: tests/unit/test_model_ir_scale.py
     id: test_wire_indices_are_direction_ordinals
     kind: unit-pure
+- id: model-ir-verify-undirected-ports
+  statement: 'Сверка проводов считает направленные номера только по OUT и IN: undirected порты (a-, a+, f-, f+ у двигателя постоянного тока) не входят в нумерацию connect и не сдвигают Tm и ω'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/verify.py
+  reproduction: 'test_undirected_ports_do_not_shift_direction_ordinals: connect адресует Tm как in:0 и ω как out:0, сверка проходит'
+  tests:
+  - file: tests/unit/test_model_ir_scale.py
+    id: test_undirected_ports_do_not_shift_direction_ordinals
+    kind: unit-pure
 - id: model-ir-verify-verdict
   statement: 'Сверка фактической модели с ExpectedModel даёт passed только при всех пройденных проверках, partial при unknown/not_evaluated и failed при любом расхождении; инварианты считаются все, даже если запрос усечён'
   status: code-confirmed

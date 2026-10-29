@@ -79,6 +79,12 @@ def _port_ordinal(obj: ModelObject, index: int,
     `ModelSpec`/`connect`, поэтому сверка проводов обязана сравнивать
     направленные номера, иначе живая модель с выходом раньше входа
     (`Усилитель`: outport 0, inport 1) даёт ложный `wire_missing`.
+
+    `undirected` порты в нумерацию `connect` не входят: живой
+    «ЭЦД2 - Двигатель постоянного тока» имеет `a-`, `a+`, `f-`, `f+`
+    (undirected) перед `Tm` (in) и `ω` (out), и `connect` адресует `Tm`
+    как `in:0`, а `ω` как `out:0`. Включение undirected в номер сдвигало
+    бы оба на 4.
     """
     ports = [port for port in obj.ports if port.direction in directions]
     ports.sort(key=lambda port: port.index)
@@ -104,11 +110,9 @@ def _edges(model: ModelIR, container: Container,
         if src is None or dst is None:
             continue
         src_ordinal = _port_ordinal(
-            src[1], wire.start.port_index,
-            (PortDirection.OUT, PortDirection.UNDIRECTED))
+            src[1], wire.start.port_index, (PortDirection.OUT,))
         dst_ordinal = _port_ordinal(
-            dst[1], wire.end.port_index,
-            (PortDirection.IN, PortDirection.UNDIRECTED))
+            dst[1], wire.end.port_index, (PortDirection.IN,))
         if src_ordinal is None or dst_ordinal is None:
             continue
         result.add((src[0], src_ordinal, dst[0], dst_ordinal))
