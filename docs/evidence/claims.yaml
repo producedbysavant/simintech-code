@@ -1577,6 +1577,45 @@
   - file: tests/unit/test_model_ir_scale.py
     id: test_manifest_omitted_is_reserved
     kind: unit-pure
+- id: model-ir-manifest-contracts
+  statement: 'Секция Contracts паспорта берёт покрытие реестра C4 (число классов, measured/derived/unknown, портовые модели) и контракты классов модели; при недоступном реестре называет причину, а паспорт строится'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/manifest.py
+  reproduction: 'test_manifest_contracts_section_uses_registry и test_manifest_contracts_unavailable_names_reason: 958 классов, строки портовых моделей, названный отказ реестра'
+  tests:
+  - file: tests/unit/test_model_ir_manifest.py
+    id: test_manifest_contracts_section_uses_registry
+    kind: unit-pure
+  - file: tests/unit/test_model_ir_manifest.py
+    id: test_manifest_contracts_unavailable_names_reason
+    kind: unit-pure
+- id: model-ir-trace-both-union
+  statement: 'trace_signal с direction=both объединяет прямой и обратный проходы: узел называется один раз, depth минимальная, items_total равен числу уникальных узлов даже при усечении items'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/graph.py
+  reproduction: 'test_trace_both_returns_unique_nodes и test_trace_both_counts_union_when_truncated: 4 узла вместо 6 дублей, объединение 600 узлов при 200 items'
+  tests:
+  - file: tests/unit/test_model_ir_graph.py
+    id: test_trace_both_returns_unique_nodes
+    kind: unit-pure
+  - file: tests/unit/test_model_ir_graph.py
+    id: test_trace_both_counts_union_when_truncated
+    kind: unit-pure
+- id: model-ir-query-required-args
+  statement: 'ModelIndex.query проверяет обязательные аргументы запроса до обработчика и поднимает ModelQueryError с именем запроса и недостающих аргументов, а не KeyError'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/graph.py
+  reproduction: 'test_query_requires_named_arguments: trace_signal без signal, inspect_node без node и find_path без dst дают ModelQueryError с именем аргумента'
+  tests:
+  - file: tests/unit/test_model_ir_graph.py
+    id: test_query_requires_named_arguments
+    kind: unit-pure
 - id: model-ir-query-evidence
   statement: 'Ответ графового запроса несёт scope, model_hash, покрытие, unknown и truncated; items и unknown ограничены 200 элементами; items_total и unknown_total считаются до среза; пустой ответ и неизвестность различаются'
   status: code-confirmed

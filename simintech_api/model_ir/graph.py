@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from itertools import islice
 from typing import Any, Iterable
 
 from . import ids
@@ -31,6 +32,16 @@ from .ir import (
 
 _MAX_ITEMS = 200
 _SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
+#: Обязательные аргументы query: пропуск называется до обработчика, иначе
+#: словарь выдаёт голый KeyError без имени запроса.
+_REQUIRED_ARGS: dict[str, tuple[str, ...]] = {
+    "inspect_node": ("node",),
+    "trace_signal": ("signal",),
+    "ancestors": ("node",),
+    "descendants": ("node",),
+    "find_path": ("src", "dst"),
+    "compare_models": ("other",),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -337,39 +348,45 @@ class ModelIndex:
                       "items_total": total_items,
                       "unknown_total": total_unknown})
 
-    def _walk(self, starts: list[str], forward: bool, max_depth: int,
-              query: str) -> QueryResult:
-        items: list[dict[str, Any]] = []
-        unknown: list[str] = list(self.unknown)
-        total = 0
-        queue = [(node, 0) for node in starts]
-        visited = set(starts)
+    def _node_item(self, node: str, depth: int) -> dict[str, Any]:
+        obj = self.node_object(node)
+        return {
+            "node": self.node_name(node),
+            "object": obj.name if obj else "",
+            "address": obj.address if obj else "",
+            "port": self.ports[node].index if node in self.ports else -1,
+            "depth": depth,
+        }
+
+    def _walk_depths(self, starts: list[str], forward: bool,
+                     max_depth: int) -> dict[str, int]:
+        """Глубины всех достижимых узлов: BFS впервые находит минимум."""
+        depths: dict[str, int] = {node: 0 for node in starts}
+        queue = list(depths)
         while queue:
-            node, depth = queue.pop(0)
+            node = queue.pop(0)
+            depth = depths[node]
             if depth > max_depth:
                 continue
-            total += 1
             edges = (self.signal.get(node, ()) if forward
                      else self.reverse.get(node, ()))
-            if len(items) < _MAX_ITEMS:
-                obj = self.node_object(node)
-                items.append({
-                    "node": self.node_name(node),
-                    "object": obj.name if obj else "",
-                    "address": obj.address if obj else "",
-                    "port": (self.ports[node].index
-                             if node in self.ports else -1),
-                    "depth": depth,
-                })
             for edge in edges:
                 peer = edge.dst if forward else edge.src
-                if peer in visited:
+                if peer in depths:
                     continue
-                visited.add(peer)
-                queue.append((peer, depth + 1))
-        return self._result(query, items, unknown,
-                            truncated=total > _MAX_ITEMS,
-                            items_total=total)
+                depths[peer] = depth + 1
+                queue.append(peer)
+        return {node: depth for node, depth in depths.items()
+                if depth <= max_depth}
+
+    def _walk(self, starts: list[str], forward: bool, max_depth: int,
+              query: str) -> QueryResult:
+        depths = self._walk_depths(starts, forward, max_depth)
+        items = [self._node_item(node, depth)
+                 for node, depth in islice(depths.items(), _MAX_ITEMS)]
+        return self._result(query, items, self.unknown,
+                            truncated=len(depths) > _MAX_ITEMS,
+                            items_total=len(depths))
 
     def _start_nodes(self, ref: str, forward: bool) -> list[str]:
         matches = [item for item in self.model.memory_links
@@ -467,25 +484,21 @@ class ModelIndex:
             raise ModelQueryError(
                 f"direction={direction!r}: ожидается forward, backward или both")
         starts = self._start_nodes(signal, direction != "backward")
-        items: list[dict[str, Any]] = []
-        unknown: list[str] = []
-        truncated = False
-        total = 0
-        if direction in ("forward", "both"):
-            forward = self._walk(starts, True, max_depth, "trace_signal")
-            items.extend(forward.items)
-            unknown.extend(forward.unknown)
-            truncated = truncated or forward.truncated
-            total += int(forward.evidence.get("items_total", len(forward.items)))
-        if direction in ("backward", "both"):
-            backward = self._walk(starts, False, max_depth, "trace_signal")
-            items.extend(backward.items)
-            unknown.extend(backward.unknown)
-            truncated = truncated or backward.truncated
-            total += int(backward.evidence.get(
-                "items_total", len(backward.items)))
-        return self._result("trace_signal", items, unknown, truncated,
-                            items_total=total)
+        if direction == "both":
+            depths = self._walk_depths(starts, True, max_depth)
+            for node, depth in self._walk_depths(
+                    starts, False, max_depth).items():
+                known = depths.get(node)
+                if known is None or depth < known:
+                    depths[node] = depth
+            items = [self._node_item(node, depth)
+                     for node, depth in islice(depths.items(), _MAX_ITEMS)]
+            return self._result(
+                "trace_signal", items, self.unknown,
+                truncated=len(depths) > _MAX_ITEMS,
+                items_total=len(depths))
+        return self._walk(starts, direction == "forward", max_depth,
+                          "trace_signal")
 
     def _object_walk(self, ref: str, forward: bool,
                      max_depth: int) -> list[dict[str, Any]]:
@@ -862,4 +875,9 @@ class ModelIndex:
         handler = handlers.get(name)
         if handler is None:
             raise ModelQueryError(f"неизвестный запрос {name!r}")
+        missing = [key for key in _REQUIRED_ARGS.get(name, ())
+                   if key not in args]
+        if missing:
+            raise ModelQueryError(
+                f"запрос {name!r}: нужны аргументы: {', '.join(missing)}")
         return handler()
