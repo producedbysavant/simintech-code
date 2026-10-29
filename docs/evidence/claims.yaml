@@ -1661,15 +1661,18 @@
     id: test_missing_wire_fails_verification
     kind: unit-pure
 - id: model-ir-verify-report-capped
-  statement: 'VerificationReport отдаёт не более 200 пунктов с truncated, а counts считает все проверки, включая отброшенные'
+  statement: 'VerificationReport отдаёт не более 200 пунктов с truncated, сохраняя failed в первую очередь, а counts считает все проверки, включая отброшенные'
   status: code-confirmed
   source:
     type: source-code
     ref: simintech_api/model_ir/verify.py
-  reproduction: 'test_verification_report_is_capped: 300 неизмеренных объектов дают 200 пунктов, truncated true и counts.not_evaluated 300'
+  reproduction: 'test_verification_report_is_capped и test_verification_report_keeps_failed_items_when_truncated: 300 неизмеренных объектов дают 200 пунктов, truncated true и counts.not_evaluated 300; failed попадает в срез'
   tests:
   - file: tests/unit/test_model_ir_scale.py
     id: test_verification_report_is_capped
+    kind: unit-pure
+  - file: tests/unit/test_model_ir_scale.py
+    id: test_verification_report_keeps_failed_items_when_truncated
     kind: unit-pure
 - id: model-ir-verify-does-not-execute-code
   statement: 'Верификация не исполняет произвольный код: assertions без расчётного испытания остаются not_evaluated, а partial не маскируется под passed'

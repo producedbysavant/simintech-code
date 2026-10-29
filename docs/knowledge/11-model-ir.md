@@ -34,7 +34,7 @@ XML-выгрузка и текст модели велики, не нормал�
 | `model-ir-contracts-unknown-not-guessed` | Неизмеренный портовый контракт возвращается как `unknown` с причиной; валидатор отвергает unknown без причины и чужой `nport_property` | code-confirmed |
 | `model-ir-system-spec-compile` | `SystemSpec` проверяется до SimInTech: классы, свойства, ссылки, концы, инварианты и assertions; ошибки собираются все | code-confirmed |
 | `model-ir-verify-verdict` | Сверка даёт `passed` только при всех пройденных проверках, `partial` при unknown/not_evaluated и `failed` при расхождении | code-confirmed |
-| `model-ir-verify-report-capped` | `VerificationReport` отдаёт не более 200 пунктов с `truncated`, а `counts` считает все проверки | code-confirmed |
+| `model-ir-verify-report-capped` | `VerificationReport` отдаёт не более 200 пунктов с `truncated`, сохраняя `failed` в первую очередь, а `counts` считает все проверки | code-confirmed |
 | `model-ir-verify-does-not-execute-code` | Верификация не исполняет произвольный код: assertions без испытания остаются `not_evaluated` | code-confirmed |
 
 Версия поставки в файлах поставки не записана. Это названо в `environment`

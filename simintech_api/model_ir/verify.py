@@ -16,6 +16,15 @@ from .ir import Container, ModelIR, ModelObject
 from .system_spec import CompiledSpec, ExpectedLevel, ExpectedObject
 
 _MAX_ITEMS = 200
+_STATUS_ORDER = {"failed": 0, "not_evaluated": 1, "unknown": 2, "passed": 3}
+
+
+def _limited(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ordered = sorted(
+        enumerate(items),
+        key=lambda pair: (_STATUS_ORDER.get(str(pair[1].get("status")), 9),
+                          pair[0]))
+    return [item for _pos, item in ordered[:_MAX_ITEMS]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -252,5 +261,5 @@ def verify_model(actual: ModelIR, compiled: CompiledSpec) -> VerificationReport:
     return VerificationReport(
         verdict=verdict, spec_name=compiled.name,
         model_hash=actual.meta.structure_hash,
-        items=tuple(items[:_MAX_ITEMS]),
+        items=tuple(_limited(items)),
         counts=counts, truncated=len(items) > _MAX_ITEMS)

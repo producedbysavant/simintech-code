@@ -142,6 +142,16 @@ def direct_star_model(sinks: int) -> SynthModel:
                    "last_sink": f"main::T{sinks - 1}"})
 
 
+def self_loop_model() -> SynthModel:
+    """Один блок, выход которого соединён с его же входом."""
+    return SynthModel(
+        text=_wrap(
+            _object("A", "Усилитель", 100, (("u", 0), ("y", 1)))
+            + _wire("W1", 0, 1, 0, 0)),
+        expected=_base_expected(objects=1, ports_real=2, wires=1),
+        addresses={"a": "main::A"})
+
+
 def cycle_model() -> SynthModel:
     """Два блока, связанных встречными проводами."""
     parts = [

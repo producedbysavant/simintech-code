@@ -25,6 +25,7 @@ from model_ir_synth import (  # noqa: E402
     direct_star_model,
     flat_model,
     loose_model,
+    self_loop_model,
     star_model,
     wide_model,
 )
@@ -104,6 +105,13 @@ def test_real_cycle_is_reported():
     assert set(cycles.items[0]["objects"]) == {"main::A", "main::B"}
 
 
+def test_wire_self_loop_is_reported():
+    index = ModelIndex(parse_xprt(self_loop_model().text))
+    cycles = index.find_cycles()
+    assert len(cycles.items) == 1
+    assert cycles.items[0]["objects"] == ["main::A"]
+
+
 def test_long_chain_does_not_raise_recursion_error():
     index = ModelIndex(parse_xprt(flat_model(1200).text))
     cycles = index.find_cycles()
@@ -115,6 +123,14 @@ def test_ancestors_are_capped():
     index = ModelIndex(parse_xprt(flat_model(300).text))
     result = index.ancestors("main::B299", max_depth=10000)
     assert len(result.items) <= 200
+    assert result.truncated is True
+    assert result.evidence["items_total"] == 300
+
+
+def test_find_objects_limit_cannot_exceed_cap():
+    index = ModelIndex(parse_xprt(flat_model(300).text))
+    result = index.find_objects(limit=1000)
+    assert len(result.items) == 200
     assert result.truncated is True
 
 
@@ -192,6 +208,33 @@ def test_verification_report_is_capped():
     assert len(report.items) <= 200
     assert report.truncated is True
     assert report.counts["not_evaluated"] == 300
+
+
+def test_verification_report_keeps_failed_items_when_truncated():
+    class_name = "Arduino - I2C - Ведомый I2C"
+    objects = "".join(
+        f"<object><name>`U{index}`</name>"
+        f"<class_name>`{class_name}`</class_name>"
+        f"<obj_type>`100`</obj_type></object>"
+        for index in range(300))
+    objects += (
+        "<object><name>`Bf`</name><class_name>`Усилитель`</class_name>"
+        "<obj_type>`100`</obj_type><ports>"
+        "<port><name>`u`</name><mode>`0`</mode></port>"
+        "<port><name>`y`</name><mode>`1`</mode></port></ports></object>")
+    actual = parse_xprt(
+        f"<Header><project><page>{objects}</page></project></Header>")
+    spec = {
+        "schema": "system-spec/1",
+        "blocks": [{"name": f"U{index}", "class": class_name}
+                   for index in range(300)]
+        + [{"name": "Bf", "class": "Интегратор",
+            "ports": {"inputs": ["Port_0"], "outputs": ["Port_1"]}}],
+    }
+    report = verify_model(actual, compile_system_spec(spec))
+    assert report.truncated is True
+    assert report.counts["failed"] == 2
+    assert any(item["status"] == "failed" for item in report.items)
 
 
 @pytest.mark.parametrize("budget", [2000, 3000, 5000])

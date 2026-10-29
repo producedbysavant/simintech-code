@@ -321,7 +321,9 @@ class ModelIndex:
             truncated=truncated,
             evidence={"coverage": coverage_dict(self.model.coverage),
                       "sources": [kind.value for kind in
-                                  self.model.meta.source_set]})
+                                  self.model.meta.source_set],
+                      "items_total": len(item_list),
+                      "unknown_total": len(unknown_list)})
 
     def _walk(self, starts: list[str], forward: bool, max_depth: int,
               query: str) -> QueryResult:
