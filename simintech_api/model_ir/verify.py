@@ -70,11 +70,29 @@ def _objects(model: ModelIR, container: Container) -> dict[str, ModelObject]:
             if item.container_id == container.id}
 
 
+def _port_ordinal(obj: ModelObject, index: int,
+                  directions: tuple[PortDirection, ...]) -> int | None:
+    """Номер порта внутри направления, как его понимает `connect`.
+
+    В IR `port.index` сквозной по объекту, а `connect(out_index, in_index)`
+    считает выходы и входы отдельно, с нуля. SystemSpec повторяет синтаксис
+    `ModelSpec`/`connect`, поэтому сверка проводов обязана сравнивать
+    направленные номера, иначе живая модель с выходом раньше входа
+    (`Усилитель`: outport 0, inport 1) даёт ложный `wire_missing`.
+    """
+    ports = [port for port in obj.ports if port.direction in directions]
+    ports.sort(key=lambda port: port.index)
+    for ordinal, port in enumerate(ports):
+        if port.index == index:
+            return ordinal
+    return None
+
+
 def _edges(model: ModelIR, container: Container,
            objects: dict[str, ModelObject]) -> set[
                tuple[str, int, str, int]]:
     result: set[tuple[str, int, str, int]] = set()
-    by_id = {item.id: key for key, item in objects.items()}
+    by_id = {item.id: (key, item) for key, item in objects.items()}
     for wire in model.wires:
         if wire.container_id != container.id:
             continue
@@ -85,7 +103,15 @@ def _edges(model: ModelIR, container: Container,
         dst = by_id.get(wire.end.object_id)
         if src is None or dst is None:
             continue
-        result.add((src, wire.start.port_index, dst, wire.end.port_index))
+        src_ordinal = _port_ordinal(
+            src[1], wire.start.port_index,
+            (PortDirection.OUT, PortDirection.UNDIRECTED))
+        dst_ordinal = _port_ordinal(
+            dst[1], wire.end.port_index,
+            (PortDirection.IN, PortDirection.UNDIRECTED))
+        if src_ordinal is None or dst_ordinal is None:
+            continue
+        result.add((src[0], src_ordinal, dst[0], dst_ordinal))
     return result
 
 

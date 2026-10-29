@@ -196,7 +196,7 @@ def test_no_cycles_requirement_passes_on_acyclic_chain():
             for index in range(10)
         ],
         "wires": [
-            {"src": f"B{index}:out:1", "dst": f"B{index + 1}:in:0"}
+            {"src": f"B{index}:out:0", "dst": f"B{index + 1}:in:0"}
             for index in range(9)
         ],
         "requirements": [{
@@ -237,8 +237,8 @@ def test_verification_counts_all_invariants_beyond_query_cap():
              "ports": {"inputs": ["u"], "outputs": ["y"]}},
         ],
         "wires": [
-            {"src": "A:out:1", "dst": "B:in:0"},
-            {"src": "B:out:1", "dst": "A:in:0"},
+            {"src": "A:out:0", "dst": "B:in:0"},
+            {"src": "B:out:0", "dst": "A:in:0"},
         ],
         "invariants": [
             {"id": f"names{index}", "kind": "unique_object_names"}
@@ -272,6 +272,40 @@ def test_verification_report_is_capped():
     assert len(report.items) <= 200
     assert report.truncated is True
     assert report.counts["not_evaluated"] == 300
+
+
+def test_wire_indices_are_direction_ordinals():
+    xml = """<Header><project><page>
+  <object><name>`Step`</name><class_name>`Константа`</class_name>
+    <obj_type>`100`</obj_type>
+    <ports><port><name>`outport`</name><mode>`1`</mode></port></ports>
+  </object>
+  <object><name>`Gain`</name><class_name>`Усилитель`</class_name>
+    <obj_type>`100`</obj_type>
+    <ports>
+      <port><name>`outport`</name><mode>`1`</mode></port>
+      <port><name>`inport`</name><mode>`0`</mode></port>
+    </ports>
+  </object>
+  <object><name>`W`</name><class_name>`Математическая связь`</class_name>
+    <obj_type>`101`</obj_type>
+    <start_bl_index>`0`</start_bl_index><start_port_index>`0`</start_port_index>
+    <end_bl_index>`1`</end_bl_index><end_port_index>`1`</end_port_index>
+  </object>
+</page></project></Header>"""
+    spec = {
+        "schema": "system-spec/1",
+        "blocks": [
+            {"name": "Step", "class": "Константа",
+             "ports": {"outputs": ["outport"]}},
+            {"name": "Gain", "class": "Усилитель",
+             "ports": {"inputs": ["inport"], "outputs": ["outport"]}},
+        ],
+        "wires": [{"src": "Step:out:0", "dst": "Gain:in:0"}],
+    }
+    report = verify_model(parse_xprt(xml), compile_system_spec(spec))
+    assert report.verdict == "passed", report.items
+    assert report.counts["failed"] == 0
 
 
 def test_verification_report_keeps_failed_items_when_truncated():

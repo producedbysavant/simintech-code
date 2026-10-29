@@ -61,7 +61,7 @@ CHAIN_SPEC = {
     ],
     "wires": [
         {"src": "Step:out:0", "dst": "Gain:in:0"},
-        {"src": "Gain:out:1", "dst": "Graph:in:0"},
+        {"src": "Gain:out:0", "dst": "Graph:in:0"},
     ],
 }
 
@@ -216,7 +216,7 @@ SUBMODEL_SPEC = {
             ],
             "wires": [
                 {"src": "In:out:0", "dst": "K:in:0"},
-                {"src": "K:out:1", "dst": "Out:in:0"},
+                {"src": "K:out:0", "dst": "Out:in:0"},
             ],
         },
     }],
