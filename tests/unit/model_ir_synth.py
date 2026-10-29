@@ -142,6 +142,18 @@ def direct_star_model(sinks: int) -> SynthModel:
                    "last_sink": f"main::T{sinks - 1}"})
 
 
+def broken_model(objects: int) -> SynthModel:
+    """Провода нет, но есть один провод с неразрешённым началом."""
+    loose = loose_model(objects)
+    broken = _wire("Wbroken", 999, 0, 0, 0)
+    return SynthModel(
+        text=loose.text.replace(
+            "</page>", f"{broken}</page>"),
+        expected=_base_expected(
+            objects=objects, ports_real=objects * 2, wires=1,
+            unresolved_ends=1))
+
+
 def self_loop_model() -> SynthModel:
     """Один блок, выход которого соединён с его же входом."""
     return SynthModel(
@@ -192,6 +204,19 @@ def deep_model(levels: int) -> SynthModel:
             ports_real=4 * (levels + 1),
             wires=2 * (levels + 1)),
         addresses={"deepest": "main"})
+
+
+def unknown_type(count: int) -> SynthModel:
+    """Блоки с obj_type вне известных типов."""
+    parts = [
+        _object(f"U{index}", "Усилитель", 999, (("u", 0), ("y", 1)))
+        for index in range(count)
+    ]
+    return SynthModel(
+        text=_wrap("".join(parts)),
+        expected=_base_expected(
+            objects=count, ports_real=count * 2,
+            unknown_object_types=count))
 
 
 def wide_model(submodels: int) -> SynthModel:

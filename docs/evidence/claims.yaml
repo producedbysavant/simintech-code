@@ -1578,18 +1578,32 @@
     id: test_manifest_omitted_is_reserved
     kind: unit-pure
 - id: model-ir-query-evidence
-  statement: 'Ответ графового запроса несёт scope, model_hash, покрытие, unknown и truncated; items и unknown ограничены 200 элементами; пустой ответ и неизвестность различаются'
+  statement: 'Ответ графового запроса несёт scope, model_hash, покрытие, unknown и truncated; items и unknown ограничены 200 элементами; items_total и unknown_total считаются до среза; пустой ответ и неизвестность различаются'
   status: code-confirmed
   source:
     type: source-code
     ref: simintech_api/model_ir/graph.py
-  reproduction: 'test_check_connections_and_invariants, test_find_objects_compare_and_unknown_query и test_ancestors_are_capped: QueryResult.to_dict содержит evidence, неизвестные и признак усечения'
+  reproduction: 'test_check_connections_and_invariants, test_find_objects_compare_and_unknown_query, test_ancestors_are_capped и test_trace_signal_reports_total_before_cap: evidence, неизвестные, полные totals и признак усечения'
   tests:
   - file: tests/unit/test_model_ir_graph.py
     id: test_find_objects_compare_and_unknown_query
     kind: unit-pure
   - file: tests/unit/test_model_ir_scale.py
     id: test_ancestors_are_capped
+    kind: unit-pure
+  - file: tests/unit/test_model_ir_scale.py
+    id: test_trace_signal_reports_total_before_cap
+    kind: unit-pure
+- id: model-ir-query-ordering
+  statement: 'check_connections отдаёт error раньше warning и info, а status и счётчики считаются по полному списку, а не по срезу items'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/graph.py
+  reproduction: 'test_check_connections_puts_errors_first: 600 портовых предупреждений не вытесняют wire_end_unresolved, status fail'
+  tests:
+  - file: tests/unit/test_model_ir_scale.py
+    id: test_check_connections_puts_errors_first
     kind: unit-pure
 - id: model-ir-cycles-not-self-edges
   statement: 'find_cycles не считает внутреннее ребро блока вход-выход петлёй, обходит граф итеративно и не падает RecursionError на цепочке 1200 объектов; ациклическая цепочка даёт пустой результат'
@@ -1650,15 +1664,18 @@
     id: test_compile_collects_all_errors
     kind: unit-pure
 - id: model-ir-verify-verdict
-  statement: 'Сверка фактической модели с ExpectedModel даёт passed только при всех пройденных проверках, partial при unknown/not_evaluated и failed при любом расхождении'
+  statement: 'Сверка фактической модели с ExpectedModel даёт passed только при всех пройденных проверках, partial при unknown/not_evaluated и failed при любом расхождении; инварианты считаются все, даже если запрос усечён'
   status: code-confirmed
   source:
     type: source-code
     ref: simintech_api/model_ir/verify.py
-  reproduction: 'test_compile_chain_and_verify_passed, test_missing_wire_fails_verification, test_unknown_contract_is_partial_not_failed: три вердикта на согласованной, повреждённой и неизмеренной модели'
+  reproduction: 'test_compile_chain_and_verify_passed, test_missing_wire_fails_verification, test_unknown_contract_is_partial_not_failed и test_verification_counts_all_invariants_beyond_query_cap: три вердикта и падение 201-го инварианта'
   tests:
   - file: tests/unit/test_model_ir_system_spec.py
     id: test_missing_wire_fails_verification
+    kind: unit-pure
+  - file: tests/unit/test_model_ir_scale.py
+    id: test_verification_counts_all_invariants_beyond_query_cap
     kind: unit-pure
 - id: model-ir-verify-report-capped
   statement: 'VerificationReport отдаёт не более 200 пунктов с truncated, сохраняя failed в первую очередь, а counts считает все проверки, включая отброшенные'

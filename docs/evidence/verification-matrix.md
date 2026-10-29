@@ -140,12 +140,13 @@
 | `model-ir-topology-edge-only` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_topology.py::test_topology_to_ir_builds_objects_ports_and_edges` (unit-pure) |
 | `model-ir-signal-graph-block-edges` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_graph.py::test_inspect_trace_path_and_ancestors` (unit-pure) |
 | `model-ir-manifest-budget` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_manifest.py::test_manifest_omits_what_does_not_fit` (unit-pure), `tests/unit/test_model_ir_scale.py::test_manifest_omitted_is_reserved` (unit-pure) |
-| `model-ir-query-evidence` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_graph.py::test_find_objects_compare_and_unknown_query` (unit-pure), `tests/unit/test_model_ir_scale.py::test_ancestors_are_capped` (unit-pure) |
+| `model-ir-query-evidence` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_graph.py::test_find_objects_compare_and_unknown_query` (unit-pure), `tests/unit/test_model_ir_scale.py::test_ancestors_are_capped` (unit-pure), `tests/unit/test_model_ir_scale.py::test_trace_signal_reports_total_before_cap` (unit-pure) |
+| `model-ir-query-ordering` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_scale.py::test_check_connections_puts_errors_first` (unit-pure) |
 | `model-ir-cycles-not-self-edges` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_scale.py::test_acyclic_chain_has_no_cycles` (unit-pure), `tests/unit/test_model_ir_scale.py::test_long_chain_does_not_raise_recursion_error` (unit-pure) |
 | `model-ir-contracts-958-classes` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_contracts.py::test_registry_covers_all_catalog_classes` (unit-pure) |
 | `model-ir-contracts-nport` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_contracts.py::test_nport_and_portnames_contracts` (unit-pure) |
 | `model-ir-contracts-unknown-not-guessed` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_contracts.py::test_validator_accepts_registry_and_rejects_mutations` (unit-pure) |
 | `model-ir-system-spec-compile` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_system_spec.py::test_compile_collects_all_errors` (unit-pure) |
-| `model-ir-verify-verdict` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_system_spec.py::test_missing_wire_fails_verification` (unit-pure) |
+| `model-ir-verify-verdict` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_system_spec.py::test_missing_wire_fails_verification` (unit-pure), `tests/unit/test_model_ir_scale.py::test_verification_counts_all_invariants_beyond_query_cap` (unit-pure) |
 | `model-ir-verify-report-capped` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_scale.py::test_verification_report_is_capped` (unit-pure), `tests/unit/test_model_ir_scale.py::test_verification_report_keeps_failed_items_when_truncated` (unit-pure) |
 | `model-ir-verify-does-not-execute-code` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_system_spec.py::test_requirement_and_assertion_statuses` (unit-pure) |

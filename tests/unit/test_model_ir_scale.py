@@ -20,6 +20,7 @@ from simintech_api.model_ir import (  # noqa: E402
 from simintech_api.model_ir.codes import WireEndKind, WireKind  # noqa: E402
 
 from model_ir_synth import (  # noqa: E402
+    broken_model,
     cycle_model,
     deep_model,
     direct_star_model,
@@ -27,6 +28,7 @@ from model_ir_synth import (  # noqa: E402
     loose_model,
     self_loop_model,
     star_model,
+    unknown_type,
     wide_model,
 )
 
@@ -132,6 +134,7 @@ def test_find_objects_limit_cannot_exceed_cap():
     result = index.find_objects(limit=1000)
     assert len(result.items) == 200
     assert result.truncated is True
+    assert result.evidence["items_total"] == 300
 
 
 def test_check_connections_is_capped():
@@ -139,6 +142,39 @@ def test_check_connections_is_capped():
     result = index.check_connections()
     assert len(result.items) <= 200
     assert result.truncated is True
+    assert result.evidence["violations_total"] == 600
+    assert result.evidence["items_total"] == 600
+
+
+def test_check_connections_puts_errors_first():
+    index = ModelIndex(parse_xprt(broken_model(300).text))
+    result = index.check_connections()
+    assert result.evidence["status"] == "fail"
+    assert result.items[0]["code"] == "wire_end_unresolved"
+    assert result.truncated is True
+
+
+def test_list_discrepancies_reports_total_before_limit():
+    index = ModelIndex(parse_xprt(unknown_type(300).text))
+    result = index.list_discrepancies(limit=50)
+    assert len(result.items) == 50
+    assert result.evidence["items_total"] == 300
+    assert result.truncated is True
+
+
+def test_trace_signal_reports_total_before_cap():
+    index = ModelIndex(parse_xprt(flat_model(300).text))
+    result = index.trace_signal("main::B0", max_depth=10000)
+    assert len(result.items) == 200
+    assert result.evidence["items_total"] == 600
+    assert result.truncated is True
+
+
+def test_trace_both_deduplicates_unknown():
+    index = ModelIndex(parse_xprt(broken_model(3).text))
+    result = index.trace_signal("main::B0", direction="both")
+    assert len(result.unknown) == 1
+    assert result.evidence["unknown_total"] == 1
 
 
 def test_required_inputs_connected_uses_full_count_when_capped():
@@ -180,6 +216,7 @@ def test_compare_models_is_capped():
     result = ModelIndex(left).compare_models(right)
     assert len(result.items) <= 200
     assert result.truncated is True
+    assert result.evidence["items_total"] == 300
 
 
 def test_inspect_node_wires_are_capped():
@@ -188,6 +225,33 @@ def test_inspect_node_wires_are_capped():
     assert len(result.items[0]["wires"]) <= 200
     assert result.items[0]["wires_total"] == 300
     assert result.truncated is True
+
+
+def test_verification_counts_all_invariants_beyond_query_cap():
+    spec = {
+        "schema": "system-spec/1",
+        "blocks": [
+            {"name": "A", "class": "Усилитель",
+             "ports": {"inputs": ["u"], "outputs": ["y"]}},
+            {"name": "B", "class": "Усилитель",
+             "ports": {"inputs": ["u"], "outputs": ["y"]}},
+        ],
+        "wires": [
+            {"src": "A:out:1", "dst": "B:in:0"},
+            {"src": "B:out:1", "dst": "A:in:0"},
+        ],
+        "invariants": [
+            {"id": f"names{index}", "kind": "unique_object_names"}
+            for index in range(200)
+        ] + [{"id": "depth", "kind": "container_depth", "max": -1}],
+    }
+    report = verify_model(
+        parse_xprt(cycle_model().text), compile_system_spec(spec))
+    assert report.counts["failed"] == 1
+    assert report.verdict == "failed"
+    assert report.truncated is True
+    assert any(item["id"] == "depth" and item["status"] == "failed"
+               for item in report.items)
 
 
 def test_verification_report_is_capped():

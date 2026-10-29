@@ -235,7 +235,8 @@ def verify_model(actual: ModelIR, compiled: CompiledSpec) -> VerificationReport:
     items: list[dict[str, Any]] = []
     _compare_level(actual, compiled.expected.level, "main", items)
     index = ModelIndex(actual)
-    for item in index.validate_invariants(compiled.invariants).items:
+    for item in index.validate_invariants(
+            compiled.invariants, query_limit=None).items:
         items.append(_item(str(item.get("id")), "invariant",
                            str(item.get("status")),
                            str(item.get("detail", ""))))

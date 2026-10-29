@@ -27,13 +27,14 @@ XML-выгрузка и текст модели велики, не нормал�
 | `model-ir-topology-edge-only` | `topology` даёт объекты, порты и неориентированные рёбра `topology_edge` без геометрии, ветвей, свойств и скриптов | code-confirmed |
 | `model-ir-signal-graph-block-edges` | Граф связывает входы и выходы обычного блока, границы субмоделей и ячейки памяти отдельными рёбрами; `trace_signal` проходит всю цепочку | code-confirmed |
 | `model-ir-manifest-budget` | Паспорт ограничен 2000..5000 токенами, содержит заголовок, покрытие, структуру, классы и `Omitted`; `Omitted` резервирует место, при необходимости вытесняя секцию; XML, скрипты и полные значения не выводит | code-confirmed |
-| `model-ir-query-evidence` | Ответ запроса несёт `scope`, `model_hash`, покрытие, `unknown` и `truncated`; `items` и `unknown` ограничены 200 элементами, пусто и неизвестно различаются | code-confirmed |
+| `model-ir-query-evidence` | Ответ запроса несёт `scope`, `model_hash`, покрытие, `unknown` и `truncated`; `items` и `unknown` ограничены 200 элементами, `items_total`/`unknown_total` считаются до среза, пусто и неизвестно различаются | code-confirmed |
+| `model-ir-query-ordering` | `check_connections` отдаёт `error` раньше `warning` и `info`, а счётчики и `status` считаются по полному списку | code-confirmed |
 | `model-ir-cycles-not-self-edges` | `find_cycles` не считает внутреннее ребро блока вход-выход петлёй, обходит граф итеративно и не падает `RecursionError` на цепочке 1200 объектов; ациклическая цепочка даёт пустой результат | code-confirmed |
 | `model-ir-contracts-958-classes` | Реестр контрактов покрывает все 958 классов каталога; свойства из каталога, порты из корпуса выгрузок, неизмеренное `unknown` с причиной | code-confirmed |
 | `model-ir-contracts-nport` | `ports_for` для nport синтезирует N входов с уникальными индексами и выход; ноль и нечисло это отказ | code-confirmed |
 | `model-ir-contracts-unknown-not-guessed` | Неизмеренный портовый контракт возвращается как `unknown` с причиной; валидатор отвергает unknown без причины и чужой `nport_property` | code-confirmed |
 | `model-ir-system-spec-compile` | `SystemSpec` проверяется до SimInTech: классы, свойства, ссылки, концы, инварианты и assertions; ошибки собираются все | code-confirmed |
-| `model-ir-verify-verdict` | Сверка даёт `passed` только при всех пройденных проверках, `partial` при unknown/not_evaluated и `failed` при расхождении | code-confirmed |
+| `model-ir-verify-verdict` | Сверка даёт `passed` только при всех пройденных проверках, `partial` при unknown/not_evaluated и `failed` при расхождении; инварианты считаются все, даже если запрос усечён | code-confirmed |
 | `model-ir-verify-report-capped` | `VerificationReport` отдаёт не более 200 пунктов с `truncated`, сохраняя `failed` в первую очередь, а `counts` считает все проверки | code-confirmed |
 | `model-ir-verify-does-not-execute-code` | Верификация не исполняет произвольный код: assertions без испытания остаются `not_evaluated` | code-confirmed |
 

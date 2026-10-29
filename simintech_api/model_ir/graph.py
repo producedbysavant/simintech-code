@@ -30,6 +30,7 @@ from .ir import (
 )
 
 _MAX_ITEMS = 200
+_SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
 
 
 @dataclass(frozen=True, slots=True)
@@ -309,53 +310,66 @@ class ModelIndex:
 
     def _result(self, query: str, items: Iterable[dict[str, Any]],
                 unknown: Iterable[str] = (), truncated: bool = False,
-                scope: str = "full_model") -> QueryResult:
+                scope: str = "full_model",
+                items_total: int | None = None,
+                unknown_total: int | None = None,
+                limit: int | None = _MAX_ITEMS) -> QueryResult:
         item_list = list(items)
-        unknown_list = list(unknown)
-        truncated = (truncated or len(item_list) > _MAX_ITEMS
-                     or len(unknown_list) > _MAX_ITEMS)
+        unknown_list = list(dict.fromkeys(unknown))
+        total_items = len(item_list) if items_total is None else items_total
+        total_unknown = (len(unknown_list)
+                         if unknown_total is None else unknown_total)
+        if limit is not None:
+            truncated = (truncated or total_items > limit
+                         or total_unknown > limit
+                         or len(item_list) > limit
+                         or len(unknown_list) > limit)
+            item_list = item_list[:limit]
+            unknown_list = unknown_list[:limit]
         return QueryResult(
             query=query, scope=scope, model_hash=self.model.meta.structure_hash,
-            items=tuple(item_list[:_MAX_ITEMS]),
-            unknown=tuple(unknown_list[:_MAX_ITEMS]),
+            items=tuple(item_list),
+            unknown=tuple(unknown_list),
             truncated=truncated,
             evidence={"coverage": coverage_dict(self.model.coverage),
                       "sources": [kind.value for kind in
                                   self.model.meta.source_set],
-                      "items_total": len(item_list),
-                      "unknown_total": len(unknown_list)})
+                      "items_total": total_items,
+                      "unknown_total": total_unknown})
 
     def _walk(self, starts: list[str], forward: bool, max_depth: int,
               query: str) -> QueryResult:
         items: list[dict[str, Any]] = []
         unknown: list[str] = list(self.unknown)
-        truncated = False
+        total = 0
         queue = [(node, 0) for node in starts]
         visited = set(starts)
         while queue:
             node, depth = queue.pop(0)
             if depth > max_depth:
                 continue
-            edges = ((self.signal.get(node, ())
-                      if forward else self.reverse.get(node, ())))
-            obj = self.node_object(node)
-            items.append({
-                "node": self.node_name(node),
-                "object": obj.name if obj else "",
-                "address": obj.address if obj else "",
-                "port": self.ports[node].index if node in self.ports else -1,
-                "depth": depth,
-            })
-            if len(items) >= _MAX_ITEMS:
-                truncated = True
-                break
+            total += 1
+            edges = (self.signal.get(node, ()) if forward
+                     else self.reverse.get(node, ()))
+            if len(items) < _MAX_ITEMS:
+                obj = self.node_object(node)
+                items.append({
+                    "node": self.node_name(node),
+                    "object": obj.name if obj else "",
+                    "address": obj.address if obj else "",
+                    "port": (self.ports[node].index
+                             if node in self.ports else -1),
+                    "depth": depth,
+                })
             for edge in edges:
                 peer = edge.dst if forward else edge.src
                 if peer in visited:
                     continue
                 visited.add(peer)
                 queue.append((peer, depth + 1))
-        return self._result(query, items, unknown, truncated)
+        return self._result(query, items, unknown,
+                            truncated=total > _MAX_ITEMS,
+                            items_total=total)
 
     def _start_nodes(self, ref: str, forward: bool) -> list[str]:
         matches = [item for item in self.model.memory_links
@@ -444,7 +458,8 @@ class ModelIndex:
                   "container": self.containers[item.container_id].address
                   if item.container_id in self.containers else ""}
                  for item in found[:limit]]
-        return self._result("find_objects", items, truncated=truncated)
+        return self._result("find_objects", items, truncated=truncated,
+                            items_total=len(found))
 
     def trace_signal(self, signal: str, direction: str = "forward",
                      max_depth: int = 64) -> QueryResult:
@@ -455,17 +470,22 @@ class ModelIndex:
         items: list[dict[str, Any]] = []
         unknown: list[str] = []
         truncated = False
+        total = 0
         if direction in ("forward", "both"):
             forward = self._walk(starts, True, max_depth, "trace_signal")
             items.extend(forward.items)
             unknown.extend(forward.unknown)
             truncated = truncated or forward.truncated
+            total += int(forward.evidence.get("items_total", len(forward.items)))
         if direction in ("backward", "both"):
             backward = self._walk(starts, False, max_depth, "trace_signal")
             items.extend(backward.items)
             unknown.extend(backward.unknown)
             truncated = truncated or backward.truncated
-        return self._result("trace_signal", items, unknown, truncated)
+            total += int(backward.evidence.get(
+                "items_total", len(backward.items)))
+        return self._result("trace_signal", items, unknown, truncated,
+                            items_total=total)
 
     def _object_walk(self, ref: str, forward: bool,
                      max_depth: int) -> list[dict[str, Any]]:
@@ -588,7 +608,8 @@ class ModelIndex:
             for cycle in cycles[:max_cycles]
         ]
         return self._result("find_cycles", items,
-                            truncated=len(cycles) > max_cycles)
+                            truncated=len(cycles) > max_cycles,
+                            items_total=len(cycles))
 
     def check_connections(self) -> QueryResult:
         violations: list[dict[str, Any]] = []
@@ -642,12 +663,19 @@ class ModelIndex:
                   if item.get("severity") == "error"]
         partial = self.model.coverage.source_status is not SourceStatus.OK
         status = "fail" if errors else ("partial" if partial else "pass")
+        ordered = sorted(
+            enumerate(unique),
+            key=lambda pair: (
+                _SEVERITY_ORDER.get(str(pair[1].get("severity")), 9),
+                pair[0]))
         evidence = {
             "status": status,
             "checked_objects": len(self.model.objects),
             "checked_ports": len(self.ports),
             "checked_connections": len(self.model.wires),
             "violations_total": len(unique),
+            "items_total": len(unique),
+            "unknown_total": 0,
             "unconnected_inputs": sum(
                 1 for item in unique
                 if item.get("code") == "unconnected_input"),
@@ -656,12 +684,13 @@ class ModelIndex:
         return QueryResult(
             query="check_connections", scope="full_model",
             model_hash=self.model.meta.structure_hash,
-            items=tuple(unique[:_MAX_ITEMS]),
+            items=tuple(item for _pos, item in ordered[:_MAX_ITEMS]),
             truncated=len(unique) > _MAX_ITEMS,
             evidence=evidence)
 
     def validate_invariants(
-            self, invariants: Iterable[dict[str, Any]]) -> QueryResult:
+            self, invariants: Iterable[dict[str, Any]],
+            *, query_limit: int | None = _MAX_ITEMS) -> QueryResult:
         results: list[dict[str, Any]] = []
         for invariant in invariants:
             kind = str(invariant.get("kind", ""))
@@ -738,7 +767,8 @@ class ModelIndex:
                 results.append({
                     "id": ident, "kind": kind, "status": "not_evaluated",
                     "detail": f"неизвестный инвариант {kind!r}"})
-        return self._result("validate_invariants", results)
+        return self._result("validate_invariants", results,
+                            limit=query_limit, items_total=len(results))
 
     def _depth(self, container: Container) -> int:
         depth = 0
@@ -794,7 +824,7 @@ class ModelIndex:
         return self._result(
             "list_discrepancies",
             [discrepancy_dict(item) for item in found[:limit]],
-            truncated=truncated)
+            truncated=truncated, items_total=len(found))
 
     def coverage(self) -> QueryResult:
         return self._result("coverage", [coverage_dict(self.model.coverage)])
