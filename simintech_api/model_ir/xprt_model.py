@@ -635,10 +635,16 @@ class _Converter:
             entities[raw.order] = entity
 
         # Провода разрешаются после того, как известны все объекты страницы.
+        wire_by_name: dict[str, list[_Entity]] = {}
+        for entity in entities.values():
+            if entity.kind == "wire":
+                wire_by_name.setdefault(
+                    entity.raw.fields.get("name", ""), []).append(entity)
         for wire_entity in entities.values():
             if wire_entity.kind != "wire":
                 continue
-            self._convert_wire(wire_entity, entities, container_id, address)
+            self._convert_wire(wire_entity, entities, wire_by_name,
+                               container_id, address)
 
         object_ids = tuple(item.id for item in entities.values()
                            if item.kind == "object")
@@ -675,6 +681,7 @@ class _Converter:
         return container.id
 
     def _convert_wire(self, entity: _Entity, entities: dict[int, _Entity],
+                      wire_by_name: dict[str, list[_Entity]],
                       container_id: str, container_address: str) -> None:
         raw = entity.raw
         fields = raw.fields
@@ -695,11 +702,7 @@ class _Converter:
             parent_entity: _Entity | None = None
             ambiguous = False
             if parent_name:
-                matches = [
-                    candidate for candidate in entities.values()
-                    if candidate.kind == "wire"
-                    and candidate.raw.fields.get("name", "") == parent_name
-                ]
+                matches = wire_by_name.get(parent_name, [])
                 if len(matches) == 1:
                     parent_entity = matches[0]
                 elif len(matches) > 1:

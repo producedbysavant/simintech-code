@@ -26,13 +26,16 @@ XML-выгрузка и текст модели велики, не нормал�
 | `model-ir-merge-primary-xprt` | `.xprt` остаётся первичным; текст и топология дают `Discrepancy`, `strict` превращает структурные ошибки в `ModelIRConflictError` | code-confirmed |
 | `model-ir-topology-edge-only` | `topology` даёт объекты, порты и неориентированные рёбра `topology_edge` без геометрии, ветвей, свойств и скриптов | code-confirmed |
 | `model-ir-signal-graph-block-edges` | Граф связывает входы и выходы обычного блока, границы субмоделей и ячейки памяти отдельными рёбрами; `trace_signal` проходит всю цепочку | code-confirmed |
-| `model-ir-manifest-budget` | Паспорт ограничен 2000..5000 токенами, содержит заголовок, покрытие, структуру, классы и `Omitted`; XML, скрипты и полные значения не выводит | code-confirmed |
-| `model-ir-query-evidence` | Ответ запроса несёт `scope`, `model_hash`, покрытие, `unknown` и `truncated`; пусто и неизвестно различаются | code-confirmed |
+| `model-ir-manifest-budget` | Паспорт ограничен 2000..5000 токенами, содержит заголовок, покрытие, структуру, классы и `Omitted`; `Omitted` резервирует место, при необходимости вытесняя секцию; XML, скрипты и полные значения не выводит | code-confirmed |
+| `model-ir-query-evidence` | Ответ запроса несёт `scope`, `model_hash`, покрытие, `unknown` и `truncated`; `items` и `unknown` ограничены 200 элементами, `items_total`/`unknown_total` считаются до среза, пусто и неизвестно различаются | code-confirmed |
+| `model-ir-query-ordering` | `check_connections` отдаёт `error` раньше `warning` и `info`, а счётчики и `status` считаются по полному списку | code-confirmed |
+| `model-ir-cycles-not-self-edges` | `find_cycles` не считает внутреннее ребро блока вход-выход петлёй, обходит граф итеративно и не падает `RecursionError` на цепочке 1200 объектов; ациклическая цепочка даёт пустой результат | code-confirmed |
 | `model-ir-contracts-958-classes` | Реестр контрактов покрывает все 958 классов каталога; свойства из каталога, порты из корпуса выгрузок, неизмеренное `unknown` с причиной | code-confirmed |
 | `model-ir-contracts-nport` | `ports_for` для nport синтезирует N входов с уникальными индексами и выход; ноль и нечисло это отказ | code-confirmed |
 | `model-ir-contracts-unknown-not-guessed` | Неизмеренный портовый контракт возвращается как `unknown` с причиной; валидатор отвергает unknown без причины и чужой `nport_property` | code-confirmed |
 | `model-ir-system-spec-compile` | `SystemSpec` проверяется до SimInTech: классы, свойства, ссылки, концы, инварианты и assertions; ошибки собираются все | code-confirmed |
-| `model-ir-verify-verdict` | Сверка даёт `passed` только при всех пройденных проверках, `partial` при unknown/not_evaluated и `failed` при расхождении | code-confirmed |
+| `model-ir-verify-verdict` | Сверка даёт `passed` только при всех пройденных проверках, `partial` при unknown/not_evaluated и `failed` при расхождении; инварианты считаются все, даже если запрос усечён | code-confirmed |
+| `model-ir-verify-report-capped` | `VerificationReport` отдаёт не более 200 пунктов с `truncated`, сохраняя `failed` в первую очередь, а `counts` считает все проверки | code-confirmed |
 | `model-ir-verify-does-not-execute-code` | Верификация не исполняет произвольный код: assertions без испытания остаются `not_evaluated` | code-confirmed |
 
 Версия поставки в файлах поставки не записана. Это названо в `environment`
@@ -109,20 +112,26 @@ XML-выгрузка и текст модели велики, не нормал�
 внутренней связи входов и выходов обычного блока. `trace_signal` идёт по
 этим рёбрам, `ancestors`/`descendants` дают достижимость по объектам,
 `find_path` ищет цепочку, `find_cycles` возвращает компоненты обратной
-связи и не считает их автоматически ошибкой.
+связи и не считает их автоматически ошибкой. Внутреннее ребро блока
+вход-выход не образует петлю: на объектном графе это тот же блок. Обход
+итеративный, поэтому длинная цепочка не роняет запрос `RecursionError`.
 
 `check_connections` называет несоединённые входы и выходы, несколько
 источников на вход, неразрешённые концы и унаследованные расхождения.
 `validate_invariants` поддерживает `required_inputs_connected`,
 `no_self_loops`, `unique_object_names`, `memory_pair_complete`,
 `no_dangling_wires`, `max_fanout`, `container_depth`; проверка контрактов
-портов честно отвечает `not_evaluated` до C4. Каждый ответ несёт область,
-хеш модели, покрытие, неизвестные и признак усечения.
+портов подкрепляется реестром C4, а `portnames` без подсказок остаётся
+`not_evaluated`. Каждый ответ несёт область, хеш модели, покрытие,
+неизвестные и признак усечения; `items` и `unknown` ограничены 200
+элементами.
 
 `build_manifest` собирает Markdown-паспорт в бюджете 2000..5000 токенов:
 заголовок, покрытие, дерево контейнеров до глубины 3, топ классов, сигналы,
-горячие узлы, расхождения и обязательный `Omitted` при усечении. XML,
-скрипты и полные значения свойств в паспорт не попадают.
+горячие узлы, расхождения и обязательный `Omitted` при усечении. `Omitted`
+резервирует место: если он не влезает, последняя секция вытесняется, но
+потеря остаётся названной. XML, скрипты и полные значения свойств в паспорт
+не попадают.
 
 ## Контракты блоков
 
@@ -204,6 +213,12 @@ U+2014 в авторских описаниях. Генератор детерм
   portnames, unknown и мутации валидатора;
 - `tests/unit/test_model_ir_system_spec.py` - компиляция, ошибки, субмодель,
   память, требования, assertions и вердикты;
+- `tests/unit/model_ir_synth.py` - детерминированные генераторы плоской,
+  глубокой, разветвлённой и широкой синтетики без файлов в репозитории;
+- `tests/unit/test_model_ir_scale.py` - P5: полнота `Coverage`, бюджет
+  паспорта, `Omitted`, пределы запросов, циклы и отчёт верификации;
+- `tests/unit/test_model_ir_scale_perf.py` - P5: время разбора, индекса и
+  паспорта на 10000 объектов и 6000 ветвей, только `pytest -m performance`;
 - `tests/unit/test_model_ir_distribution.py` - реальные выгрузки через
   `SIMINTECH_IR_DEMO` и `SIMINTECH_XPRT_DIRS`, только явный прогон
   `pytest -m distribution`.

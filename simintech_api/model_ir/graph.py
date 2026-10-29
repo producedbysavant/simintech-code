@@ -30,6 +30,7 @@ from .ir import (
 )
 
 _MAX_ITEMS = 200
+_SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,14 +122,16 @@ class ModelIndex:
         self.wires_by_name: dict[str, list[ModelWire]] = {}
         for wire in model.wires:
             self.wires_by_name.setdefault(wire.name, []).append(wire)
-        self.objects_in: dict[str, tuple[ModelObject, ...]] = {}
+        grouped_objects: dict[str, list[ModelObject]] = {}
         for obj in model.objects:
-            self.objects_in.setdefault(obj.container_id, ())
-            self.objects_in[obj.container_id] += (obj,)
-        self.wires_in: dict[str, tuple[ModelWire, ...]] = {}
+            grouped_objects.setdefault(obj.container_id, []).append(obj)
+        self.objects_in: dict[str, tuple[ModelObject, ...]] = {
+            key: tuple(value) for key, value in grouped_objects.items()}
+        grouped_wires: dict[str, list[ModelWire]] = {}
         for wire in model.wires:
-            self.wires_in.setdefault(wire.container_id, ())
-            self.wires_in[wire.container_id] += (wire,)
+            grouped_wires.setdefault(wire.container_id, []).append(wire)
+        self.wires_in: dict[str, tuple[ModelWire, ...]] = {
+            key: tuple(value) for key, value in grouped_wires.items()}
         self.signal: dict[str, list[SignalEdge]] = {}
         self.reverse: dict[str, list[SignalEdge]] = {}
         self.unknown: list[str] = []
@@ -307,46 +310,66 @@ class ModelIndex:
 
     def _result(self, query: str, items: Iterable[dict[str, Any]],
                 unknown: Iterable[str] = (), truncated: bool = False,
-                scope: str = "full_model") -> QueryResult:
+                scope: str = "full_model",
+                items_total: int | None = None,
+                unknown_total: int | None = None,
+                limit: int | None = _MAX_ITEMS) -> QueryResult:
+        item_list = list(items)
+        unknown_list = list(dict.fromkeys(unknown))
+        total_items = len(item_list) if items_total is None else items_total
+        total_unknown = (len(unknown_list)
+                         if unknown_total is None else unknown_total)
+        if limit is not None:
+            truncated = (truncated or total_items > limit
+                         or total_unknown > limit
+                         or len(item_list) > limit
+                         or len(unknown_list) > limit)
+            item_list = item_list[:limit]
+            unknown_list = unknown_list[:limit]
         return QueryResult(
             query=query, scope=scope, model_hash=self.model.meta.structure_hash,
-            items=tuple(items), unknown=tuple(unknown),
+            items=tuple(item_list),
+            unknown=tuple(unknown_list),
             truncated=truncated,
             evidence={"coverage": coverage_dict(self.model.coverage),
                       "sources": [kind.value for kind in
-                                  self.model.meta.source_set]})
+                                  self.model.meta.source_set],
+                      "items_total": total_items,
+                      "unknown_total": total_unknown})
 
     def _walk(self, starts: list[str], forward: bool, max_depth: int,
               query: str) -> QueryResult:
         items: list[dict[str, Any]] = []
         unknown: list[str] = list(self.unknown)
-        truncated = False
+        total = 0
         queue = [(node, 0) for node in starts]
         visited = set(starts)
         while queue:
             node, depth = queue.pop(0)
             if depth > max_depth:
                 continue
-            edges = ((self.signal.get(node, ())
-                      if forward else self.reverse.get(node, ())))
-            obj = self.node_object(node)
-            items.append({
-                "node": self.node_name(node),
-                "object": obj.name if obj else "",
-                "address": obj.address if obj else "",
-                "port": self.ports[node].index if node in self.ports else -1,
-                "depth": depth,
-            })
-            if len(items) >= _MAX_ITEMS:
-                truncated = True
-                break
+            total += 1
+            edges = (self.signal.get(node, ()) if forward
+                     else self.reverse.get(node, ()))
+            if len(items) < _MAX_ITEMS:
+                obj = self.node_object(node)
+                items.append({
+                    "node": self.node_name(node),
+                    "object": obj.name if obj else "",
+                    "address": obj.address if obj else "",
+                    "port": (self.ports[node].index
+                             if node in self.ports else -1),
+                    "depth": depth,
+                })
             for edge in edges:
                 peer = edge.dst if forward else edge.src
                 if peer in visited:
                     continue
                 visited.add(peer)
                 queue.append((peer, depth + 1))
-        return self._result(query, items, unknown, truncated)
+        return self._result(query, items, unknown,
+                            truncated=total > _MAX_ITEMS,
+                            items_total=total)
 
     def _start_nodes(self, ref: str, forward: bool) -> list[str]:
         matches = [item for item in self.model.memory_links
@@ -395,6 +418,11 @@ class ModelIndex:
         wires = [item for item in self.model.wires
                  if item.start.object_id == obj.id
                  or item.end.object_id == obj.id]
+        ports = [
+            {"index": port.index, "name": port.name,
+             "direction": port.direction.value}
+            for port in obj.ports]
+        truncated = (len(ports) > _MAX_ITEMS or len(wires) > _MAX_ITEMS)
         return self._result("inspect_node", [{
             "address": obj.address,
             "name": obj.name,
@@ -403,14 +431,13 @@ class ModelIndex:
             "kind": obj.kind.value,
             "container": self.containers[obj.container_id].address
             if obj.container_id in self.containers else "",
-            "ports": [
-                {"index": port.index, "name": port.name,
-                 "direction": port.direction.value}
-                for port in obj.ports],
-            "wires": [item.address for item in wires],
+            "ports": ports[:_MAX_ITEMS],
+            "ports_total": len(ports),
+            "wires": [item.address for item in wires[:_MAX_ITEMS]],
+            "wires_total": len(wires),
             "uid": obj.uid,
             "filename": obj.filename,
-        }])
+        }], truncated=truncated)
 
     def find_objects(self, query: str = "", class_name: str = "",
                      kind: str = "", limit: int = 50) -> QueryResult:
@@ -431,7 +458,8 @@ class ModelIndex:
                   "container": self.containers[item.container_id].address
                   if item.container_id in self.containers else ""}
                  for item in found[:limit]]
-        return self._result("find_objects", items, truncated=truncated)
+        return self._result("find_objects", items, truncated=truncated,
+                            items_total=len(found))
 
     def trace_signal(self, signal: str, direction: str = "forward",
                      max_depth: int = 64) -> QueryResult:
@@ -442,17 +470,22 @@ class ModelIndex:
         items: list[dict[str, Any]] = []
         unknown: list[str] = []
         truncated = False
+        total = 0
         if direction in ("forward", "both"):
             forward = self._walk(starts, True, max_depth, "trace_signal")
             items.extend(forward.items)
             unknown.extend(forward.unknown)
             truncated = truncated or forward.truncated
+            total += int(forward.evidence.get("items_total", len(forward.items)))
         if direction in ("backward", "both"):
             backward = self._walk(starts, False, max_depth, "trace_signal")
             items.extend(backward.items)
             unknown.extend(backward.unknown)
             truncated = truncated or backward.truncated
-        return self._result("trace_signal", items, unknown, truncated)
+            total += int(backward.evidence.get(
+                "items_total", len(backward.items)))
+        return self._result("trace_signal", items, unknown, truncated,
+                            items_total=total)
 
     def _object_walk(self, ref: str, forward: bool,
                      max_depth: int) -> list[dict[str, Any]]:
@@ -515,8 +548,14 @@ class ModelIndex:
         for edge in (item for edges in self.signal.values() for item in edges):
             src = self.node_object(edge.src)
             dst = self.node_object(edge.dst)
-            if src is not None and dst is not None:
-                graph.setdefault(src.id, set()).add(dst.id)
+            if src is None or dst is None:
+                continue
+            # Внутреннее ребро блока вход -> выход не является обратной
+            # связью: на уровне объектов это петля того же блока. Настоящая
+            # петля провода остаётся в графе и будет найдена.
+            if src.id == dst.id and edge.kind == "block":
+                continue
+            graph.setdefault(src.id, set()).add(dst.id)
         index = 0
         stack: list[str] = []
         on_stack: set[str] = set()
@@ -524,20 +563,35 @@ class ModelIndex:
         low: dict[str, int] = {}
         cycles: list[list[str]] = []
 
-        def visit(node: str) -> None:
-            nonlocal index
-            indices[node] = index
-            low[node] = index
-            index += 1
-            stack.append(node)
-            on_stack.add(node)
-            for peer in graph.get(node, ()):
-                if peer not in indices:
-                    visit(peer)
-                    low[node] = min(low[node], low[peer])
-                elif peer in on_stack:
-                    low[node] = min(low[node], indices[peer])
-            if low[node] == indices[node]:
+        # Итеративный Tarjan: рекурсивный падал RecursionError на цепочке
+        # из 1200 объектов, то есть отказ уходил мимо ModelQueryError.
+        for start in sorted(graph):
+            if start in indices:
+                continue
+            work: list[tuple[str, int]] = [(start, 0)]
+            while work:
+                node, position = work[-1]
+                if position == 0:
+                    indices[node] = index
+                    low[node] = index
+                    index += 1
+                    stack.append(node)
+                    on_stack.add(node)
+                peers = sorted(graph.get(node, ()))
+                if position < len(peers):
+                    peer = peers[position]
+                    work[-1] = (node, position + 1)
+                    if peer not in indices:
+                        work.append((peer, 0))
+                    elif peer in on_stack:
+                        low[node] = min(low[node], indices[peer])
+                    continue
+                work.pop()
+                if work:
+                    parent = work[-1][0]
+                    low[parent] = min(low[parent], low[node])
+                if low[node] != indices[node]:
+                    continue
                 component: list[str] = []
                 while True:
                     item = stack.pop()
@@ -545,19 +599,17 @@ class ModelIndex:
                     component.append(item)
                     if item == node:
                         break
+                component.sort()
                 if len(component) > 1 or node in graph.get(node, ()):
                     cycles.append(component)
-
-        for node in list(graph):
-            if node not in indices:
-                visit(node)
         cycles.sort(key=lambda item: (-len(item), item))
         items = [
             {"objects": [self.objects[item].address for item in cycle]}
             for cycle in cycles[:max_cycles]
         ]
         return self._result("find_cycles", items,
-                            truncated=len(cycles) > max_cycles)
+                            truncated=len(cycles) > max_cycles,
+                            items_total=len(cycles))
 
     def check_connections(self) -> QueryResult:
         violations: list[dict[str, Any]] = []
@@ -611,32 +663,48 @@ class ModelIndex:
                   if item.get("severity") == "error"]
         partial = self.model.coverage.source_status is not SourceStatus.OK
         status = "fail" if errors else ("partial" if partial else "pass")
+        ordered = sorted(
+            enumerate(unique),
+            key=lambda pair: (
+                _SEVERITY_ORDER.get(str(pair[1].get("severity")), 9),
+                pair[0]))
         evidence = {
             "status": status,
             "checked_objects": len(self.model.objects),
             "checked_ports": len(self.ports),
             "checked_connections": len(self.model.wires),
+            "violations_total": len(unique),
+            "items_total": len(unique),
+            "unknown_total": 0,
+            "unconnected_inputs": sum(
+                1 for item in unique
+                if item.get("code") == "unconnected_input"),
             "coverage": coverage_dict(self.model.coverage),
         }
         return QueryResult(
             query="check_connections", scope="full_model",
             model_hash=self.model.meta.structure_hash,
-            items=tuple(unique), evidence=evidence)
+            items=tuple(item for _pos, item in ordered[:_MAX_ITEMS]),
+            truncated=len(unique) > _MAX_ITEMS,
+            evidence=evidence)
 
     def validate_invariants(
-            self, invariants: Iterable[dict[str, Any]]) -> QueryResult:
+            self, invariants: Iterable[dict[str, Any]],
+            *, query_limit: int | None = _MAX_ITEMS) -> QueryResult:
         results: list[dict[str, Any]] = []
         for invariant in invariants:
             kind = str(invariant.get("kind", ""))
             ident = str(invariant.get("id", kind))
             if kind == "required_inputs_connected":
                 check = self.check_connections()
-                failed = [item for item in check.items
-                          if item.get("code") == "unconnected_input"]
+                failed = int(check.evidence.get(
+                    "unconnected_inputs",
+                    sum(1 for item in check.items
+                        if item.get("code") == "unconnected_input")))
                 results.append({
                     "id": ident, "kind": kind,
                     "status": "failed" if failed else "passed",
-                    "detail": f"входов без источника: {len(failed)}"})
+                    "detail": f"входов без источника: {failed}"})
             elif kind == "no_self_loops":
                 loops = [wire.address for wire in self.model.wires
                          if wire.start.object_id
@@ -699,7 +767,8 @@ class ModelIndex:
                 results.append({
                     "id": ident, "kind": kind, "status": "not_evaluated",
                     "detail": f"неизвестный инвариант {kind!r}"})
-        return self._result("validate_invariants", results)
+        return self._result("validate_invariants", results,
+                            limit=query_limit, items_total=len(results))
 
     def _depth(self, container: Container) -> int:
         depth = 0
@@ -755,7 +824,7 @@ class ModelIndex:
         return self._result(
             "list_discrepancies",
             [discrepancy_dict(item) for item in found[:limit]],
-            truncated=truncated)
+            truncated=truncated, items_total=len(found))
 
     def coverage(self) -> QueryResult:
         return self._result("coverage", [coverage_dict(self.model.coverage)])

@@ -1564,26 +1564,60 @@
     id: test_inspect_trace_path_and_ancestors
     kind: unit-pure
 - id: model-ir-manifest-budget
-  statement: 'Паспорт Model IR ограничен budget_tokens 2000..5000, содержит заголовок, покрытие, структуру, классы, сигналы и блок Omitted; XML, скрипты и полные значения свойств в него не попадают'
+  statement: 'Паспорт Model IR ограничен budget_tokens 2000..5000, содержит заголовок, покрытие, структуру, классы, сигналы и блок Omitted; Omitted резервирует место, вытесняя последнюю секцию, чтобы потеря не стала молчаливой; XML, скрипты и полные значения свойств в него не попадают'
   status: code-confirmed
   source:
     type: source-code
     ref: simintech_api/model_ir/manifest.py
-  reproduction: 'test_manifest_has_header_coverage_and_no_xml и test_manifest_omits_what_does_not_fit: бюджет 2000 держится, лишние секции названы в Omitted'
+  reproduction: 'test_manifest_has_header_coverage_and_no_xml, test_manifest_omits_what_does_not_fit и test_manifest_omitted_is_reserved: бюджет 2000 держится, лишние секции названы в Omitted'
   tests:
   - file: tests/unit/test_model_ir_manifest.py
     id: test_manifest_omits_what_does_not_fit
     kind: unit-pure
+  - file: tests/unit/test_model_ir_scale.py
+    id: test_manifest_omitted_is_reserved
+    kind: unit-pure
 - id: model-ir-query-evidence
-  statement: 'Ответ графового запроса несёт scope, model_hash, покрытие, unknown и truncated; пустой ответ и неизвестность различаются'
+  statement: 'Ответ графового запроса несёт scope, model_hash, покрытие, unknown и truncated; items и unknown ограничены 200 элементами; items_total и unknown_total считаются до среза; пустой ответ и неизвестность различаются'
   status: code-confirmed
   source:
     type: source-code
     ref: simintech_api/model_ir/graph.py
-  reproduction: 'test_check_connections_and_invariants и test_find_objects_compare_and_unknown_query: QueryResult.to_dict содержит evidence.unknown и evidence.coverage'
+  reproduction: 'test_check_connections_and_invariants, test_find_objects_compare_and_unknown_query, test_ancestors_are_capped и test_trace_signal_reports_total_before_cap: evidence, неизвестные, полные totals и признак усечения'
   tests:
   - file: tests/unit/test_model_ir_graph.py
     id: test_find_objects_compare_and_unknown_query
+    kind: unit-pure
+  - file: tests/unit/test_model_ir_scale.py
+    id: test_ancestors_are_capped
+    kind: unit-pure
+  - file: tests/unit/test_model_ir_scale.py
+    id: test_trace_signal_reports_total_before_cap
+    kind: unit-pure
+- id: model-ir-query-ordering
+  statement: 'check_connections отдаёт error раньше warning и info, а status и счётчики считаются по полному списку, а не по срезу items'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/graph.py
+  reproduction: 'test_check_connections_puts_errors_first: 600 портовых предупреждений не вытесняют wire_end_unresolved, status fail'
+  tests:
+  - file: tests/unit/test_model_ir_scale.py
+    id: test_check_connections_puts_errors_first
+    kind: unit-pure
+- id: model-ir-cycles-not-self-edges
+  statement: 'find_cycles не считает внутреннее ребро блока вход-выход петлёй, обходит граф итеративно и не падает RecursionError на цепочке 1200 объектов; ациклическая цепочка даёт пустой результат'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/graph.py
+  reproduction: 'test_acyclic_chain_has_no_cycles, test_real_cycle_is_reported и test_long_chain_does_not_raise_recursion_error: ложных циклов нет, настоящий цикл A-B найден'
+  tests:
+  - file: tests/unit/test_model_ir_scale.py
+    id: test_acyclic_chain_has_no_cycles
+    kind: unit-pure
+  - file: tests/unit/test_model_ir_scale.py
+    id: test_long_chain_does_not_raise_recursion_error
     kind: unit-pure
 - id: model-ir-contracts-958-classes
   statement: 'Реестр контрактов покрывает все 958 классов block_catalog.json; свойства и умолчания берутся из каталога, порты наблюдаются в корпусе выгрузок, а неизмеренное остаётся unknown с причиной'
@@ -1630,15 +1664,32 @@
     id: test_compile_collects_all_errors
     kind: unit-pure
 - id: model-ir-verify-verdict
-  statement: 'Сверка фактической модели с ExpectedModel даёт passed только при всех пройденных проверках, partial при unknown/not_evaluated и failed при любом расхождении'
+  statement: 'Сверка фактической модели с ExpectedModel даёт passed только при всех пройденных проверках, partial при unknown/not_evaluated и failed при любом расхождении; инварианты считаются все, даже если запрос усечён'
   status: code-confirmed
   source:
     type: source-code
     ref: simintech_api/model_ir/verify.py
-  reproduction: 'test_compile_chain_and_verify_passed, test_missing_wire_fails_verification, test_unknown_contract_is_partial_not_failed: три вердикта на согласованной, повреждённой и неизмеренной модели'
+  reproduction: 'test_compile_chain_and_verify_passed, test_missing_wire_fails_verification, test_unknown_contract_is_partial_not_failed и test_verification_counts_all_invariants_beyond_query_cap: три вердикта и падение 201-го инварианта'
   tests:
   - file: tests/unit/test_model_ir_system_spec.py
     id: test_missing_wire_fails_verification
+    kind: unit-pure
+  - file: tests/unit/test_model_ir_scale.py
+    id: test_verification_counts_all_invariants_beyond_query_cap
+    kind: unit-pure
+- id: model-ir-verify-report-capped
+  statement: 'VerificationReport отдаёт не более 200 пунктов с truncated, сохраняя failed в первую очередь, а counts считает все проверки, включая отброшенные'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/verify.py
+  reproduction: 'test_verification_report_is_capped и test_verification_report_keeps_failed_items_when_truncated: 300 неизмеренных объектов дают 200 пунктов, truncated true и counts.not_evaluated 300; failed попадает в срез'
+  tests:
+  - file: tests/unit/test_model_ir_scale.py
+    id: test_verification_report_is_capped
+    kind: unit-pure
+  - file: tests/unit/test_model_ir_scale.py
+    id: test_verification_report_keeps_failed_items_when_truncated
     kind: unit-pure
 - id: model-ir-verify-does-not-execute-code
   statement: 'Верификация не исполняет произвольный код: assertions без расчётного испытания остаются not_evaluated, а partial не маскируется под passed'

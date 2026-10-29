@@ -15,6 +15,17 @@ from .graph import ModelIndex
 from .ir import Container, ModelIR, ModelObject
 from .system_spec import CompiledSpec, ExpectedLevel, ExpectedObject
 
+_MAX_ITEMS = 200
+_STATUS_ORDER = {"failed": 0, "not_evaluated": 1, "unknown": 2, "passed": 3}
+
+
+def _limited(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ordered = sorted(
+        enumerate(items),
+        key=lambda pair: (_STATUS_ORDER.get(str(pair[1].get("status")), 9),
+                          pair[0]))
+    return [item for _pos, item in ordered[:_MAX_ITEMS]]
+
 
 @dataclass(frozen=True, slots=True)
 class VerificationReport:
@@ -24,6 +35,7 @@ class VerificationReport:
     items: tuple[dict[str, Any], ...]
     counts: dict[str, int]
     scope: str = "full_model"
+    truncated: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -33,6 +45,7 @@ class VerificationReport:
             "scope": self.scope,
             "items": list(self.items),
             "counts": dict(self.counts),
+            "truncated": self.truncated,
         }
 
 
@@ -222,7 +235,8 @@ def verify_model(actual: ModelIR, compiled: CompiledSpec) -> VerificationReport:
     items: list[dict[str, Any]] = []
     _compare_level(actual, compiled.expected.level, "main", items)
     index = ModelIndex(actual)
-    for item in index.validate_invariants(compiled.invariants).items:
+    for item in index.validate_invariants(
+            compiled.invariants, query_limit=None).items:
         items.append(_item(str(item.get("id")), "invariant",
                            str(item.get("status")),
                            str(item.get("detail", ""))))
@@ -247,5 +261,6 @@ def verify_model(actual: ModelIR, compiled: CompiledSpec) -> VerificationReport:
         verdict = "passed"
     return VerificationReport(
         verdict=verdict, spec_name=compiled.name,
-        model_hash=actual.meta.structure_hash, items=tuple(items),
-        counts=counts)
+        model_hash=actual.meta.structure_hash,
+        items=tuple(_limited(items)),
+        counts=counts, truncated=len(items) > _MAX_ITEMS)
