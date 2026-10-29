@@ -60,6 +60,31 @@ def test_manifest_focus_and_budget_validation():
         build_manifest(ir, budget_tokens=3000, focus="unknown")
 
 
+def test_manifest_contracts_section_uses_registry():
+    from simintech_api.model_ir.contracts import load_default_contracts
+
+    text = build_manifest(parse_xprt(MODEL), budget_tokens=3000)
+    coverage = load_default_contracts().coverage()
+    assert "## Contracts" in text
+    assert f"registry: {coverage.classes} classes" in text
+    assert "unavailable" not in text
+    assert "- Ступенька: ports=fixed" in text
+    assert "- Временной график: ports=unknown" in text
+
+
+def test_manifest_contracts_unavailable_names_reason(monkeypatch):
+    from simintech_api.model_ir import manifest
+
+    def broken():
+        raise ModelQueryError("реестр не прочитан: файл отсутствует")
+
+    monkeypatch.setattr(manifest, "load_default_contracts", broken)
+    text = manifest.build_manifest(parse_xprt(MODEL), budget_tokens=3000)
+    assert "## Contracts" in text
+    assert "registry: unavailable" in text
+    assert "реестр не прочитан" in text
+
+
 def test_manifest_omits_what_does_not_fit():
     parts = ["<Header><project><page>"]
     for index in range(300):

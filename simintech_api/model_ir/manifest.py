@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections import Counter
 from .codes import ContainerKind, ObjectKind
+from .contracts import load_default_contracts
 from .errors import ModelQueryError
 from .graph import ModelIndex, coverage_dict
 from .ir import Container, ModelIR
@@ -146,8 +147,38 @@ def _discrepancies(model: ModelIR) -> list[str]:
     return lines
 
 
-def _contracts() -> list[str]:
-    return ["## Contracts", "registry: unavailable (C4)"]
+def _contracts(model: ModelIR) -> list[str]:
+    try:
+        registry = load_default_contracts()
+    except ModelQueryError as exc:
+        return ["## Contracts", f"registry: unavailable ({exc})"]
+    coverage = registry.coverage()
+    lines = [
+        "## Contracts",
+        f"registry: {coverage.classes} classes, "
+        f"measured={coverage.measured}, derived={coverage.derived}, "
+        f"unknown={coverage.unknown}",
+    ]
+    if coverage.port_models:
+        lines.append("port_models: " + ", ".join(
+            f"{name}={count}"
+            for name, count in sorted(coverage.port_models.items())))
+    counts = Counter(item.class_name for item in model.objects)
+    for name, _count in counts.most_common(10):
+        contract = registry.get(name)
+        if contract is None:
+            lines.append(f"- {name}: нет в реестре")
+            continue
+        ports = contract.ports
+        if ports.unknown:
+            reason = f" ({ports.reason})" if ports.reason else ""
+            described = f"unknown{reason}"
+        else:
+            described = (f"{ports.model} in={len(ports.inputs)} "
+                         f"out={len(ports.outputs)}")
+        lines.append(f"- {name}: ports={described} "
+                     f"props={len(contract.properties)}")
+    return lines
 
 
 def _geometry(index: ModelIndex) -> list[str]:
@@ -187,7 +218,7 @@ def build_manifest(model: ModelIR, budget_tokens: int = 3000,
         ("containers", _container_lines(index)),
         ("classes", _classes(index)),
         ("signals", _signals(index)),
-        ("contracts", _contracts()),
+        ("contracts", _contracts(model)),
         ("hot", _hot(index)),
         ("discrepancies", _discrepancies(model)),
     ]

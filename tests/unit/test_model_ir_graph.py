@@ -13,6 +13,8 @@ from simintech_api.model_ir import (  # noqa: E402
     parse_xprt,
 )
 
+from model_ir_synth import flat_model  # noqa: E402
+
 MODEL = """<Header><project><page>
   <object>
     <name>`Step`</name><class_name>`Ступенька`</class_name><obj_type>`100`</obj_type>
@@ -183,6 +185,40 @@ def test_check_connections_and_invariants():
         {"id": "fanout", "kind": "max_fanout", "max": 0},
     ])
     assert fanout.items[0]["status"] == "failed"
+
+
+def test_trace_both_returns_unique_nodes():
+    index = ModelIndex(parse_xprt(flat_model(3).text))
+    forward = {item["node"]
+               for item in index.trace_signal("main::B1", "forward").items}
+    backward = {item["node"]
+                for item in index.trace_signal("main::B1", "backward").items}
+    both = index.trace_signal("main::B1", "both")
+    nodes = [item["node"] for item in both.items]
+    assert len(nodes) == len(set(nodes))
+    assert set(nodes) == forward | backward
+    assert both.evidence["items_total"] == len(forward | backward)
+
+
+def test_trace_both_counts_union_when_truncated():
+    index = ModelIndex(parse_xprt(flat_model(300).text))
+    result = index.trace_signal("main::B150", "both", max_depth=10000)
+    assert len(result.items) == 200
+    assert result.truncated is True
+    # Цепочка из 300 блоков по два порта; объединение проходов - вся цепочка.
+    assert result.evidence["items_total"] == 600
+
+
+def test_query_requires_named_arguments():
+    index = ModelIndex(parse_xprt(MODEL))
+    with pytest.raises(ModelQueryError, match="trace_signal"):
+        index.query("trace_signal", {})
+    with pytest.raises(ModelQueryError, match="signal"):
+        index.query("trace_signal", {"target": "Step"})
+    with pytest.raises(ModelQueryError, match="node"):
+        index.query("inspect_node", {})
+    with pytest.raises(ModelQueryError, match="dst"):
+        index.query("find_path", {"src": "Step"})
 
 
 def test_find_objects_compare_and_unknown_query():

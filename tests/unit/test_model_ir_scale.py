@@ -365,7 +365,7 @@ def test_manifest_omitted_is_reserved(monkeypatch):
         lambda index: ["## Signals"] + ["g" * 100 for _ in range(5)])
     monkeypatch.setattr(
         manifest, "_contracts",
-        lambda: ["## Contracts"] + ["x" * 100 for _ in range(5)])
+        lambda model: ["## Contracts"] + ["x" * 100 for _ in range(5)])
     monkeypatch.setattr(
         manifest, "_hot",
         lambda index: ["## Hot nodes"] + ["h" * 100 for _ in range(5)])
