@@ -1663,6 +1663,20 @@
   - file: tests/unit/test_model_ir_system_spec.py
     id: test_compile_collects_all_errors
     kind: unit-pure
+- id: model-ir-system-spec-wire-ordinals
+  statement: 'Концы проводов SystemSpec нумеруются как у connect: out:N/in:N внутри направления с нуля; сверка переводит сквозной port.index IR в направленный номер'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/verify.py
+  reproduction: 'test_compile_chain_and_verify_passed и test_wire_indices_are_direction_ordinals: блок с выходом раньше входа не даёт ложный wire_missing'
+  tests:
+  - file: tests/unit/test_model_ir_system_spec.py
+    id: test_compile_chain_and_verify_passed
+    kind: unit-pure
+  - file: tests/unit/test_model_ir_scale.py
+    id: test_wire_indices_are_direction_ordinals
+    kind: unit-pure
 - id: model-ir-verify-verdict
   statement: 'Сверка фактической модели с ExpectedModel даёт passed только при всех пройденных проверках, partial при unknown/not_evaluated и failed при любом расхождении; инварианты считаются все, даже если запрос усечён'
   status: code-confirmed

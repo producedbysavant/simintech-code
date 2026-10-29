@@ -147,6 +147,7 @@
 | `model-ir-contracts-nport` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_contracts.py::test_nport_and_portnames_contracts` (unit-pure) |
 | `model-ir-contracts-unknown-not-guessed` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_contracts.py::test_validator_accepts_registry_and_rejects_mutations` (unit-pure) |
 | `model-ir-system-spec-compile` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_system_spec.py::test_compile_collects_all_errors` (unit-pure) |
+| `model-ir-system-spec-wire-ordinals` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_system_spec.py::test_compile_chain_and_verify_passed` (unit-pure), `tests/unit/test_model_ir_scale.py::test_wire_indices_are_direction_ordinals` (unit-pure) |
 | `model-ir-verify-verdict` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_system_spec.py::test_missing_wire_fails_verification` (unit-pure), `tests/unit/test_model_ir_scale.py::test_verification_counts_all_invariants_beyond_query_cap` (unit-pure) |
 | `model-ir-verify-report-capped` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_scale.py::test_verification_report_is_capped` (unit-pure), `tests/unit/test_model_ir_scale.py::test_verification_report_keeps_failed_items_when_truncated` (unit-pure) |
 | `model-ir-verify-does-not-execute-code` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_system_spec.py::test_requirement_and_assertion_statuses` (unit-pure) |
