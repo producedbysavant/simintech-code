@@ -155,11 +155,13 @@ def test_instance_defined_port_names_are_declared():
     """Классы с меняющимся от экземпляра именем помечены явно.
 
     Корпус дал `inport` и `inport_1`, живая приёмка 29.10.2026 показала `U`
-    и `U1` у тех же классов: имя не инвариант, и сверка не должна объявлять
-    из-за него отказ.
+    и `U1` у тех же классов; у «Интегратора» корпус дал `Port_0` и `Port_1`,
+    а живой COM и импорт 30.10.2026 дают `inport` и `outport`. Имя не
+    инвариант, и сверка не должна объявлять из-за него отказ.
     """
     registry = load_default_contracts()
-    for name in ("Оператор НЕ", "Операция БОЛЬШЕ", "Операция МЕНЬШЕ"):
+    for name in ("Оператор НЕ", "Операция БОЛЬШЕ", "Операция МЕНЬШЕ",
+                 "Интегратор"):
         ports = registry.require(name).ports
         assert ports.model == "fixed"
         assert ports.name_status == "instance_defined"

@@ -1722,7 +1722,7 @@
     id: test_optional_port_follows_addport
     kind: unit-pure
 - id: model-ir-contracts-instance-names
-  statement: 'Имя порта у «Оператора НЕ» и операций сравнения не инвариант: в корпусе inport и inport_1, в живой модели U и U1; контракт помечает такие классы instance_defined, и сверка имена не проверяет'
+  statement: 'Имя порта не инвариант у «Оператора НЕ», операций сравнения и «Интегратора»: в корпусе inport, inport_1 и Port_0, в живой модели U, U1 и inport; контракт помечает такие классы instance_defined, и сверка имена не проверяет'
   status: live-verified
   source:
     type: live-com
@@ -1731,7 +1731,7 @@
     product: SimInTech64
     version: not recorded in this session
     observed_at: '2026-10-29'
-  reproduction: 'Отчёт сверки контрактов на модели электропривода: порт 1 «Оператора НЕ» назван U, у операций сравнения U1; реестр ждал inport и inport_1'
+  reproduction: 'Отчёт сверки контрактов на модели электропривода: порт 1 «Оператора НЕ» назван U, у операций сравнения U1; реестр ждал inport и inport_1. У «Интегратора» реестр ждал Port_0 и Port_1, живой COM-блок и блоки модели дали inport и outport'
   tests:
   - file: tests/unit/test_model_ir_contracts.py
     id: test_instance_defined_port_names_are_declared
