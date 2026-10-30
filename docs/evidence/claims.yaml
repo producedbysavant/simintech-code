@@ -1691,6 +1691,51 @@
   - file: tests/unit/test_model_ir_contracts.py
     id: test_validator_accepts_registry_and_rejects_mutations
     kind: unit-pure
+- id: model-ir-contracts-weights
+  statement: 'Порты «Сумматора» считаются по весам a: 1 даёт «+», -1 даёт «−» (U+2212), прочее целое даёт само число; имя дробного веса не измерено и остаётся пустым'
+  status: live-verified
+  source:
+    type: live-com
+    ref: живой прогон 30.10.2026, SimInTech64 (версия в сеансе не записана)
+  environment:
+    product: SimInTech64
+    version: not recorded in this session
+    observed_at: '2026-10-30'
+  reproduction: 'import_model_text: сумматор с a = [1 , -1] даёт входы «+» и «−» (U+2212), с a = [2 , -3] даёт «2» и «-3», с тремя единицами даёт три входа «+»; имена сверены по .xprt'
+  tests:
+  - file: tests/unit/test_model_ir_contracts.py
+    id: test_sum_ports_follow_weights
+    kind: unit-pure
+- id: model-ir-contracts-optional-port
+  statement: 'Условный порт T1 у «Задержки по включению» есть при addport = 1 и отсутствует при addport = 0 и пустом значении'
+  status: live-verified
+  source:
+    type: live-com
+    ref: живой прогон 30.10.2026, SimInTech64 (версия в сеансе не записана)
+  environment:
+    product: SimInTech64
+    version: not recorded in this session
+    observed_at: '2026-10-30'
+  reproduction: 'import_model_text: задержка с addport = 1 даёт входы inport и T1, с addport = 0 и без свойства даёт только inport'
+  tests:
+  - file: tests/unit/test_model_ir_contracts.py
+    id: test_optional_port_follows_addport
+    kind: unit-pure
+- id: model-ir-contracts-instance-names
+  statement: 'Имя порта у «Оператора НЕ» и операций сравнения не инвариант: в корпусе inport и inport_1, в живой модели U и U1; контракт помечает такие классы instance_defined, и сверка имена не проверяет'
+  status: live-verified
+  source:
+    type: live-com
+    ref: живая приёмка 29.10.2026 (simintech-code#89)
+  environment:
+    product: SimInTech64
+    version: not recorded in this session
+    observed_at: '2026-10-29'
+  reproduction: 'Отчёт сверки контрактов на модели электропривода: порт 1 «Оператора НЕ» назван U, у операций сравнения U1; реестр ждал inport и inport_1'
+  tests:
+  - file: tests/unit/test_model_ir_contracts.py
+    id: test_instance_defined_port_names_are_declared
+    kind: unit-pure
 - id: model-ir-system-spec-compile
   statement: 'SystemSpec проверяется до SimInTech: классы, свойства, ссылки, концы проводов, инварианты и assertions; ошибки собираются все, а не первая'
   status: code-confirmed

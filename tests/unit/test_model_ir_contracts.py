@@ -111,3 +111,55 @@ def test_registry_rejects_wrong_schema():
     data["schema"] = "other"
     with pytest.raises(ModelQueryError):
         BlockContractRegistry(data)
+
+
+def test_sum_ports_follow_weights():
+    """Сумматор: число и имена входов задают веса (живой замер 30.10.2026).
+
+    `a = [1 , -1]` даёт «+» и «−» (U+2212), `a = [2 , -3]` даёт «2» и
+    «-3», три единицы дают три входа «+». Имя дробного веса не измерено и
+    остаётся пустым: сверка такое имя не проверяет.
+    """
+    registry = load_default_contracts()
+    contract = registry.require("Сумматор")
+    assert contract.ports.model == "weights"
+    assert contract.ports.weights_property == "a"
+
+    pairs = registry.ports_for("Сумматор", {"a": "[1 , -1]"})
+    assert [(item.index, item.name) for item in pairs.inputs] == [
+        (1, "+"), (2, "−")]
+    numbers = registry.ports_for("Сумматор", {"a": "[2 , -3]"})
+    assert [item.name for item in numbers.inputs] == ["2", "-3"]
+    three = registry.ports_for("Сумматор", {"a": "[1 , 1 , 1]"})
+    assert [item.name for item in three.inputs] == ["+", "+", "+"]
+    fractional = registry.ports_for("Сумматор", {"a": "[0.5 , 1]"})
+    assert fractional.inputs[0].name == ""
+    with pytest.raises(ModelQueryError):
+        registry.ports_for("Сумматор", {"a": "много"})
+
+
+def test_optional_port_follows_addport():
+    """T1 у задержки есть только при включённом addport (замер 30.10.2026)."""
+    registry = load_default_contracts()
+    contract = registry.require("Задержка по включению")
+    assert contract.ports.variants
+    on = registry.ports_for("Задержка по включению", {"addport": "1"})
+    assert [item.name for item in on.inputs] == ["inport", "T1"]
+    off = registry.ports_for("Задержка по включению", {"addport": "0"})
+    assert [item.name for item in off.inputs] == ["inport"]
+    empty = registry.ports_for("Задержка по включению", {})
+    assert [item.name for item in empty.inputs] == ["inport"]
+
+
+def test_instance_defined_port_names_are_declared():
+    """Классы с меняющимся от экземпляра именем помечены явно.
+
+    Корпус дал `inport` и `inport_1`, живая приёмка 29.10.2026 показала `U`
+    и `U1` у тех же классов: имя не инвариант, и сверка не должна объявлять
+    из-за него отказ.
+    """
+    registry = load_default_contracts()
+    for name in ("Оператор НЕ", "Операция БОЛЬШЕ", "Операция МЕНЬШЕ"):
+        ports = registry.require(name).ports
+        assert ports.model == "fixed"
+        assert ports.name_status == "instance_defined"
