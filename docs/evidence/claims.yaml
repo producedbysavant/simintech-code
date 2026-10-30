@@ -1736,6 +1736,73 @@
   - file: tests/unit/test_model_ir_contracts.py
     id: test_instance_defined_port_names_are_declared
     kind: unit-pure
+- id: model-ir-contracts-graph-inportcount
+  statement: 'У «Временного графика» входов столько, сколько в InPortCount; nport_property допускает свойство каталога с другим именем'
+  status: live-verified
+  source:
+    type: live-com
+    ref: живой снимок модели привода 30.10.2026, SimInTech64
+  environment:
+    product: SimInTech64
+    version: not recorded in this session
+    observed_at: '2026-10-30'
+  reproduction: 'В снимке .xprt у «Временного графика» три входа inport_1..inport_3 при InPortCount = 3; ports_for повторяет счёт и имена'
+  tests:
+  - file: tests/unit/test_model_ir_contracts.py
+    id: test_graph_inputs_follow_inportcount
+    kind: unit-pure
+- id: model-ir-contracts-demultiplexer-outputs
+  statement: 'У «Демультиплексора» выходов столько, сколько весов в a; имена выходов зависят от экземпляра (outport_1 и output_0 наблюдались оба)'
+  status: live-verified
+  source:
+    type: live-com
+    ref: живой снимок модели привода 30.10.2026, SimInTech64
+  environment:
+    product: SimInTech64
+    version: not recorded in this session
+    observed_at: '2026-10-30'
+  reproduction: 'В снимке два экземпляра: один с тремя выходами outport_1..3, другой с шестью output_0..5; ports_for по весам даёт 3 и 6 выходов'
+  tests:
+  - file: tests/unit/test_model_ir_contracts.py
+    id: test_demultiplexer_outputs_follow_weights
+    kind: unit-pure
+- id: model-ir-contracts-names-only-variety
+  statement: 'Если подписи класса различаются только именами портов (индексы и направления совпадают), контракт остаётся fixed, а name_status становится instance_defined'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: scripts/generate_block_contracts.py
+  reproduction: 'Две подписи «Усилителя» (inport/outport и Port_0/PORT1) дают fixed+instance_defined, а образцом выбирается набор без автоимён'
+  tests:
+  - file: tests/unit/test_model_ir_contracts.py
+    id: test_ports_names_only_variety_is_instance_defined
+    kind: unit-pure
+- id: model-ir-contracts-script-ports
+  statement: 'Порты «Языка программирования» объявляет скрипт: класс помечен unknown с причиной script_defined_ports, и сверка их не угадывает'
+  status: live-verified
+  source:
+    type: live-com
+    ref: живой снимок модели привода 30.10.2026, SimInTech64
+  environment:
+    product: SimInTech64
+    version: not recorded in this session
+    observed_at: '2026-10-30'
+  reproduction: 'У двух экземпляров «Языка программирования» разные пины (u_in/i_out/rsh_out и другие), поэтому сигнатура экземпляра не эталон класса'
+  tests:
+  - file: tests/unit/test_model_ir_contracts.py
+    id: test_script_ports_are_not_guessed
+    kind: unit-pure
+- id: model-ir-contracts-merge-live
+  statement: 'Слияние наблюдений обновляет в реестре только встреченные классы: неизмеренная запись заменяется, измеренная уточняется по именам, расхождение структуры называется конфликтом'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: scripts/generate_block_contracts.py
+  reproduction: 'test_merge_replaces_unknown_with_live_observation: неизмеренный «Временной график» после слияния с корпусом становится nport с InPortCount, счётчики meta пересчитаны'
+  tests:
+  - file: tests/unit/test_model_ir_contracts.py
+    id: test_merge_replaces_unknown_with_live_observation
+    kind: unit-pure
 - id: model-ir-system-spec-compile
   statement: 'SystemSpec проверяется до SimInTech: классы, свойства, ссылки, концы проводов, инварианты и assertions; ошибки собираются все, а не первая'
   status: code-confirmed

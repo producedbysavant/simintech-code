@@ -165,3 +165,94 @@ def test_instance_defined_port_names_are_declared():
         ports = registry.require(name).ports
         assert ports.model == "fixed"
         assert ports.name_status == "instance_defined"
+
+
+GRAPH = """<Header><project><page>
+  <object>
+    <name>`G`</name>
+    <class_name>`Временной график`</class_name><obj_type>`100`</obj_type>
+    <ports>
+      <port><name>`inport_1`</name><mode>`0`</mode></port>
+      <port><name>`inport_2`</name><mode>`0`</mode></port>
+      <port><name>`inport_3`</name><mode>`0`</mode></port>
+    </ports>
+  </object>
+</page></project></Header>"""
+
+
+def _generator():
+    """Модуль генератора реестра: логика слияния живёт в скрипте."""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import generate_block_contracts
+
+    return generate_block_contracts
+
+
+def test_demultiplexer_outputs_follow_weights():
+    """У «Демультиплексора» выходов столько, сколько весов (замер 30.10.2026)."""
+    registry = load_default_contracts()
+    contract = registry.require("Демультиплексор")
+    assert contract.ports.model == "weights"
+    assert contract.ports.weights_role == "outputs"
+    ports = registry.ports_for("Демультиплексор", {"a": "[1, 1, 1]"})
+    assert len(ports.inputs) == 1
+    assert len(ports.outputs) == 3
+    six = registry.ports_for("Демультиплексор", {"a": "[1, 1, 1, 1, 1, 1]"})
+    assert len(six.outputs) == 6
+
+
+def test_graph_inputs_follow_inportcount():
+    """У «Временного графика» входов столько, сколько в InPortCount."""
+    registry = load_default_contracts()
+    contract = registry.require("Временной график")
+    assert contract.ports.model == "nport"
+    assert contract.ports.nport_property == "InPortCount"
+    ports = registry.ports_for("Временной график", {"InPortCount": "3"})
+    assert [item.name for item in ports.inputs] == [
+        "inport_1", "inport_2", "inport_3"]
+    assert ports.outputs == ()
+
+
+def test_script_ports_are_not_guessed():
+    """Пины «Языка программирования» задаёт скрипт: класс не измерен."""
+    registry = load_default_contracts()
+    ports = registry.require("Язык программирования").ports
+    assert ports.model == "unknown"
+    assert ports.reason == "script_defined_ports"
+
+
+def test_ports_names_only_variety_is_instance_defined():
+    """Подписи, различающиеся только именами, дают fixed + instance_defined."""
+    generator = _generator()
+    observed = [((0, "outport", "out"), (1, "inport", "in")),
+                ((0, "Port_0", "out"), (1, "PORT1", "in"))]
+    ports = generator._ports("Усилитель", observed, set())
+    assert ports["model"] == "fixed"
+    assert ports["name_status"] == "instance_defined"
+    assert ports["outputs"][0]["name"] == "outport", (
+        "образцом выбран набор с автоименами")
+
+
+def test_merge_replaces_unknown_with_live_observation(tmp_path):
+    """Слияние заменяет неизмеренную запись наблюдением, а не пересобирает всё."""
+    generator = _generator()
+    corpus = tmp_path / "corpus.xprt"
+    corpus.write_text(GRAPH, encoding="utf-8")
+    existing = {
+        "version": 1, "schema": "block-contract/1",
+        "meta": {"port_model_counts": {"unknown": 1},
+                 "unknown_classes": ["Временной график"]},
+        "classes": {"Временной график": {
+            "class": "Временной график", "status": "derived",
+            "properties": {}, "ports": {"model": "unknown",
+                                        "reason": "varied_signatures"},
+            "creation": {"paths": []}, "constraints": [], "provenance": [],
+        }},
+    }
+    merged = generator.merge(existing, CATALOG, [corpus], "2026-10-30")
+
+    ports = merged["classes"]["Временной график"]["ports"]
+    assert ports["model"] == "nport"
+    assert ports["nport_property"] == "InPortCount"
+    assert merged["meta"]["port_model_counts"] == {"nport": 1}
+    assert merged["meta"]["unknown_classes"] == []

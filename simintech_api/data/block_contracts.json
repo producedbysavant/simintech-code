@@ -22445,10 +22445,17 @@
         ]
       },
       "ports": {
-        "model": "unknown",
-        "name_status": "unknown",
-        "provenance": "corpus",
-        "reason": "not_observed_in_corpus"
+        "inputs": [
+          {
+            "direction": "in",
+            "index": 0,
+            "name": "inport_1"
+          }
+        ],
+        "model": "fixed",
+        "name_status": "measured",
+        "outputs": [],
+        "provenance": "corpus"
       },
       "properties": {
         "count": {
@@ -22508,7 +22515,8 @@
       },
       "provenance": [
         "catalog:060961f69db3",
-        "corpus:0"
+        "corpus:0",
+        "merged:2026-10-30"
       ],
       "status": "derived"
     },
@@ -25577,7 +25585,14 @@
     },
     "Временной график": {
       "class": "Временной график",
-      "constraints": [],
+      "constraints": [
+        {
+          "code": "nport-other-semantics",
+          "description": "nport не задаёт число входных контактов",
+          "params": {},
+          "provenance": "rules.py"
+        }
+      ],
       "creation": {
         "paths": [
           {
@@ -25592,14 +25607,24 @@
           {
             "direction": "in",
             "index": 0,
-            "name": "INPORT1"
+            "name": "inport_1"
+          },
+          {
+            "direction": "in",
+            "index": 1,
+            "name": "inport_2"
+          },
+          {
+            "direction": "in",
+            "index": 2,
+            "name": "inport_3"
           }
         ],
-        "model": "unknown",
-        "name_status": "measured",
+        "model": "nport",
+        "name_status": "instance_defined",
+        "nport_property": "InPortCount",
         "outputs": [],
-        "provenance": "corpus",
-        "reason": "varied_signatures"
+        "provenance": "live 2026-10-30: число входов по InPortCount"
       },
       "properties": {
         "InPortCount": {
@@ -25611,7 +25636,8 @@
       },
       "provenance": [
         "catalog:060961f69db3",
-        "corpus:9"
+        "corpus:9",
+        "merged:2026-10-30"
       ],
       "status": "measured"
     },
@@ -33127,25 +33153,31 @@
           {
             "direction": "in",
             "index": 0,
-            "name": "Port_0"
+            "name": "vector"
           }
         ],
-        "model": "unknown",
-        "name_status": "measured",
+        "model": "weights",
+        "name_status": "instance_defined",
         "outputs": [
           {
             "direction": "out",
             "index": 1,
-            "name": "OUTPORT1"
+            "name": "outport_1"
           },
           {
             "direction": "out",
             "index": 2,
-            "name": "OUTPORT2"
+            "name": "outport_2"
+          },
+          {
+            "direction": "out",
+            "index": 3,
+            "name": "outport_3"
           }
         ],
-        "provenance": "corpus",
-        "reason": "varied_signatures"
+        "provenance": "live 2026-10-30: число выходов по весам a",
+        "weights_property": "a",
+        "weights_role": "outputs"
       },
       "properties": {
         "a": {
@@ -33157,7 +33189,8 @@
       },
       "provenance": [
         "catalog:060961f69db3",
-        "corpus:5"
+        "corpus:5",
+        "merged:2026-10-30"
       ],
       "status": "measured"
     },
@@ -38973,17 +39006,16 @@
       },
       "ports": {
         "inputs": [],
-        "model": "unknown",
-        "name_status": "measured",
+        "model": "fixed",
+        "name_status": "instance_defined",
         "outputs": [
           {
             "direction": "out",
             "index": 0,
-            "name": "Port_0"
+            "name": "outport"
           }
         ],
-        "provenance": "corpus",
-        "reason": "varied_signatures"
+        "provenance": "corpus"
       },
       "properties": {
         "a": {
@@ -39013,7 +39045,8 @@
       },
       "provenance": [
         "catalog:060961f69db3",
-        "corpus:760"
+        "corpus:760",
+        "merged:2026-10-30"
       ],
       "status": "measured"
     },
@@ -58886,10 +58919,23 @@
         ]
       },
       "ports": {
-        "model": "unknown",
-        "name_status": "unknown",
-        "provenance": "corpus",
-        "reason": "not_observed_in_corpus"
+        "inputs": [
+          {
+            "direction": "in",
+            "index": 1,
+            "name": "x"
+          }
+        ],
+        "model": "fixed",
+        "name_status": "measured",
+        "outputs": [
+          {
+            "direction": "out",
+            "index": 0,
+            "name": "outport"
+          }
+        ],
+        "provenance": "corpus"
       },
       "properties": {
         "a": {
@@ -58919,7 +58965,8 @@
       },
       "provenance": [
         "catalog:060961f69db3",
-        "corpus:0"
+        "corpus:0",
+        "merged:2026-10-30"
       ],
       "status": "derived"
     },
@@ -61615,10 +61662,17 @@
         ]
       },
       "ports": {
-        "model": "unknown",
-        "name_status": "unknown",
-        "provenance": "corpus",
-        "reason": "not_observed_in_corpus"
+        "inputs": [],
+        "model": "fixed",
+        "name_status": "measured",
+        "outputs": [
+          {
+            "direction": "out",
+            "index": 0,
+            "name": "outport"
+          }
+        ],
+        "provenance": "corpus"
       },
       "properties": {
         "dt": {
@@ -61648,7 +61702,8 @@
       },
       "provenance": [
         "catalog:060961f69db3",
-        "corpus:0"
+        "corpus:0",
+        "merged:2026-10-30"
       ],
       "status": "derived"
     },
@@ -61851,20 +61906,19 @@
           {
             "direction": "in",
             "index": 1,
-            "name": "PORT1"
+            "name": "inport"
           }
         ],
-        "model": "unknown",
-        "name_status": "measured",
+        "model": "fixed",
+        "name_status": "instance_defined",
         "outputs": [
           {
             "direction": "out",
             "index": 0,
-            "name": "Port_0"
+            "name": "outport"
           }
         ],
-        "provenance": "corpus",
-        "reason": "varied_signatures"
+        "provenance": "corpus"
       },
       "properties": {
         "a": {
@@ -61882,7 +61936,8 @@
       },
       "provenance": [
         "catalog:060961f69db3",
-        "corpus:4"
+        "corpus:4",
+        "merged:2026-10-30"
       ],
       "status": "measured"
     },
@@ -65587,10 +65642,58 @@
         ]
       },
       "ports": {
-        "model": "unknown",
-        "name_status": "unknown",
-        "provenance": "corpus",
-        "reason": "not_observed_in_corpus"
+        "inputs": [
+          {
+            "direction": "in",
+            "index": 0,
+            "name": "Wr"
+          }
+        ],
+        "model": "fixed",
+        "name_status": "measured",
+        "outputs": [
+          {
+            "direction": "out",
+            "index": 2,
+            "name": "Mem"
+          },
+          {
+            "direction": "out",
+            "index": 3,
+            "name": "Qr"
+          },
+          {
+            "direction": "out",
+            "index": 4,
+            "name": "Qe"
+          },
+          {
+            "direction": "out",
+            "index": 5,
+            "name": "Id"
+          },
+          {
+            "direction": "out",
+            "index": 6,
+            "name": "Iq"
+          },
+          {
+            "direction": "out",
+            "index": 7,
+            "name": "dw"
+          },
+          {
+            "direction": "out",
+            "index": 8,
+            "name": "Fr"
+          },
+          {
+            "direction": "out",
+            "index": 9,
+            "name": "Iabc"
+          }
+        ],
+        "provenance": "corpus"
       },
       "properties": {
         "Lm": {
@@ -65632,7 +65735,8 @@
       },
       "provenance": [
         "catalog:060961f69db3",
-        "corpus:0"
+        "corpus:0",
+        "merged:2026-10-30"
       ],
       "status": "derived"
     },
@@ -66413,7 +66517,14 @@
     },
     "ЭП - ИНВ - Инвертор": {
       "class": "ЭП - ИНВ - Инвертор",
-      "constraints": [],
+      "constraints": [
+        {
+          "code": "submodel-port-match-by-name",
+          "description": "внешний порт сопоставляется с порт-блоком по имени",
+          "params": {},
+          "provenance": "xprt corpus"
+        }
+      ],
       "creation": {
         "paths": [
           {
@@ -66424,10 +66535,18 @@
         ]
       },
       "ports": {
-        "model": "unknown",
-        "name_status": "unknown",
-        "provenance": "corpus",
-        "reason": "not_observed_in_corpus"
+        "inputs": [
+          {
+            "direction": "in",
+            "index": 4,
+            "name": "PWM"
+          }
+        ],
+        "model": "submodel",
+        "name_status": "measured",
+        "outputs": [],
+        "provenance": "xprt corpus: submodel page",
+        "reason": "внешние порты задаются порт-блоками внутри"
       },
       "properties": {
         "Rsn": {
@@ -66439,7 +66558,8 @@
       },
       "provenance": [
         "catalog:060961f69db3",
-        "corpus:0"
+        "corpus:0",
+        "merged:2026-10-30"
       ],
       "status": "derived"
     },
@@ -66803,7 +66923,14 @@
     },
     "ЭП - Р - Преобразователь координат из системы dq в систему ABC": {
       "class": "ЭП - Р - Преобразователь координат из системы dq в систему ABC",
-      "constraints": [],
+      "constraints": [
+        {
+          "code": "submodel-port-match-by-name",
+          "description": "внешний порт сопоставляется с порт-блоком по имени",
+          "params": {},
+          "provenance": "xprt corpus"
+        }
+      ],
       "creation": {
         "paths": [
           {
@@ -66814,15 +66941,45 @@
         ]
       },
       "ports": {
-        "model": "unknown",
-        "name_status": "unknown",
-        "provenance": "corpus",
-        "reason": "not_observed_in_corpus"
+        "inputs": [
+          {
+            "direction": "in",
+            "index": 0,
+            "name": "q"
+          },
+          {
+            "direction": "in",
+            "index": 1,
+            "name": "d"
+          },
+          {
+            "direction": "in",
+            "index": 2,
+            "name": "SinQ"
+          },
+          {
+            "direction": "in",
+            "index": 3,
+            "name": "CosQ"
+          }
+        ],
+        "model": "submodel",
+        "name_status": "measured",
+        "outputs": [
+          {
+            "direction": "out",
+            "index": 4,
+            "name": "ABC"
+          }
+        ],
+        "provenance": "xprt corpus: submodel page",
+        "reason": "внешние порты задаются порт-блоками внутри"
       },
       "properties": {},
       "provenance": [
         "catalog:060961f69db3",
-        "corpus:0"
+        "corpus:0",
+        "merged:2026-10-30"
       ],
       "status": "derived"
     },
@@ -67319,7 +67476,14 @@
     },
     "ЭП - ШИМ - ШИМ - Преобразователь": {
       "class": "ЭП - ШИМ - ШИМ - Преобразователь",
-      "constraints": [],
+      "constraints": [
+        {
+          "code": "submodel-port-match-by-name",
+          "description": "внешний порт сопоставляется с порт-блоком по имени",
+          "params": {},
+          "provenance": "xprt corpus"
+        }
+      ],
       "creation": {
         "paths": [
           {
@@ -67330,10 +67494,44 @@
         ]
       },
       "ports": {
-        "model": "unknown",
-        "name_status": "unknown",
-        "provenance": "corpus",
-        "reason": "not_observed_in_corpus"
+        "inputs": [
+          {
+            "direction": "in",
+            "index": 0,
+            "name": "in"
+          },
+          {
+            "direction": "in",
+            "index": 4,
+            "name": "Zp"
+          },
+          {
+            "direction": "in",
+            "index": 5,
+            "name": "On"
+          }
+        ],
+        "model": "submodel",
+        "name_status": "measured",
+        "outputs": [
+          {
+            "direction": "out",
+            "index": 1,
+            "name": "PWM"
+          },
+          {
+            "direction": "out",
+            "index": 2,
+            "name": "+"
+          },
+          {
+            "direction": "out",
+            "index": 3,
+            "name": "-"
+          }
+        ],
+        "provenance": "xprt corpus: submodel page",
+        "reason": "внешние порты задаются порт-блоками внутри"
       },
       "properties": {
         "A": {
@@ -67369,7 +67567,8 @@
       },
       "provenance": [
         "catalog:060961f69db3",
-        "corpus:0"
+        "corpus:0",
+        "merged:2026-10-30"
       ],
       "status": "derived"
     },
@@ -68585,7 +68784,14 @@
     },
     "ЭЦД - Полупроводниковый безынерционный элемент": {
       "class": "ЭЦД - Полупроводниковый безынерционный элемент",
-      "constraints": [],
+      "constraints": [
+        {
+          "code": "submodel-port-match-by-name",
+          "description": "внешний порт сопоставляется с порт-блоком по имени",
+          "params": {},
+          "provenance": "xprt corpus"
+        }
+      ],
       "creation": {
         "paths": [
           {
@@ -68596,10 +68802,18 @@
         ]
       },
       "ports": {
-        "model": "unknown",
-        "name_status": "unknown",
-        "provenance": "corpus",
-        "reason": "not_observed_in_corpus"
+        "inputs": [
+          {
+            "direction": "in",
+            "index": 2,
+            "name": "У"
+          }
+        ],
+        "model": "submodel",
+        "name_status": "measured",
+        "outputs": [],
+        "provenance": "xprt corpus: submodel page",
+        "reason": "внешние порты задаются порт-блоками внутри"
       },
       "properties": {
         "Csn": {
@@ -68659,7 +68873,8 @@
       },
       "provenance": [
         "catalog:060961f69db3",
-        "corpus:0"
+        "corpus:0",
+        "merged:2026-10-30"
       ],
       "status": "derived"
     },
@@ -71466,7 +71681,14 @@
     },
     "ЭЦД2 - Источник напряжения": {
       "class": "ЭЦД2 - Источник напряжения",
-      "constraints": [],
+      "constraints": [
+        {
+          "code": "submodel-port-match-by-name",
+          "description": "внешний порт сопоставляется с порт-блоком по имени",
+          "params": {},
+          "provenance": "xprt corpus"
+        }
+      ],
       "creation": {
         "paths": [
           {
@@ -71477,10 +71699,18 @@
         ]
       },
       "ports": {
-        "model": "unknown",
-        "name_status": "unknown",
-        "provenance": "corpus",
-        "reason": "not_observed_in_corpus"
+        "inputs": [
+          {
+            "direction": "in",
+            "index": 2,
+            "name": "us"
+          }
+        ],
+        "model": "submodel",
+        "name_status": "measured",
+        "outputs": [],
+        "provenance": "xprt corpus: submodel page",
+        "reason": "внешние порты задаются порт-блоками внутри"
       },
       "properties": {
         "L": {
@@ -71528,7 +71758,8 @@
       },
       "provenance": [
         "catalog:060961f69db3",
-        "corpus:0"
+        "corpus:0",
+        "merged:2026-10-30"
       ],
       "status": "derived"
     },
@@ -77912,10 +78143,33 @@
         ]
       },
       "ports": {
-        "model": "unknown",
-        "name_status": "unknown",
-        "provenance": "corpus",
-        "reason": "not_observed_in_corpus"
+        "inputs": [
+          {
+            "direction": "in",
+            "index": 2,
+            "name": "Isrc"
+          },
+          {
+            "direction": "in",
+            "index": 3,
+            "name": "R_sh"
+          },
+          {
+            "direction": "in",
+            "index": 5,
+            "name": "R"
+          }
+        ],
+        "model": "fixed",
+        "name_status": "measured",
+        "outputs": [
+          {
+            "direction": "out",
+            "index": 4,
+            "name": "Ure"
+          }
+        ],
+        "provenance": "corpus"
       },
       "properties": {
         "C": {
@@ -78011,7 +78265,8 @@
       },
       "provenance": [
         "catalog:060961f69db3",
-        "corpus:0"
+        "corpus:0",
+        "merged:2026-10-30"
       ],
       "status": "derived"
     },
@@ -78056,7 +78311,7 @@
         "model": "unknown",
         "name_status": "unknown",
         "provenance": "corpus",
-        "reason": "no_ports_in_corpus"
+        "reason": "script_defined_ports"
       },
       "properties": {
         "SortType": {
@@ -78134,7 +78389,8 @@
       },
       "provenance": [
         "catalog:060961f69db3",
-        "corpus:55"
+        "corpus:55",
+        "merged:2026-10-30"
       ],
       "status": "measured"
     }
@@ -78171,6 +78427,24 @@
     "dumps_failed": 1,
     "dumps_read": 23,
     "generator": "simintech-api 0.17.0",
+    "merged_at": "2026-10-30",
+    "merged_decisions": [
+      "В файл: unknown -> fixed",
+      "Временной график: unknown -> nport",
+      "Демультиплексор: unknown -> weights",
+      "Константа: unknown -> fixed (имена от экземпляра)",
+      "Синусоидальная функция: unknown -> fixed",
+      "Треугольный сигнал: unknown -> fixed",
+      "Усилитель: unknown -> fixed (имена от экземпляра)",
+      "ЭП - АД - Асинхронный двигатель с короткозамкнутым ротором (без учета насыщения): unknown -> fixed",
+      "ЭП - ИНВ - Инвертор: unknown -> submodel",
+      "ЭП - Р - Преобразователь координат из системы dq в систему ABC: unknown -> submodel",
+      "ЭП - ШИМ - ШИМ - Преобразователь: unknown -> submodel",
+      "ЭЦД - Полупроводниковый безынерционный элемент: unknown -> submodel",
+      "ЭЦД2 - Источник напряжения: unknown -> submodel",
+      "Электрика-Обобщённая цепь: unknown -> fixed",
+      "Язык программирования: причина: script_defined_ports"
+    ],
     "observed_at": "2026-10-28",
     "observed_extra_classes": [
       "Вход алгоритма",
@@ -78189,12 +78463,12 @@
       "Часы"
     ],
     "port_model_counts": {
-      "fixed": 22,
-      "nport": 7,
+      "fixed": 29,
+      "nport": 8,
       "portnames": 4,
-      "submodel": 13,
-      "unknown": 911,
-      "weights": 1
+      "submodel": 18,
+      "unknown": 897,
+      "weights": 2
     },
     "product": "SimInTech64",
     "unknown_classes": [
@@ -78407,7 +78681,6 @@
       "Баллистика КА - Среднее наклонение эклиптики к земному экватору от даты эпохи",
       "Баллистика КА - Угол места в топоцентрической системе координат",
       "Баллистика КА - Угол места в топоцентрической системе координат по радиус-вектору",
-      "В файл",
       "ВМ - ЛОГОС - ГУ по давлению",
       "ВМ - ЛОГОС - ГУ по расходу",
       "ВМ - ЛОГОС - Клиент TCP",
@@ -78471,7 +78744,6 @@
       "ВО - Фильтрация - Оператор Щарра",
       "ВО - Фильтрация - Размытие",
       "ВО - Фильтрация - Размытие по Гауссу",
-      "Временной график",
       "Выборка по активному элементу",
       "Выход алгоритма (векторный)",
       "ГС - Базовые блоки - Воздушно-масляный охладитель",
@@ -78562,7 +78834,6 @@
       "Двунаправленная шина (вход)",
       "Двунаправленная шина (выход)",
       "Делитель",
-      "Демультиплексор",
       "Дискретная передаточная ф-я обратного аргумента",
       "Дискретная передаточная ф-я общего вида",
       "Дискретная передаточная функция от непрерывных коэффициентов",
@@ -78639,7 +78910,6 @@
       "Ключ управляемый нормально замкнутый тип 2",
       "Конечные автоматы - Переменная выдержка состояния",
       "Конечные автоматы - Флаг входа в состояние",
-      "Константа",
       "Корень квадратный",
       "Круговой интегратор",
       "Линейная функция",
@@ -78878,7 +79148,6 @@
       "Свойства воды и пара",
       "Свойства воды и пара на линии насыщения",
       "Связь состояния",
-      "Синусоидальная функция",
       "Сравнивающее устройство",
       "Среднее арифметическое",
       "Среднеквадратическое отклонение",
@@ -78904,12 +79173,10 @@
       "ТРМ - ТОР - Барабанный тормоз",
       "ТРМ - ТОР - Дисковый тормоз",
       "ТРМ - ТОР - Ленточный тормоз",
-      "Треугольный сигнал",
       "УСТР - HRF - Запись в файл",
       "УСТР - HRF - Запись данных",
       "УСТР - HRF - Чтение данных",
       "УСТР - HRF - Чтение из файла",
-      "Усилитель",
       "Устройства - Клавиатура - Считывание нескольких клавиш с клавиатуры",
       "Устройство National Instruments",
       "ЦОС - БФ - FIFO/LIFO буфер",
@@ -78963,7 +79230,6 @@
       "Чтение сигналов (векторный)",
       "ШИМ несимметричный",
       "ШИМ симметричный",
-      "ЭП - АД - Асинхронный двигатель с короткозамкнутым ротором (без учета насыщения)",
       "ЭП - АД - Асинхронный двигатель с короткозамкнутым ротором (с учетом насыщения)",
       "ЭП - АД - Блок компенсации перекрестных связей",
       "ЭП - АД - Вычисление q-составляющей статорного тока",
@@ -78980,7 +79246,6 @@
       "ЭП - Д - Датчик положения абсолютный",
       "ЭП - З - Защита по максимуму",
       "ЭП - З - Защита по минимуму",
-      "ЭП - ИНВ - Инвертор",
       "ЭП - ИНВ - Инвертор с защитой",
       "ЭП - ИНД - Индикатор",
       "ЭП - ИНД - Отображение произвольной величины",
@@ -78989,7 +79254,6 @@
       "ЭП - Р - ПИ регулятор",
       "ЭП - Р - Переход к относительным единицам",
       "ЭП - Р - Полосовой фильтр",
-      "ЭП - Р - Преобразователь координат из системы dq в систему ABC",
       "ЭП - Р - Регулятор с демпфирующей связью",
       "ЭП - Р - Формирователь траектории",
       "ЭП - СД - Блок компенсации перекрестных связей",
@@ -78999,7 +79263,6 @@
       "ЭП - ЦАП/АЦП - АЦП (1 канал)",
       "ЭП - ЦАП/АЦП - АЦП (3 канала)",
       "ЭП - ШИМ - Формирователь способа модуляции",
-      "ЭП - ШИМ - ШИМ - Преобразователь",
       "ЭЦ - Ограничения модели",
       "ЭЦ - Параметры контура",
       "ЭЦ - Среднее значение за период",
@@ -79014,7 +79277,6 @@
       "ЭЦД - Линия электропередачи 3-фазная (1 л. сх.)",
       "ЭЦД - Литий-ионная аккумуляторная батарея",
       "ЭЦД - Операционный усилитель",
-      "ЭЦД - Полупроводниковый безынерционный элемент",
       "ЭЦД - Среднеквадратическое значение за период",
       "ЭЦД - Трансформатор 3-фазный 2-обмоточный (1 л. сх.)",
       "ЭЦД - Трансформатор 3-фазный 2-обмоточный с расщепленной обмоткой НН (1 л. сх.)",
@@ -79047,7 +79309,6 @@
       "ЭЦД2 - Диод силовой (spice model)",
       "ЭЦД2 - Измеритель линейных напряжений 3-фазный (1 л. сх.)",
       "ЭЦД2 - Индуктивность нелинейная",
-      "ЭЦД2 - Источник напряжения",
       "ЭЦД2 - Источник напряжения 3-фазный (1 л. сх.)",
       "ЭЦД2 - Источник тока",
       "ЭЦД2 - Источник тока 3-фазный (1 л. сх.)",
@@ -79106,7 +79367,6 @@
       "ЭЦС - Трансформатор 3-фазный 2-обмоточный с расщепленной обмоткой НН (1 л. сх.)",
       "Экспоненциальная функция",
       "Экстраполятор",
-      "Электрика-Обобщённая цепь",
       "Электрическая",
       "Язык программирования"
     ],

@@ -152,6 +152,11 @@
 | `model-ir-contracts-weights` | live-verified | live-com | not recorded in this session | 2026-10-30 | `tests/unit/test_model_ir_contracts.py::test_sum_ports_follow_weights` (unit-pure) |
 | `model-ir-contracts-optional-port` | live-verified | live-com | not recorded in this session | 2026-10-30 | `tests/unit/test_model_ir_contracts.py::test_optional_port_follows_addport` (unit-pure) |
 | `model-ir-contracts-instance-names` | live-verified | live-com | not recorded in this session | 2026-10-29 | `tests/unit/test_model_ir_contracts.py::test_instance_defined_port_names_are_declared` (unit-pure) |
+| `model-ir-contracts-graph-inportcount` | live-verified | live-com | not recorded in this session | 2026-10-30 | `tests/unit/test_model_ir_contracts.py::test_graph_inputs_follow_inportcount` (unit-pure) |
+| `model-ir-contracts-demultiplexer-outputs` | live-verified | live-com | not recorded in this session | 2026-10-30 | `tests/unit/test_model_ir_contracts.py::test_demultiplexer_outputs_follow_weights` (unit-pure) |
+| `model-ir-contracts-names-only-variety` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_contracts.py::test_ports_names_only_variety_is_instance_defined` (unit-pure) |
+| `model-ir-contracts-script-ports` | live-verified | live-com | not recorded in this session | 2026-10-30 | `tests/unit/test_model_ir_contracts.py::test_script_ports_are_not_guessed` (unit-pure) |
+| `model-ir-contracts-merge-live` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_contracts.py::test_merge_replaces_unknown_with_live_observation` (unit-pure) |
 | `model-ir-system-spec-compile` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_system_spec.py::test_compile_collects_all_errors` (unit-pure) |
 | `model-ir-system-spec-wire-ordinals` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_system_spec.py::test_compile_chain_and_verify_passed` (unit-pure), `tests/unit/test_model_ir_scale.py::test_wire_indices_are_direction_ordinals` (unit-pure) |
 | `model-ir-verify-undirected-ports` | code-confirmed | source-code | - | - | `tests/unit/test_model_ir_scale.py::test_undirected_ports_do_not_shift_direction_ordinals` (unit-pure) |
