@@ -36,6 +36,9 @@ class PortContract:
     #: Свойство весов: имена входов зависят от коэффициентов (`a` у
     #: «Сумматора»: 1 даёт «+», -1 даёт «−», прочее число даёт само число).
     weights_property: str = ""
+    #: Что задают веса: `inputs` (по умолчанию) или `outputs` (у
+    #: «Демультиплексора» выходов столько же, сколько весов).
+    weights_role: str = "inputs"
     #: Условные порты: добавляются, когда свойство включено (`addport`).
     variants: tuple[Mapping[str, Any], ...] = ()
     name_status: str = "unknown"
@@ -113,6 +116,7 @@ def _ports(data: Mapping[str, Any]) -> PortContract:
         nport_property=str(data.get("nport_property", "")),
         portnames_property=str(data.get("portnames_property", "")),
         weights_property=str(data.get("weights_property", "")),
+        weights_role=str(data.get("weights_role", "inputs")),
         variants=tuple(dict(item) for item in data.get("variants", ())),
         name_status=str(data.get("name_status", "unknown")),
         reason=str(data.get("reason", "")),
@@ -229,7 +233,10 @@ class BlockContractRegistry:
                 model="nport",
                 inputs=tuple(_nport_input(ports, index)
                              for index in range(1, count + 1)),
-                outputs=ports.outputs or (PortSpec(0, "y", PortDirection.OUT),),
+                # Синтетический выход не подставляется: у «Временного
+                # графика» его нет вовсе, и «портов 0 против 1» было ложным
+                # отказом (живой прогон 30.10.2026).
+                outputs=ports.outputs,
                 nport_property=ports.nport_property or "nport",
                 name_status=ports.name_status,
                 provenance=ports.provenance)
@@ -260,6 +267,19 @@ def _weights_ports(contract: BlockContract,
     if values is None:
         raise ModelQueryError(
             f"{contract.class_name}: {name}={raw!r} не список весов")
+    if ports.weights_role == "outputs":
+        # Имена выходов «Демультиплексора» зависят от экземпляра: наблюдались
+        # и `outport_1…`, и `output_0…`, поэтому имена пустые (сверка их не
+        # проверяет), а счётчик по весам остаётся точным.
+        return PortContract(
+            model="weights",
+            inputs=ports.inputs,
+            outputs=tuple(PortSpec(index, "", PortDirection.OUT)
+                          for index in range(1, len(values) + 1)),
+            weights_property=name,
+            weights_role="outputs",
+            name_status="instance_defined",
+            provenance=ports.provenance)
     return PortContract(
         model="weights",
         inputs=tuple(PortSpec(index, _weight_name(value), PortDirection.IN)
@@ -390,8 +410,13 @@ def validate_contract_data(data: Mapping[str, Any],
             unknown.append(name)
             if not ports.get("reason"):
                 problems.append(f"{name}: unknown без reason")
-        if model == "nport" and ports.get("nport_property") != "nport":
+        nport_prop = str(ports.get("nport_property", ""))
+        if model == "nport" and not nport_prop:
             problems.append(f"{name}: nport без nport_property")
+        if model == "nport" and nport_prop and catalog_classes and \
+                nport_prop not in catalog_classes.get(name, {}):
+            problems.append(
+                f"{name}: nport_property {nport_prop!r} не свойство класса")
         if model != "nport" and ports.get("nport_property"):
             problems.append(f"{name}: nport_property вне nport")
         if model == "portnames" and ports.get(
@@ -407,6 +432,12 @@ def validate_contract_data(data: Mapping[str, Any],
             problems.append(f"{name}: weights без weights_property")
         if model != "weights" and ports.get("weights_property"):
             problems.append(f"{name}: weights_property вне weights")
+        if ports.get("weights_role", "inputs") not in ("inputs", "outputs"):
+            problems.append(
+                f"{name}: недопустимый weights_role "
+                f"{ports.get('weights_role')!r}")
+        if model != "weights" and ports.get("weights_role", "inputs") != "inputs":
+            problems.append(f"{name}: weights_role вне weights")
         for variant in ports.get("variants", ()):
             if not str(variant.get("property", "")):
                 problems.append(f"{name}: вариант без property")

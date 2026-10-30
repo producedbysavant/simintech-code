@@ -69,7 +69,7 @@ def test_manifest_contracts_section_uses_registry():
     assert f"registry: {coverage.classes} classes" in text
     assert "unavailable" not in text
     assert "- Ступенька: ports=fixed" in text
-    assert "- Временной график: ports=unknown" in text
+    assert "- Временной график: ports=nport" in text
 
 
 def test_manifest_contracts_unavailable_names_reason(monkeypatch):
