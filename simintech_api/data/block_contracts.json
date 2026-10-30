@@ -33567,11 +33567,6 @@
             "direction": "in",
             "index": 1,
             "name": "inport"
-          },
-          {
-            "direction": "in",
-            "index": 2,
-            "name": "T1"
           }
         ],
         "model": "fixed",
@@ -33583,7 +33578,19 @@
             "name": "outport"
           }
         ],
-        "provenance": "corpus"
+        "provenance": "corpus",
+        "variants": [
+          {
+            "add_inputs": [
+              {
+                "direction": "in",
+                "index": 2,
+                "name": "T1"
+              }
+            ],
+            "property": "addport"
+          }
+        ]
       },
       "properties": {
         "T_in": {
@@ -56650,7 +56657,7 @@
           }
         ],
         "model": "fixed",
-        "name_status": "measured",
+        "name_status": "instance_defined",
         "outputs": [
           {
             "direction": "out",
@@ -56712,7 +56719,7 @@
           }
         ],
         "model": "fixed",
-        "name_status": "measured",
+        "name_status": "instance_defined",
         "outputs": [
           {
             "direction": "out",
@@ -56786,7 +56793,7 @@
           }
         ],
         "model": "fixed",
-        "name_status": "measured",
+        "name_status": "instance_defined",
         "outputs": [
           {
             "direction": "out",
@@ -59339,20 +59346,9 @@
         ]
       },
       "ports": {
-        "inputs": [
-          {
-            "direction": "in",
-            "index": 1,
-            "name": "+"
-          },
-          {
-            "direction": "in",
-            "index": 2,
-            "name": "+"
-          }
-        ],
-        "model": "fixed",
-        "name_status": "measured",
+        "inputs": [],
+        "model": "weights",
+        "name_status": "weights",
         "outputs": [
           {
             "direction": "out",
@@ -59360,7 +59356,8 @@
             "name": ""
           }
         ],
-        "provenance": "corpus"
+        "provenance": "live 2026-10-30: число и имена входов из весов a",
+        "weights_property": "a"
       },
       "properties": {
         "a": {
@@ -78192,11 +78189,12 @@
       "Часы"
     ],
     "port_model_counts": {
-      "fixed": 23,
+      "fixed": 22,
       "nport": 7,
       "portnames": 4,
       "submodel": 13,
-      "unknown": 911
+      "unknown": 911,
+      "weights": 1
     },
     "product": "SimInTech64",
     "unknown_classes": [

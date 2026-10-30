@@ -40,6 +40,22 @@ NPORT_INPUT_CLASSES = (
 NPORT_OTHER_CLASSES = (
     "Внешняя DLL", "Минимум по всем элементам вектора",
 )
+#: Классы, у которых число и имена входов задают веса `a`: живой замер
+#: 30.10.2026 - «Сумматор» с `a = [1 , -1]` даёт «+» и «−» (U+2212), с
+#: `a = [2 , -3]` - «2» и «-3», с тремя единицами - три входа «+».
+WEIGHT_CLASSES = ("Сумматор",)
+#: Классы, у которых имя порта не инвариантно: корпус дал `inport`, а живая
+#: приёмка 29.10.2026 - `U` у того же класса. Сверка имена не проверяет.
+INSTANCE_NAME_CLASSES = ("Оператор НЕ", "Операция БОЛЬШЕ", "Операция МЕНЬШЕ")
+#: Условные порты: появляются, когда свойство включено. Живой замер
+#: 30.10.2026 - `T1` у «Задержки по включению» есть при `addport = 1` и
+#: отсутствует при `addport = 0` и пустом значении.
+OPTIONAL_PORTS: dict[str, dict[str, Any]] = {
+    "Задержка по включению": {
+        "property": "addport",
+        "port": {"index": 2, "name": "T1", "direction": "in"},
+    },
+}
 SUB_MODEL = "Субмодель"
 OBSERVED_AT_DEFAULT = "2026-10-28"
 
@@ -93,32 +109,55 @@ def _ports(class_name: str, observed: list[tuple[tuple[int, str, str], ...]],
     name_status = ("missing" if signatures and not any(
         item[1] for item in signatures[0]) else
         ("measured" if signatures else "unknown"))
-    if class_name in NPORT_INPUT_CLASSES:
+    if class_name in INSTANCE_NAME_CLASSES:
+        name_status = "instance_defined"
+    #: Условные порты вынимаются из образца: они есть не у каждого
+    #: экземпляра, и модель контракта описывает их отдельно.
+    variants: list[dict[str, Any]] = []
+    optional = OPTIONAL_PORTS.get(class_name)
+    if optional:
+        port = dict(optional["port"])
+        inputs = [item for item in inputs
+                  if not (item["index"] == port["index"]
+                          and item["name"] == port["name"])]
+        variants.append({"property": optional["property"],
+                         "add_inputs": [port]})
+    if class_name in WEIGHT_CLASSES:
         return {
+            "model": "weights", "inputs": [], "outputs": outputs,
+            "weights_property": "a", "name_status": "weights",
+            "provenance": "live 2026-10-30: число и имена входов из весов a",
+        }
+    if class_name in NPORT_INPUT_CLASSES:
+        result = {
             "model": "nport", "inputs": inputs, "outputs": outputs,
             "nport_property": "nport", "name_status": name_status,
             "provenance": "rules.py: nport",
         }
+        return _with_variants(result, variants)
     if class_name in NPORT_OTHER_CLASSES:
-        return {
+        result = {
             "model": "nport", "inputs": inputs, "outputs": outputs,
             "nport_property": "nport", "name_status": name_status,
             "reason": "nport не число входных контактов",
             "provenance": "rules.py: nport other",
         }
+        return _with_variants(result, variants)
     if class_name in PORT_BLOCKS or class_name in MEMORY_CELLS:
-        return {
+        result = {
             "model": "portnames", "inputs": inputs, "outputs": outputs,
             "portnames_property": "PortNames", "name_status": name_status,
             "provenance": "constants.py: port block",
         }
+        return _with_variants(result, variants)
     if class_name == SUB_MODEL or class_name in submodel_classes:
-        return {
+        result = {
             "model": "submodel", "inputs": inputs, "outputs": outputs,
             "name_status": name_status,
             "reason": "внешние порты задаются порт-блоками внутри",
             "provenance": "xprt corpus: submodel page",
         }
+        return _with_variants(result, variants)
     if not signatures:
         return {"model": "unknown", "reason": "not_observed_in_corpus",
                 "name_status": "unknown", "provenance": "corpus"}
@@ -126,13 +165,23 @@ def _ports(class_name: str, observed: list[tuple[tuple[int, str, str], ...]],
         return {"model": "unknown", "reason": "no_ports_in_corpus",
                 "name_status": "unknown", "provenance": "corpus"}
     if len(signatures) > 1:
-        return {"model": "unknown", "reason": "varied_signatures",
-                "inputs": inputs, "outputs": outputs,
-                "name_status": name_status, "provenance": "corpus"}
-    return {
+        result = {"model": "unknown", "reason": "varied_signatures",
+                  "inputs": inputs, "outputs": outputs,
+                  "name_status": name_status, "provenance": "corpus"}
+        return _with_variants(result, variants)
+    result = {
         "model": "fixed", "inputs": inputs, "outputs": outputs,
         "name_status": name_status, "provenance": "corpus",
     }
+    return _with_variants(result, variants)
+
+
+def _with_variants(ports: dict[str, Any],
+                   variants: list[dict[str, Any]]) -> dict[str, Any]:
+    """Добавить условные порты в запись, если они есть."""
+    if variants:
+        ports["variants"] = variants
+    return ports
 
 
 def _creation(class_name: str) -> dict[str, Any]:

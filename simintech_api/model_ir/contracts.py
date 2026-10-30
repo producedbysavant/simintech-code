@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -33,6 +33,11 @@ class PortContract:
     outputs: tuple[PortSpec, ...] = ()
     nport_property: str = ""
     portnames_property: str = ""
+    #: Свойство весов: имена входов зависят от коэффициентов (`a` у
+    #: «Сумматора»: 1 даёт «+», -1 даёт «−», прочее число даёт само число).
+    weights_property: str = ""
+    #: Условные порты: добавляются, когда свойство включено (`addport`).
+    variants: tuple[Mapping[str, Any], ...] = ()
     name_status: str = "unknown"
     reason: str = ""
     provenance: str = ""
@@ -107,6 +112,8 @@ def _ports(data: Mapping[str, Any]) -> PortContract:
         outputs=tuple(_port_spec(item) for item in data.get("outputs", ())),
         nport_property=str(data.get("nport_property", "")),
         portnames_property=str(data.get("portnames_property", "")),
+        weights_property=str(data.get("weights_property", "")),
+        variants=tuple(dict(item) for item in data.get("variants", ())),
         name_status=str(data.get("name_status", "unknown")),
         reason=str(data.get("reason", "")),
         provenance=str(data.get("provenance", "")))
@@ -197,7 +204,7 @@ class BlockContractRegistry:
 
     def ports_for(self, class_name: str,
                   properties: Mapping[str, Any] | None = None) -> PortContract:
-        """Порты класса с учётом nport/PortNames.
+        """Порты класса с учётом nport, весов и условных портов.
 
         Неизмеренный контракт возвращается как `unknown` с причиной: пустой
         список без статуса выглядел бы как «портов нет».
@@ -205,6 +212,7 @@ class BlockContractRegistry:
         contract = self.require(class_name)
         props = properties or {}
         ports = contract.ports
+        result = ports
         if ports.model == "nport":
             raw = props.get(ports.nport_property or "nport",
                             _default(contract, ports.nport_property or "nport"))
@@ -217,7 +225,7 @@ class BlockContractRegistry:
             if count < 1:
                 raise ModelQueryError(
                     f"{class_name}: число входов {count} меньше единицы")
-            return PortContract(
+            result = PortContract(
                 model="nport",
                 inputs=tuple(_nport_input(ports, index)
                              for index in range(1, count + 1)),
@@ -225,12 +233,95 @@ class BlockContractRegistry:
                 nport_property=ports.nport_property or "nport",
                 name_status=ports.name_status,
                 provenance=ports.provenance)
-        return ports
+        elif ports.model == "weights":
+            result = _weights_ports(contract, props)
+        return _with_variants(contract, result, props)
 
 
 def _default(contract: BlockContract, name: str) -> str:
     prop = contract.properties.get(name)
     return prop.default if prop is not None else ""
+
+
+def _weights_ports(contract: BlockContract,
+                   props: Mapping[str, Any]) -> PortContract:
+    """Порты по весам: число и имена входов задаёт `a`.
+
+    Живой замер 30.10.2026 (SimInTech64): `Сумматор` с `a = [1 , -1]` даёт
+    входы «+» и «−» (U+2212), с `a = [2 , -3]` даёт «2» и «-3» (минус ASCII),
+    с `a = [1 , 1 , 1]` три входа «+». Имена дробных весов не измерены:
+    такой вход остаётся без имени, и сверка имена для него не проверяет
+    (пустое ожидаемое имя сверка пропускает).
+    """
+    ports = contract.ports
+    name = ports.weights_property or "a"
+    raw = props.get(name, _default(contract, name))
+    values = _weights(raw)
+    if values is None:
+        raise ModelQueryError(
+            f"{contract.class_name}: {name}={raw!r} не список весов")
+    return PortContract(
+        model="weights",
+        inputs=tuple(PortSpec(index, _weight_name(value), PortDirection.IN)
+                     for index, value in enumerate(values, start=1)),
+        outputs=ports.outputs,
+        weights_property=name,
+        name_status=ports.name_status,
+        provenance=ports.provenance)
+
+
+def _weights(raw: Any) -> "list[float] | None":
+    """Веса из значения свойства: `[1 , -1]` или `1 -1`; `None` значит не разобрать."""
+    text = str(raw).strip().strip("[]")
+    if not text.strip():
+        return None
+    parts = [item for item in text.replace(",", " ").split() if item]
+    try:
+        return [float(item) for item in parts]
+    except ValueError:
+        return None
+
+
+def _weight_name(value: float) -> str:
+    """Имя входа по весу: «+», «−» (U+2212) или само число."""
+    if value == 1:
+        return "+"
+    if value == -1:
+        return "−"
+    if float(value).is_integer():
+        return str(int(value))
+    return ""
+
+
+def _truthy(raw: Any) -> bool:
+    """Включено ли свойство: пусто, «0» и «false» значат нет."""
+    return str(raw).strip().lower() not in ("", "0", "false")
+
+
+def _with_variants(contract: BlockContract, ports: PortContract,
+                   props: Mapping[str, Any]) -> PortContract:
+    """Добавить условные порты, свойства которых включены.
+
+    Живой замер 30.10.2026: у `Задержки по включению` порт `T1` есть при
+    `addport = 1` и отсутствует при `addport = 0` или пустом значении.
+    """
+    if not contract.ports.variants:
+        return ports
+    inputs = list(ports.inputs)
+    outputs = list(ports.outputs)
+    for variant in contract.ports.variants:
+        prop = str(variant.get("property", ""))
+        if not prop:
+            continue
+        raw = props.get(prop, _default(contract, prop))
+        if not _truthy(raw):
+            continue
+        inputs.extend(_port_spec(item) for item in variant.get("add_inputs", ()))
+        outputs.extend(_port_spec(item)
+                       for item in variant.get("add_outputs", ()))
+    inputs.sort(key=lambda item: item.index)
+    outputs.sort(key=lambda item: item.index)
+    return replace(ports, inputs=tuple(inputs), outputs=tuple(outputs))
 
 
 def _nport_input(ports: PortContract, number: int) -> PortSpec:
@@ -249,7 +340,10 @@ def _nport_input(ports: PortContract, number: int) -> PortSpec:
 
 
 _ALLOWED_STATUS = {"measured", "derived", "unknown"}
-_ALLOWED_PORT_MODELS = {"fixed", "nport", "portnames", "submodel", "unknown"}
+_ALLOWED_PORT_MODELS = {"fixed", "nport", "portnames", "submodel",
+                        "weights", "unknown"}
+_ALLOWED_NAME_STATUS = {"measured", "missing", "unknown",
+                        "instance_defined", "weights"}
 _ALLOWED_CREATION = {"derived", "blocked", "unknown"}
 
 
@@ -305,6 +399,23 @@ def validate_contract_data(data: Mapping[str, Any],
             problems.append(f"{name}: portnames без PortNames")
         if model != "portnames" and ports.get("portnames_property"):
             problems.append(f"{name}: PortNames вне portnames")
+        if ports.get("name_status") not in _ALLOWED_NAME_STATUS:
+            problems.append(
+                f"{name}: недопустимый name_status "
+                f"{ports.get('name_status')!r}")
+        if model == "weights" and not ports.get("weights_property"):
+            problems.append(f"{name}: weights без weights_property")
+        if model != "weights" and ports.get("weights_property"):
+            problems.append(f"{name}: weights_property вне weights")
+        for variant in ports.get("variants", ()):
+            if not str(variant.get("property", "")):
+                problems.append(f"{name}: вариант без property")
+            for key in ("add_inputs", "add_outputs"):
+                for spec in variant.get(key, ()):
+                    if not isinstance(spec.get("index"), int):
+                        problems.append(f"{name}: {key} без index")
+                    if spec.get("direction") not in ("in", "out", "undirected"):
+                        problems.append(f"{name}: {key} с дурным direction")
         for path in item.get("creation", {}).get("paths", ()):
             if path.get("status") not in _ALLOWED_CREATION:
                 problems.append(f"{name}: недопустимый creation.status")
