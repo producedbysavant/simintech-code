@@ -37719,7 +37719,7 @@
           }
         ],
         "model": "fixed",
-        "name_status": "measured",
+        "name_status": "instance_defined",
         "outputs": [
           {
             "direction": "out",
