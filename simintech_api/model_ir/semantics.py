@@ -12,10 +12,15 @@ from __future__ import annotations
 from typing import Any, Iterable, Mapping
 
 from .codes import ObjectKind, PortDirection
-from .contracts import BlockContract, BlockContractRegistry, Dependency
+from .contracts import (
+    BlockContract,
+    BlockContractRegistry,
+    Dependency,
+    load_default_contracts,
+)
 from .errors import ModelQueryError
 from .graph import ModelIndex, QueryResult
-from .ir import ModelObject
+from .ir import ModelIR, ModelObject
 
 _STRUCTURAL_KINDS = frozenset({"wire", "branch", "boundary"})
 _CALC_SCRIPT_SLOTS = ("script", "Script", "OnInitScript", "OnRunScript")
@@ -55,6 +60,117 @@ def influence(
                    or len(unique_unknown) > _MAX_UNKNOWN),
         evidence={"known_absences": absences, "items_total": total},
     )
+
+
+_UNKNOWN_REASONS = (
+    "class_unknown", "object_script", "script_defined",
+    "external_submodel", "behavior_unknown", "unapproved",
+)
+
+
+def semantic_coverage(
+        model: ModelIR,
+        registry: BlockContractRegistry | None = None) -> dict[str, Any]:
+    """Сводка семантической известности модели.
+
+    Локальная неизвестность остаётся в ответах `influence`; здесь только
+    счётчики, по которым видно, где структура разобрана, а семантика нет.
+    """
+    registry = registry or load_default_contracts()
+    objects = [obj for obj in model.objects
+               if obj.kind in (ObjectKind.BLOCK, ObjectKind.SUBMODEL,
+                               ObjectKind.MEMORY_CELL, ObjectKind.UNKNOWN)]
+    unknown = {reason: 0 for reason in _UNKNOWN_REASONS}
+    by_class: dict[str, dict[str, Any]] = {}
+    total = with_behavior = approved = known_ports = 0
+    deps_total = deps_known = absences_total = 0
+    for obj in objects:
+        total += 1
+        contract = registry.get(obj.class_name)
+        entry = by_class.setdefault(obj.class_name, {
+            "objects": 0,
+            "with_behavior": 0,
+            "approved": 0,
+            "pilot_scope": contract.pilot_scope if contract else "",
+        })
+        entry["objects"] += 1
+        if contract is not None and not contract.ports.unknown:
+            known_ports += 1
+        if contract is not None and _behavior_known(contract):
+            with_behavior += 1
+            entry["with_behavior"] += 1
+            if contract.review.status == "approved":
+                approved += 1
+                entry["approved"] += 1
+        reason = _unknown_reason(obj, contract)
+        if reason:
+            unknown[reason] += 1
+        if contract is not None:
+            try:
+                dependencies = registry.dependencies_for(
+                    obj.class_name, _props(obj))
+            except ModelQueryError:
+                dependencies = ()
+            deps_total += len(dependencies)
+            deps_known += sum(
+                1 for dependency in dependencies
+                if _dependency_known(contract, dependency, obj))
+            absences_total += len(contract.known_absences)
+    scopes: dict[str, int] = {}
+    for name in registry.classes():
+        item = registry.get(name)
+        scope = item.pilot_scope if item is not None else ""
+        if scope:
+            scopes[scope] = scopes.get(scope, 0) + 1
+    return {
+        "objects_total": total,
+        "objects_with_behavior": with_behavior,
+        "objects_with_approved_behavior": approved,
+        "objects_with_known_ports": known_ports,
+        "objects_unknown": unknown,
+        "dependencies_total": deps_total,
+        "dependencies_known": deps_known,
+        "known_absences_total": absences_total,
+        "pilot_scope_counts": scopes,
+        "by_class": by_class,
+    }
+
+
+def _behavior_known(contract: BlockContract) -> bool:
+    if contract.behavior.operation == "unknown":
+        return False
+    return bool(contract.dependencies) or bool(contract.known_absences)
+
+
+def _unknown_reason(obj: ModelObject,
+                    contract: BlockContract | None) -> str:
+    if contract is None:
+        return "class_unknown"
+    if _object_script(obj):
+        return "object_script"
+    if contract.ports.reason == "script_defined_ports":
+        return "script_defined"
+    if obj.kind is ObjectKind.SUBMODEL and obj.filename:
+        return "external_submodel"
+    if not _behavior_known(contract):
+        return "behavior_unknown"
+    if contract.review.status != "approved":
+        return "unapproved"
+    return ""
+
+
+def _dependency_known(contract: BlockContract, dependency: Dependency,
+                      obj: ModelObject) -> bool:
+    if _object_script(obj):
+        return False
+    if dependency.kind in ("script", "unknown"):
+        return False
+    if dependency.kind == "conditional" and dependency.condition is None:
+        return False
+    if dependency.provenance.status == "measured":
+        return True
+    return (dependency.provenance.status in ("claim", "derived")
+            and contract.review.status == "approved")
 
 
 def _include_filter(include: Iterable[str]) -> frozenset[str]:

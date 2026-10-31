@@ -13,7 +13,10 @@ from simintech_api.model_ir import (  # noqa: E402
     ModelIndex,
     parse_xprt,
 )
-from simintech_api.model_ir.semantics import influence  # noqa: E402
+from simintech_api.model_ir.semantics import (  # noqa: E402
+    influence,
+    semantic_coverage,
+)
 
 from test_model_ir_graph import (  # noqa: E402
     CYCLE,
@@ -89,6 +92,12 @@ def _semantic_data():
             ],
             "review": {"status": "approved", "reviewer": "test",
                        "date": "2026-10-31"},
+        },
+        "Временной график": {
+            "class": "Временной график", "status": "derived",
+            "ports": {"model": "unknown", "reason": "not_observed"},
+            "behavior": {"operation": "unknown"},
+            "review": {"status": "preliminary", "reviewer": "", "date": ""},
         },
     }
 
@@ -477,3 +486,42 @@ def test_influence_submodel_known_contract_two_branches():
     assert all(item["evidence"]["status"] == "not_established"
                for item in branches)
     assert any("class_unknown" in item for item in result.unknown)
+
+
+def test_semantic_coverage_separates_approved_and_unknown():
+    data = semantic_coverage(parse_xprt(MODEL), _semantic_registry())
+    assert data["objects_total"] == 3
+    assert data["objects_with_behavior"] == 2
+    assert data["objects_with_approved_behavior"] == 2
+    assert data["objects_with_known_ports"] == 2
+    assert data["objects_unknown"]["behavior_unknown"] == 1
+    assert data["dependencies_total"] == 3
+    assert data["dependencies_known"] == 3
+
+
+def test_semantic_coverage_counts_object_script():
+    data = semantic_coverage(parse_xprt(SCRIPT_MODEL), _semantic_registry())
+    assert data["objects_unknown"]["object_script"] == 1
+    assert data["objects_unknown"].get("script_defined", 0) == 0
+
+
+def test_semantic_coverage_pilot_scope_counts_auxiliary():
+    data = copy.deepcopy(_semantic_data())
+    data["Константа"]["pilot_scope"] = "live_acceptance"
+    data["Усилитель"]["pilot_scope"] = "live_acceptance"
+    data["Ключ-3"] = {
+        "class": "Ключ-3", "status": "derived", "pilot_scope": "auxiliary",
+        "ports": {"model": "fixed", "inputs": [], "outputs": []},
+        "behavior": {"operation": "select",
+                     "provenance": {"status": "claim", "ref": "test"}},
+        "dependencies": [{
+            "output": 0,
+            "source": {"kind": "port", "index": 0},
+            "kind": "unconditional",
+            "provenance": {"status": "claim", "ref": "test"},
+        }],
+        "review": {"status": "preliminary", "reviewer": "", "date": ""},
+    }
+    coverage = semantic_coverage(parse_xprt(MODEL), _semantic_registry(data))
+    assert coverage["pilot_scope_counts"]["auxiliary"] == 1
+    assert coverage["pilot_scope_counts"]["live_acceptance"] == 2
