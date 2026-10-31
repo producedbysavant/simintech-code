@@ -231,3 +231,43 @@ def test_find_objects_compare_and_unknown_query():
     assert any(item["kind"] == "class_changed" for item in diff.items)
     with pytest.raises(ModelQueryError):
         index.query("нет_такого")
+
+
+def test_trace_signal_edge_kinds_filter():
+    index = ModelIndex(parse_xprt(flat_model(3).text))
+    structural = index.trace_signal(
+        "main::B1:1", direction="forward",
+        edge_kinds=("wire", "branch", "boundary", "memory"))
+    block_only = index.trace_signal(
+        "main::B1:0", direction="forward", edge_kinds=("block",))
+    structural_input = index.trace_signal(
+        "main::B1:0", direction="forward",
+        edge_kinds=("wire", "branch", "boundary", "memory"))
+
+    assert any(item["address"] == "main::B2" for item in structural.items)
+    assert any(item["address"] == "main::B1" for item in structural.items)
+    assert all(item["address"] != "main::B2" for item in block_only.items)
+    assert all(item["address"] != "main::B2"
+               for item in structural_input.items)
+
+
+def test_trace_signal_rejects_unknown_edge_kind():
+    index = ModelIndex(parse_xprt(flat_model(2).text))
+    with pytest.raises(ModelQueryError):
+        index.trace_signal("main::B0:1", edge_kinds=("teleport",))
+
+
+def test_trace_signal_rejects_empty_edge_kinds():
+    index = ModelIndex(parse_xprt(flat_model(2).text))
+    with pytest.raises(ModelQueryError):
+        index.trace_signal("main::B0:1", edge_kinds=())
+
+
+def test_query_passes_edge_kinds():
+    index = ModelIndex(parse_xprt(flat_model(3).text))
+    result = index.query("trace_signal", {
+        "signal": "main::B1:1", "direction": "forward",
+        "edge_kinds": ["block"],
+    })
+    assert result.query == "trace_signal"
+    assert all(item["address"] != "main::B2" for item in result.items)

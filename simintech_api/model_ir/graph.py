@@ -31,6 +31,7 @@ from .ir import (
 )
 
 _MAX_ITEMS = 200
+_EDGE_KINDS = frozenset({"wire", "branch", "boundary", "memory", "block"})
 _SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
 #: Обязательные аргументы query: пропуск называется до обработчика, иначе
 #: словарь выдаёт голый KeyError без имени запроса.
@@ -110,6 +111,26 @@ def discrepancy_dict(item: Discrepancy) -> dict[str, Any]:
 def _port_id(obj: ModelObject, index: int) -> str | None:
     port = obj.port(index)
     return port.id if port is not None else None
+
+
+def _edge_filter(
+        edge_kinds: Iterable[str] | None) -> frozenset[str] | None:
+    """Разрешённые виды рёбер; None значит все, пустой набор отвергается."""
+    if edge_kinds is None:
+        return None
+    if isinstance(edge_kinds, str):
+        raise ModelQueryError(
+            f"edge_kinds={edge_kinds!r}: ожидается список видов рёбер")
+    values = tuple(edge_kinds)
+    if not values:
+        raise ModelQueryError(
+            "edge_kinds пуст: нужен хотя бы один вид или пропуск аргумента")
+    unknown = set(values) - _EDGE_KINDS
+    if unknown:
+        raise ModelQueryError(
+            f"edge_kinds: неизвестные виды {sorted(unknown)}; "
+            f"допустимы {sorted(_EDGE_KINDS)}")
+    return frozenset(values)
 
 
 class ModelIndex:
@@ -359,8 +380,10 @@ class ModelIndex:
         }
 
     def _walk_depths(self, starts: list[str], forward: bool,
-                     max_depth: int) -> dict[str, int]:
+                     max_depth: int,
+                     edge_kinds: Iterable[str] | None = None) -> dict[str, int]:
         """Глубины всех достижимых узлов: BFS впервые находит минимум."""
+        allowed = _edge_filter(edge_kinds)
         depths: dict[str, int] = {node: 0 for node in starts}
         queue = list(depths)
         while queue:
@@ -371,6 +394,8 @@ class ModelIndex:
             edges = (self.signal.get(node, ()) if forward
                      else self.reverse.get(node, ()))
             for edge in edges:
+                if allowed is not None and edge.kind not in allowed:
+                    continue
                 peer = edge.dst if forward else edge.src
                 if peer in depths:
                     continue
@@ -380,8 +405,9 @@ class ModelIndex:
                 if depth <= max_depth}
 
     def _walk(self, starts: list[str], forward: bool, max_depth: int,
-              query: str) -> QueryResult:
-        depths = self._walk_depths(starts, forward, max_depth)
+              query: str,
+              edge_kinds: Iterable[str] | None = None) -> QueryResult:
+        depths = self._walk_depths(starts, forward, max_depth, edge_kinds)
         items = [self._node_item(node, depth)
                  for node, depth in islice(depths.items(), _MAX_ITEMS)]
         return self._result(query, items, self.unknown,
@@ -479,15 +505,16 @@ class ModelIndex:
                             items_total=len(found))
 
     def trace_signal(self, signal: str, direction: str = "forward",
-                     max_depth: int = 64) -> QueryResult:
+                     max_depth: int = 64,
+                     edge_kinds: Iterable[str] | None = None) -> QueryResult:
         if direction not in ("forward", "backward", "both"):
             raise ModelQueryError(
                 f"direction={direction!r}: ожидается forward, backward или both")
         starts = self._start_nodes(signal, direction != "backward")
         if direction == "both":
-            depths = self._walk_depths(starts, True, max_depth)
+            depths = self._walk_depths(starts, True, max_depth, edge_kinds)
             for node, depth in self._walk_depths(
-                    starts, False, max_depth).items():
+                    starts, False, max_depth, edge_kinds).items():
                 known = depths.get(node)
                 if known is None or depth < known:
                     depths[node] = depth
@@ -498,10 +525,12 @@ class ModelIndex:
                 truncated=len(depths) > _MAX_ITEMS,
                 items_total=len(depths))
         return self._walk(starts, direction == "forward", max_depth,
-                          "trace_signal")
+                          "trace_signal", edge_kinds)
 
-    def _object_walk(self, ref: str, forward: bool,
-                     max_depth: int) -> list[dict[str, Any]]:
+    def _object_walk(self, ref: str, forward: bool, max_depth: int,
+                     edge_kinds: Iterable[str] | None = None
+                     ) -> list[dict[str, Any]]:
+        allowed = _edge_filter(edge_kinds)
         obj = self.object(ref)
         queue = [(obj, 0)]
         visited = {obj.id}
@@ -516,6 +545,8 @@ class ModelIndex:
                 edges = (self.signal.get(port.id, ()) if forward
                          else self.reverse.get(port.id, ()))
                 for edge in edges:
+                    if allowed is not None and edge.kind not in allowed:
+                        continue
                     peer_id = edge.dst if forward else edge.src
                     peer = self.node_object(peer_id)
                     if peer is None or peer.id in visited:
@@ -524,16 +555,19 @@ class ModelIndex:
                     queue.append((peer, depth + 1))
         return result
 
-    def ancestors(self, ref: str, max_depth: int = 64) -> QueryResult:
+    def ancestors(self, ref: str, max_depth: int = 64,
+                  edge_kinds: Iterable[str] | None = None) -> QueryResult:
         return self._result(
-            "ancestors", self._object_walk(ref, False, max_depth))
+            "ancestors", self._object_walk(ref, False, max_depth, edge_kinds))
 
-    def descendants(self, ref: str, max_depth: int = 64) -> QueryResult:
+    def descendants(self, ref: str, max_depth: int = 64,
+                    edge_kinds: Iterable[str] | None = None) -> QueryResult:
         return self._result(
-            "descendants", self._object_walk(ref, True, max_depth))
+            "descendants", self._object_walk(ref, True, max_depth, edge_kinds))
 
-    def find_path(self, src: str, dst: str,
-                  max_length: int = 32) -> QueryResult:
+    def find_path(self, src: str, dst: str, max_length: int = 32,
+                  edge_kinds: Iterable[str] | None = None) -> QueryResult:
+        allowed = _edge_filter(edge_kinds)
         start = self.object(src)
         target = self.object(dst)
         queue = [(start, [start.address])]
@@ -547,6 +581,8 @@ class ModelIndex:
                 continue
             for port in current.ports:
                 for edge in self.signal.get(port.id, ()):
+                    if allowed is not None and edge.kind not in allowed:
+                        continue
                     peer = self.node_object(edge.dst)
                     if peer is None or peer.id in visited:
                         continue
@@ -852,14 +888,16 @@ class ModelIndex:
                 str(args.get("kind", "")), int(args.get("limit", 50))),
             "trace_signal": lambda: self.trace_signal(
                 str(args["signal"]), str(args.get("direction", "forward")),
-                int(args.get("max_depth", 64))),
+                int(args.get("max_depth", 64)), args.get("edge_kinds")),
             "ancestors": lambda: self.ancestors(
-                str(args["node"]), int(args.get("max_depth", 64))),
+                str(args["node"]), int(args.get("max_depth", 64)),
+                args.get("edge_kinds")),
             "descendants": lambda: self.descendants(
-                str(args["node"]), int(args.get("max_depth", 64))),
+                str(args["node"]), int(args.get("max_depth", 64)),
+                args.get("edge_kinds")),
             "find_path": lambda: self.find_path(
                 str(args["src"]), str(args["dst"]),
-                int(args.get("max_length", 32))),
+                int(args.get("max_length", 32)), args.get("edge_kinds")),
             "find_cycles": lambda: self.find_cycles(
                 int(args.get("max_cycles", 20))),
             "check_connections": self.check_connections,
