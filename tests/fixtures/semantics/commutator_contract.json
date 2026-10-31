@@ -1,0 +1,103 @@
+{
+  "schema": "block-contract/2",
+  "version": 2,
+  "classes": {
+    "Коммутатор входных сигналов по номеру порта": {
+      "class": "Коммутатор входных сигналов по номеру порта",
+      "status": "derived",
+      "pilot_scope": "synthetic_only",
+      "ports": {
+        "model": "nport_named",
+        "nport_property": "nport",
+        "inputs": [
+          {
+            "index": 0,
+            "name": "number",
+            "direction": "in"
+          }
+        ],
+        "outputs": [
+          {
+            "index": 0,
+            "name": "outport",
+            "direction": "out"
+          }
+        ]
+      },
+      "behavior": {
+        "operation": "select",
+        "expression": "y = data[number]",
+        "provenance": {
+          "status": "derived",
+          "ref": "help"
+        }
+      },
+      "dependencies": [
+        {
+          "output": "all_outputs",
+          "source": {
+            "kind": "port",
+            "index": 0
+          },
+          "kind": "control",
+          "provenance": {
+            "status": "derived",
+            "ref": "help"
+          }
+        },
+        {
+          "output": "all_outputs",
+          "source": {
+            "kind": "port",
+            "role": "selected_input",
+            "selector": {
+              "kind": "port",
+              "index": 0
+            },
+            "mapping": [
+              {
+                "value": 1,
+                "input": 1
+              },
+              {
+                "value": 2,
+                "input": 2
+              },
+              {
+                "value": 3,
+                "input": 3
+              }
+            ]
+          },
+          "kind": "conditional",
+          "condition": {
+            "op": "select",
+            "source": {
+              "kind": "port",
+              "index": 0
+            }
+          },
+          "provenance": {
+            "status": "derived",
+            "ref": "help"
+          }
+        }
+      ],
+      "known_absences": [],
+      "review": {
+        "status": "preliminary",
+        "reviewer": "",
+        "date": ""
+      },
+      "properties": {
+        "nport": {
+          "default": "3",
+          "readonly": false,
+          "kind": "unknown",
+          "provenance": "test"
+        }
+      }
+    }
+  },
+  "meta": {}
+}

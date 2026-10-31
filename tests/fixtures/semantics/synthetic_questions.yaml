@@ -1,0 +1,11 @@
+schema: synthetic-questions/1
+questions:
+  - id: commutator_number
+    question: "Какой вход коммутатора проходит на выход при number=2?"
+    target: "main::Mux:4"
+    expected_influences:
+      - "main::Mux:1"
+      - "main::Mux:2"
+      - "main::Mux:3"
+    expected_unknown:
+      - "condition_unknown"

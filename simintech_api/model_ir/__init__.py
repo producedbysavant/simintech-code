@@ -8,14 +8,21 @@
 from __future__ import annotations
 
 from .contracts import (
+    SCHEMA,
+    VERSION,
+    Behavior,
     BlockContract,
     BlockContractRegistry,
     Constraint,
     ContractCoverage,
     CreationPath,
+    Dependency,
+    KnownAbsence,
     PortContract,
     PortSpec,
     PropertyContract,
+    ProvenanceClaim,
+    Review,
     load_default_contracts,
     validate_contract_data,
 )
@@ -60,6 +67,13 @@ from .ir import (
 )
 from .graph import ModelIndex, QueryResult
 from .manifest import build_manifest
+from .semantics import (
+    BehaviorScenario,
+    BehaviorSpec,
+    influence,
+    parse_behavior_spec,
+    semantic_coverage,
+)
 from .merge import build_model_ir
 from .system_spec import (
     CompiledSpec,
@@ -77,6 +91,11 @@ from .xprt_model import Limits, parse_xprt, parse_xprt_file
 
 __all__ = [
     "IR_SCHEMA_VERSION",
+    "SCHEMA",
+    "VERSION",
+    "Behavior",
+    "BehaviorScenario",
+    "BehaviorSpec",
     "BlockContract",
     "BlockContractRegistry",
     "BoundaryPort",
@@ -85,6 +104,10 @@ __all__ = [
     "CompiledSpec",
     "ContractCoverage",
     "CreationPath",
+    "Dependency",
+    "KnownAbsence",
+    "ProvenanceClaim",
+    "Review",
     "ExpectedLevel",
     "ExpectedModel",
     "ExpectedObject",
@@ -130,10 +153,13 @@ __all__ = [
     "build_model_ir",
     "compile_system_spec",
     "content_hash",
+    "influence",
     "load_default_contracts",
+    "parse_behavior_spec",
     "parse_model_text",
     "parse_xprt",
     "parse_xprt_file",
+    "semantic_coverage",
     "structure_hash",
     "topology_to_ir",
     "validate_contract_data",

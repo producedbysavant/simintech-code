@@ -11,6 +11,8 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from simintech_api.model_ir import (  # noqa: E402
+    SCHEMA,
+    VERSION,
     BlockContractRegistry,
     ModelQueryError,
     load_default_contracts,
@@ -239,7 +241,7 @@ def test_merge_replaces_unknown_with_live_observation(tmp_path):
     corpus = tmp_path / "corpus.xprt"
     corpus.write_text(GRAPH, encoding="utf-8")
     existing = {
-        "version": 1, "schema": "block-contract/1",
+        "version": VERSION, "schema": SCHEMA,
         "meta": {"port_model_counts": {"unknown": 1},
                  "unknown_classes": ["Временной график"]},
         "classes": {"Временной график": {
@@ -256,3 +258,265 @@ def test_merge_replaces_unknown_with_live_observation(tmp_path):
     assert ports["nport_property"] == "InPortCount"
     assert merged["meta"]["port_model_counts"] == {"nport": 1}
     assert merged["meta"]["unknown_classes"] == []
+
+
+def test_contract_v2_parses_pilot_fields():
+    data = {
+        "schema": "block-contract/2",
+        "version": 2,
+        "classes": {
+            "Тестовый блок": {
+                "class": "Тестовый блок",
+                "status": "derived",
+                "pilot_scope": "live_acceptance",
+                "ports": {"model": "fixed", "inputs": [], "outputs": []},
+                "behavior": {
+                    "operation": "gain",
+                    "expression": "y = a * u",
+                    "parameters": ["a"],
+                    "provenance": {"status": "derived", "ref": "test"},
+                },
+                "dependencies": [{
+                    "output": 0,
+                    "source": {"kind": "port", "index": 1},
+                    "kind": "unconditional",
+                    "condition": None,
+                    "state": None,
+                    "provenance": {"status": "derived", "ref": "test"},
+                }],
+                "review": {
+                    "status": "preliminary", "reviewer": "", "date": "",
+                },
+                "known_absences": [{
+                    "output": 0,
+                    "source": {"kind": "port", "index": 2},
+                    "provenance": {"status": "claim", "ref": "test"},
+                }],
+            },
+        },
+        "meta": {"catalog_classes": 0},
+    }
+    registry = BlockContractRegistry(data)
+    contract = registry.require("Тестовый блок")
+    assert contract.behavior.operation == "gain"
+    assert contract.dependencies[0].kind == "unconditional"
+    assert contract.review.status == "preliminary"
+    assert contract.known_absences[0].source["index"] == 2
+    assert contract.pilot_scope == "live_acceptance"
+
+
+def test_contract_v2_rejects_bad_dependency_kind():
+    data = _contracts()
+    data["classes"]["Усилитель"]["dependencies"] = [{
+        "output": 0, "source": {"kind": "port", "index": 1},
+        "kind": "maybe", "provenance": {"status": "derived", "ref": "x"},
+    }]
+    assert validate_contract_data(data, _catalog())
+
+
+def test_contract_v2_rejects_stateful_without_state():
+    data = _contracts()
+    data["classes"]["Интегратор"]["dependencies"] = [{
+        "output": 0, "source": {"kind": "port", "index": 1},
+        "kind": "stateful", "state": None,
+        "provenance": {"status": "derived", "ref": "x"},
+    }]
+    assert validate_contract_data(data, _catalog())
+
+
+def test_contract_v2_accepts_conditional_with_unknown_condition():
+    data = _contracts()
+    data["classes"]["Усилитель"]["dependencies"] = [{
+        "output": 1, "source": {"kind": "port", "index": 1},
+        "kind": "conditional", "condition": None,
+        "reason": "condition_unknown",
+        "provenance": {"status": "derived", "ref": "x"},
+    }]
+    assert validate_contract_data(data, _catalog()) == []
+
+
+def test_contract_v2_rejects_unknown_condition_op():
+    data = _contracts()
+    data["classes"]["Усилитель"]["dependencies"] = [{
+        "output": 1, "source": {"kind": "port", "index": 1},
+        "kind": "conditional",
+        "condition": {"op": "matches", "source": {"kind": "port", "index": 1}},
+        "provenance": {"status": "derived", "ref": "x"},
+    }]
+    assert validate_contract_data(data, _catalog())
+
+
+def test_contract_v2_rejects_select_without_cases():
+    data = _contracts()
+    data["classes"]["Усилитель"]["dependencies"] = [{
+        "output": 1, "source": {"kind": "port", "index": 1},
+        "kind": "conditional",
+        "condition": {"op": "select", "source": {"kind": "port", "index": 1}},
+        "provenance": {"status": "derived", "ref": "x"},
+    }]
+    assert validate_contract_data(data, _catalog())
+
+
+def test_contract_v2_rejects_unknown_state_kind():
+    data = _contracts()
+    data["classes"]["Интегратор"]["dependencies"] = [{
+        "output": 0, "source": {"kind": "port", "index": 1},
+        "kind": "stateful", "state": {"kind": "eternal"},
+        "provenance": {"status": "derived", "ref": "x"},
+    }]
+    assert validate_contract_data(data, _catalog())
+
+
+def test_contract_v2_rejects_bad_signal_types():
+    data = _contracts()
+    data["classes"]["Усилитель"]["signal_types"] = {
+        "inputs": [{"index": 1, "type": "complex", "unit": "V"}],
+        "outputs": [],
+        "provenance": {"status": "unknown", "ref": ""},
+    }
+    assert validate_contract_data(data, _catalog())
+
+
+def test_contract_v2_rejects_bad_behavior_provenance():
+    data = _contracts()
+    data["classes"]["Усилитель"]["behavior"] = {
+        "operation": "gain",
+        "provenance": {"status": "guess", "ref": "x"},
+    }
+    assert validate_contract_data(data, _catalog())
+
+
+def test_contract_v2_accepts_selected_input_select_without_cases():
+    data = _contracts()
+    data["classes"]["Усилитель"]["dependencies"] = [{
+        "output": 1,
+        "source": {"kind": "port", "role": "selected_input",
+                   "selector": {"kind": "port", "role": "control"},
+                   "mapping": [{"value": 0, "input": 1}]},
+        "kind": "conditional",
+        "condition": {"op": "select",
+                      "source": {"kind": "port", "role": "control"}},
+        "provenance": {"status": "derived", "ref": "x"},
+    }]
+    assert validate_contract_data(data, _catalog()) == []
+
+
+def _test_registry(classes):
+    return BlockContractRegistry({
+        "schema": SCHEMA, "version": VERSION,
+        "classes": classes, "meta": {},
+    })
+
+
+def test_dependencies_all_inputs_expand_by_nport():
+    registry = _test_registry({
+        "Тестовый nport": {
+            "class": "Тестовый nport", "status": "derived",
+            "ports": {
+                "model": "nport", "nport_property": "nport",
+                "inputs": [{"index": 1, "name": "PORT1", "direction": "in"}],
+                "outputs": [{"index": 0, "name": "out", "direction": "out"}],
+            },
+            "dependencies": [{
+                "output": 0,
+                "source": {"kind": "port", "role": "all_inputs"},
+                "kind": "unconditional",
+                "provenance": {"status": "claim", "ref": "test"},
+            }],
+        },
+    })
+    deps = registry.dependencies_for("Тестовый nport", {"nport": "3"})
+    assert [item.source["index"] for item in deps] == [1, 2, 3]
+
+
+def test_selected_input_expands_without_control():
+    registry = _test_registry({
+        "Тестовый выбор": {
+            "class": "Тестовый выбор", "status": "derived",
+            "ports": {
+                "model": "fixed",
+                "inputs": [
+                    {"index": 0, "name": "number", "direction": "in"},
+                    {"index": 1, "name": "data_1", "direction": "in"},
+                    {"index": 2, "name": "data_2", "direction": "in"},
+                ],
+                "outputs": [{"index": 0, "name": "out", "direction": "out"}],
+            },
+            "dependencies": [
+                {"output": 0, "source": {"kind": "port", "index": 0},
+                 "kind": "control",
+                 "provenance": {"status": "claim", "ref": "test"}},
+                {"output": 0,
+                 "source": {"kind": "port", "role": "selected_input",
+                            "selector": {"kind": "port", "role": "control"},
+                            "mapping": [{"value": 0, "input": 1},
+                                        {"value": 1, "input": 2}]},
+                 "kind": "conditional",
+                 "condition": {"op": "select",
+                               "source": {"kind": "port", "role": "control"}},
+                 "provenance": {"status": "claim", "ref": "test"}},
+            ],
+        },
+    })
+    deps = registry.dependencies_for("Тестовый выбор")
+    selected = [item for item in deps if item.kind == "conditional"]
+    assert [item.source["index"] for item in selected] == [1, 2]
+    assert [item.condition["cases"][0]["value"] for item in selected] == [0, 1]
+    assert [item.condition["cases"][0]["input"] for item in selected] == [1, 2]
+    assert all(item.source["index"] != 0 for item in selected)
+
+
+def test_selected_input_without_mapping_is_condition_unknown():
+    registry = _test_registry({
+        "Тестовый выбор": {
+            "class": "Тестовый выбор", "status": "derived",
+            "ports": {
+                "model": "fixed",
+                "inputs": [
+                    {"index": 0, "name": "number", "direction": "in"},
+                    {"index": 1, "name": "data_1", "direction": "in"},
+                    {"index": 2, "name": "data_2", "direction": "in"},
+                ],
+                "outputs": [{"index": 0, "name": "out", "direction": "out"}],
+            },
+            "dependencies": [
+                {"output": 0, "source": {"kind": "port", "index": 0},
+                 "kind": "control",
+                 "provenance": {"status": "claim", "ref": "test"}},
+                {"output": 0,
+                 "source": {"kind": "port", "role": "selected_input",
+                            "selector": {"kind": "port", "role": "control"}},
+                 "kind": "conditional",
+                 "provenance": {"status": "claim", "ref": "test"}},
+            ],
+        },
+    })
+    selected = [item for item in registry.dependencies_for("Тестовый выбор")
+                if item.kind == "conditional"]
+    assert [item.source["index"] for item in selected] == [1, 2]
+    assert all(item.condition is None for item in selected)
+    assert all(item.reason == "condition_unknown" for item in selected)
+
+
+def test_all_outputs_expand_by_ports():
+    registry = _test_registry({
+        "Тестовый разветвитель": {
+            "class": "Тестовый разветвитель", "status": "derived",
+            "ports": {
+                "model": "fixed",
+                "inputs": [{"index": 0, "name": "inport", "direction": "in"}],
+                "outputs": [
+                    {"index": 1, "name": "out_1", "direction": "out"},
+                    {"index": 2, "name": "out_2", "direction": "out"},
+                ],
+            },
+            "dependencies": [{
+                "output": "all_outputs",
+                "source": {"kind": "port", "index": 0},
+                "kind": "unconditional",
+                "provenance": {"status": "claim", "ref": "test"},
+            }],
+        },
+    })
+    deps = registry.dependencies_for("Тестовый разветвитель")
+    assert [item.output for item in deps] == [1, 2]

@@ -25,7 +25,12 @@ from simintech_api.constants import (  # noqa: E402
     SUPPORTED_COM_BLOCK_CLASSES,
     UNSUPPORTED_COM_BLOCK_CLASSES,
 )
-from simintech_api.model_ir import ObjectKind, parse_xprt_file  # noqa: E402
+from simintech_api.model_ir import (  # noqa: E402
+    SCHEMA,
+    VERSION,
+    ObjectKind,
+    parse_xprt_file,
+)
 from simintech_api.model_ir.xprt_model import (  # noqa: E402
     MEMORY_CELLS,
     PORT_BLOCKS,
@@ -359,8 +364,8 @@ def generate(catalog_path: Path, corpus_paths: list[Path],
     counts = Counter(item["ports"]["model"] for item in result.values())
     extra = sorted(set(observed) - set(classes))
     return {
-        "version": 1,
-        "schema": "block-contract/1",
+        "version": VERSION,
+        "schema": SCHEMA,
         "meta": {
             "catalog_version": catalog.get("version"),
             "catalog_sha256": catalog_sha,

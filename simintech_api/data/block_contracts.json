@@ -33137,6 +33137,14 @@
       "status": "derived"
     },
     "Демультиплексор": {
+      "behavior": {
+        "expression": "y_i = u_i",
+        "operation": "split",
+        "provenance": {
+          "ref": "help",
+          "status": "derived"
+        }
+      },
       "class": "Демультиплексор",
       "constraints": [],
       "creation": {
@@ -33148,6 +33156,22 @@
           }
         ]
       },
+      "dependencies": [
+        {
+          "kind": "unconditional",
+          "output": "all_outputs",
+          "provenance": {
+            "ref": "help",
+            "status": "derived"
+          },
+          "source": {
+            "index": 0,
+            "kind": "port"
+          }
+        }
+      ],
+      "known_absences": [],
+      "pilot_scope": "live_acceptance",
       "ports": {
         "inputs": [
           {
@@ -33190,8 +33214,14 @@
       "provenance": [
         "catalog:060961f69db3",
         "corpus:5",
-        "merged:2026-10-30"
+        "merged:2026-10-30",
+        "pilot:2026-10-31"
       ],
+      "review": {
+        "date": "",
+        "reviewer": "",
+        "status": "preliminary"
+      },
       "status": "measured"
     },
     "Дискретная передаточная ф-я обратного аргумента": {
@@ -37732,6 +37762,18 @@
       "status": "derived"
     },
     "Интегратор": {
+      "behavior": {
+        "expression": "y = integral(k * u) + x0",
+        "operation": "integrate",
+        "parameters": [
+          "k",
+          "x0"
+        ],
+        "provenance": {
+          "ref": "help",
+          "status": "derived"
+        }
+      },
       "class": "Интегратор",
       "constraints": [],
       "creation": {
@@ -37743,6 +37785,54 @@
           }
         ]
       },
+      "dependencies": [
+        {
+          "kind": "stateful",
+          "output": 1,
+          "provenance": {
+            "ref": "help",
+            "status": "derived"
+          },
+          "source": {
+            "index": 0,
+            "kind": "port"
+          },
+          "state": {
+            "kind": "history",
+            "window": "unbounded"
+          }
+        },
+        {
+          "kind": "unconditional",
+          "output": 1,
+          "provenance": {
+            "ref": "block_catalog",
+            "status": "derived"
+          },
+          "source": {
+            "kind": "property",
+            "name": "k"
+          }
+        },
+        {
+          "kind": "stateful",
+          "output": 1,
+          "provenance": {
+            "ref": "block_catalog",
+            "status": "derived"
+          },
+          "source": {
+            "kind": "property",
+            "name": "x0"
+          },
+          "state": {
+            "kind": "initial",
+            "property": "x0"
+          }
+        }
+      ],
+      "known_absences": [],
+      "pilot_scope": "live_acceptance",
       "ports": {
         "inputs": [
           {
@@ -37778,8 +37868,14 @@
       },
       "provenance": [
         "catalog:060961f69db3",
-        "corpus:4"
+        "corpus:4",
+        "pilot:2026-10-31"
       ],
+      "review": {
+        "date": "",
+        "reviewer": "",
+        "status": "preliminary"
+      },
       "status": "measured"
     },
     "Интегратор с изменяемыми н.у.": {
@@ -38486,6 +38582,18 @@
       "status": "measured"
     },
     "Ключ управляемый перекидной по входам тип 2": {
+      "behavior": {
+        "expression": "y = control ? inport_2 : inport_1",
+        "operation": "select",
+        "parameters": [
+          "k",
+          "fl"
+        ],
+        "provenance": {
+          "ref": "help",
+          "status": "derived"
+        }
+      },
       "class": "Ключ управляемый перекидной по входам тип 2",
       "constraints": [
         {
@@ -38504,6 +38612,40 @@
           }
         ]
       },
+      "dependencies": [
+        {
+          "kind": "control",
+          "output": 2,
+          "provenance": {
+            "ref": "help",
+            "status": "derived"
+          },
+          "source": {
+            "index": 1,
+            "kind": "port"
+          }
+        },
+        {
+          "condition": null,
+          "kind": "conditional",
+          "output": 2,
+          "provenance": {
+            "ref": "help",
+            "status": "derived"
+          },
+          "reason": "condition_unknown",
+          "source": {
+            "kind": "port",
+            "role": "selected_input",
+            "selector": {
+              "index": 1,
+              "kind": "port"
+            }
+          }
+        }
+      ],
+      "known_absences": [],
+      "pilot_scope": "live_acceptance",
       "ports": {
         "inputs": [
           {
@@ -38556,11 +38698,29 @@
       },
       "provenance": [
         "catalog:060961f69db3",
-        "corpus:1"
+        "corpus:1",
+        "pilot:2026-10-31"
       ],
+      "review": {
+        "date": "",
+        "reviewer": "",
+        "status": "preliminary"
+      },
       "status": "measured"
     },
     "Ключ-3": {
+      "behavior": {
+        "expression": "y = select(Port_1, Port_2, Port_3)",
+        "operation": "select",
+        "parameters": [
+          "fl",
+          "k"
+        ],
+        "provenance": {
+          "ref": "help",
+          "status": "derived"
+        }
+      },
       "class": "Ключ-3",
       "constraints": [],
       "creation": {
@@ -38572,6 +38732,9 @@
           }
         ]
       },
+      "dependencies": [],
+      "known_absences": [],
+      "pilot_scope": "auxiliary",
       "ports": {
         "inputs": [
           {
@@ -38617,8 +38780,14 @@
       },
       "provenance": [
         "catalog:060961f69db3",
-        "corpus:17"
+        "corpus:17",
+        "pilot:2026-10-31"
       ],
+      "review": {
+        "date": "",
+        "reviewer": "",
+        "status": "preliminary"
+      },
       "status": "measured"
     },
     "Конечные автоматы - Вход состояния": {
@@ -38993,6 +39162,17 @@
       "status": "derived"
     },
     "Константа": {
+      "behavior": {
+        "expression": "y = a",
+        "operation": "constant",
+        "parameters": [
+          "a"
+        ],
+        "provenance": {
+          "ref": "block_catalog",
+          "status": "derived"
+        }
+      },
       "class": "Константа",
       "constraints": [],
       "creation": {
@@ -39004,6 +39184,22 @@
           }
         ]
       },
+      "dependencies": [
+        {
+          "kind": "unconditional",
+          "output": 0,
+          "provenance": {
+            "ref": "block_catalog",
+            "status": "derived"
+          },
+          "source": {
+            "kind": "property",
+            "name": "a"
+          }
+        }
+      ],
+      "known_absences": [],
+      "pilot_scope": "live_acceptance",
       "ports": {
         "inputs": [],
         "model": "fixed",
@@ -39046,8 +39242,14 @@
       "provenance": [
         "catalog:060961f69db3",
         "corpus:760",
-        "merged:2026-10-30"
+        "merged:2026-10-30",
+        "pilot:2026-10-31"
       ],
+      "review": {
+        "date": "",
+        "reviewer": "",
+        "status": "preliminary"
+      },
       "status": "measured"
     },
     "Корень квадратный": {
@@ -54478,6 +54680,14 @@
       "status": "derived"
     },
     "Мультиплексор": {
+      "behavior": {
+        "expression": "y = [u_1, ..., u_n]",
+        "operation": "vector",
+        "provenance": {
+          "ref": "help",
+          "status": "derived"
+        }
+      },
       "class": "Мультиплексор",
       "constraints": [
         {
@@ -54499,6 +54709,22 @@
           }
         ]
       },
+      "dependencies": [
+        {
+          "kind": "unconditional",
+          "output": 0,
+          "provenance": {
+            "ref": "help",
+            "status": "derived"
+          },
+          "source": {
+            "kind": "port",
+            "role": "all_inputs"
+          }
+        }
+      ],
+      "known_absences": [],
+      "pilot_scope": "live_acceptance",
       "ports": {
         "inputs": [
           {
@@ -54529,8 +54755,14 @@
       },
       "provenance": [
         "catalog:060961f69db3",
-        "corpus:145"
+        "corpus:145",
+        "pilot:2026-10-31"
       ],
+      "review": {
+        "date": "",
+        "reviewer": "",
+        "status": "preliminary"
+      },
       "status": "measured"
     },
     "НЛ - Нечеткая кластеризация": {
@@ -57185,6 +57417,14 @@
       "status": "derived"
     },
     "Перемножитель": {
+      "behavior": {
+        "expression": "y = product(u_i)",
+        "operation": "product",
+        "provenance": {
+          "ref": "help",
+          "status": "derived"
+        }
+      },
       "class": "Перемножитель",
       "constraints": [
         {
@@ -57206,6 +57446,22 @@
           }
         ]
       },
+      "dependencies": [
+        {
+          "kind": "unconditional",
+          "output": 0,
+          "provenance": {
+            "ref": "block_contract",
+            "status": "derived"
+          },
+          "source": {
+            "kind": "port",
+            "role": "all_inputs"
+          }
+        }
+      ],
+      "known_absences": [],
+      "pilot_scope": "live_acceptance",
       "ports": {
         "inputs": [
           {
@@ -57241,8 +57497,14 @@
       },
       "provenance": [
         "catalog:060961f69db3",
-        "corpus:4"
+        "corpus:4",
+        "pilot:2026-10-31"
       ],
+      "review": {
+        "date": "",
+        "reviewer": "",
+        "status": "preliminary"
+      },
       "status": "measured"
     },
     "Пила": {
@@ -59381,6 +59643,17 @@
       "status": "measured"
     },
     "Сумматор": {
+      "behavior": {
+        "expression": "y = sum(a_i * u_i)",
+        "operation": "sum",
+        "parameters": [
+          "a"
+        ],
+        "provenance": {
+          "ref": "help",
+          "status": "derived"
+        }
+      },
       "class": "Сумматор",
       "constraints": [],
       "creation": {
@@ -59392,6 +59665,23 @@
           }
         ]
       },
+      "dependencies": [
+        {
+          "kind": "unconditional",
+          "output": 0,
+          "provenance": {
+            "ref": "block_contract",
+            "status": "derived"
+          },
+          "source": {
+            "kind": "port",
+            "role": "all_inputs",
+            "weight_property": "a"
+          }
+        }
+      ],
+      "known_absences": [],
+      "pilot_scope": "live_acceptance",
       "ports": {
         "inputs": [],
         "model": "weights",
@@ -59416,8 +59706,14 @@
       },
       "provenance": [
         "catalog:060961f69db3",
-        "corpus:3"
+        "corpus:3",
+        "pilot:2026-10-31"
       ],
+      "review": {
+        "date": "",
+        "reviewer": "",
+        "status": "preliminary"
+      },
       "status": "measured"
     },
     "Суммирование элементов вектора": {
@@ -61890,6 +62186,17 @@
       "status": "derived"
     },
     "Усилитель": {
+      "behavior": {
+        "expression": "y = a * u",
+        "operation": "gain",
+        "parameters": [
+          "a"
+        ],
+        "provenance": {
+          "ref": "block_catalog",
+          "status": "derived"
+        }
+      },
       "class": "Усилитель",
       "constraints": [],
       "creation": {
@@ -61901,6 +62208,34 @@
           }
         ]
       },
+      "dependencies": [
+        {
+          "kind": "unconditional",
+          "output": 0,
+          "provenance": {
+            "ref": "block_contract",
+            "status": "derived"
+          },
+          "source": {
+            "index": 1,
+            "kind": "port"
+          }
+        },
+        {
+          "kind": "unconditional",
+          "output": 0,
+          "provenance": {
+            "ref": "block_catalog",
+            "status": "derived"
+          },
+          "source": {
+            "kind": "property",
+            "name": "a"
+          }
+        }
+      ],
+      "known_absences": [],
+      "pilot_scope": "live_acceptance",
       "ports": {
         "inputs": [
           {
@@ -61937,8 +62272,14 @@
       "provenance": [
         "catalog:060961f69db3",
         "corpus:4",
-        "merged:2026-10-30"
+        "merged:2026-10-30",
+        "pilot:2026-10-31"
       ],
+      "review": {
+        "date": "",
+        "reviewer": "",
+        "status": "preliminary"
+      },
       "status": "measured"
     },
     "Условие выполнения субмодели": {
@@ -78296,6 +78637,14 @@
       "status": "derived"
     },
     "Язык программирования": {
+      "behavior": {
+        "expression": "поведение задано скриптом",
+        "operation": "script",
+        "provenance": {
+          "ref": "help",
+          "status": "derived"
+        }
+      },
       "class": "Язык программирования",
       "constraints": [],
       "creation": {
@@ -78307,6 +78656,9 @@
           }
         ]
       },
+      "dependencies": [],
+      "known_absences": [],
+      "pilot_scope": "live_acceptance",
       "ports": {
         "model": "unknown",
         "name_status": "unknown",
@@ -78390,8 +78742,14 @@
       "provenance": [
         "catalog:060961f69db3",
         "corpus:55",
-        "merged:2026-10-30"
+        "merged:2026-10-30",
+        "pilot:2026-10-31"
       ],
+      "review": {
+        "date": "",
+        "reviewer": "",
+        "status": "preliminary"
+      },
       "status": "measured"
     }
   },
@@ -79372,6 +79730,6 @@
     ],
     "version": "not recorded in corpus"
   },
-  "schema": "block-contract/1",
-  "version": 1
+  "schema": "block-contract/2",
+  "version": 2
 }
