@@ -11,14 +11,14 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Mapping
 
-from .codes import PortDirection
+from .codes import ObjectKind, PortDirection
 from .contracts import BlockContract, BlockContractRegistry, Dependency
 from .errors import ModelQueryError
 from .graph import ModelIndex, QueryResult
 from .ir import ModelObject
 
 _STRUCTURAL_KINDS = frozenset({"wire", "branch", "boundary"})
-_CALC_SCRIPT_SLOTS = ("Script", "OnInitScript", "OnRunScript")
+_CALC_SCRIPT_SLOTS = ("script", "Script", "OnInitScript", "OnRunScript")
 _INCLUDE = frozenset({"contract", "not_established"})
 _MAX_UNKNOWN = 200
 
@@ -131,24 +131,52 @@ class _Walker:
     def _walk_input(self, port_id: str, hops: list[dict[str, Any]],
                     path: list[str], depth: int,
                     visited: frozenset[str]) -> None:
-        incoming = [edge for edge in self.index.reverse.get(port_id, ())
-                    if edge.kind in _STRUCTURAL_KINDS]
-        if not incoming:
+        incoming = self.index.reverse.get(port_id, ())
+        memory = [edge for edge in incoming if edge.kind == "memory"]
+        for edge in memory:
+            hop = {
+                "from": self.index.node_name(port_id),
+                "to": self.index.node_name(edge.src),
+                "kind": "stateful",
+                "condition": None,
+                "state": {"kind": "memory"},
+                "evidence": {"status": "contract", "ref": edge.wire_id},
+            }
+            self.walk(edge.src, hops + [hop], path, depth + 1, visited)
+        structural = [edge for edge in incoming
+                      if edge.kind in _STRUCTURAL_KINDS]
+        if structural:
+            for edge in structural:
+                self.walk(edge.src, hops, path, depth + 1, visited)
+            return
+        if not memory:
             self._emit({"kind": "port",
                         "address": self.index.node_name(port_id)},
                        hops, path)
-            return
-        for edge in incoming:
-            self.walk(edge.src, hops, path, depth + 1, visited)
 
     def _walk_output(self, port: Any, obj: ModelObject, name: str,
                      hops: list[dict[str, Any]], path: list[str],
                      depth: int, visited: frozenset[str]) -> None:
         self._collect_absences(obj, port.index, name)
+        memory = [edge for edge in self.index.reverse.get(port.id, ())
+                  if edge.kind == "memory"]
+        if memory:
+            for edge in memory:
+                hop = {
+                    "from": name,
+                    "to": self.index.node_name(edge.src),
+                    "kind": "stateful",
+                    "condition": None,
+                    "state": {"kind": "memory"},
+                    "evidence": {"status": "contract", "ref": edge.wire_id},
+                }
+                self.walk(edge.src, hops + [hop], path, depth + 1, visited)
+            return
         contract = self.registry.get(obj.class_name)
         if contract is None:
             self.unknown.append(f"{name}: class_unknown")
             return
+        start = len(self.items)
         dependencies = [dependency for dependency in
                         self.registry.dependencies_for(
                             obj.class_name, _props(obj))
@@ -157,11 +185,50 @@ class _Walker:
             reason = ("script_defined_ports" if _object_script(obj)
                       else "behavior_unknown")
             self.unknown.append(f"{name}: {reason}")
+            self._detail_and_downgrade(port, start)
             return
         for dependency in dependencies:
             self._walk_dependency(
                 dependency, contract, obj, name, port, hops, path, depth,
                 visited)
+        self._detail_and_downgrade(port, start)
+
+    def _detail_and_downgrade(self, port: Any, start: int) -> None:
+        """Детализировать субмодель внутри страницы, не поднимая статус.
+
+        Внешний контракт даёт функциональные хопы; переход по boundary
+        показывает внутреннюю цепочку. Если внутри есть неизвестный блок,
+        условные ветви понижаются, а управляющая зависимость остаётся
+        отдельной.
+        """
+        details = self._detail_unknown(port)
+        if not details:
+            return
+        self.unknown.extend(details)
+        reason = details[0]
+        for item in self.items[start:]:
+            if not any(hop["kind"] == "conditional"
+                       for hop in item["hops"]):
+                continue
+            item["evidence"]["status"] = "not_established"
+            item["evidence"]["reason"] = reason
+            for hop in item["hops"]:
+                if hop["kind"] == "conditional":
+                    hop["evidence"]["status"] = "not_established"
+                    hop["evidence"]["reason"] = reason
+
+    def _detail_unknown(self, port: Any) -> list[str]:
+        obj = self.index.node_object(port.id)
+        if obj is None or obj.kind is not ObjectKind.SUBMODEL:
+            return []
+        details: list[str] = []
+        for edge in self.index.reverse.get(port.id, ()):
+            if edge.kind != "boundary":
+                continue
+            walker = _Walker(self.index, self.registry, [], details, [],
+                             self.max_depth)
+            walker.walk(edge.src, [], [], 0, frozenset())
+        return details
 
     def _walk_dependency(
             self, dependency: Dependency, contract: BlockContract,
@@ -170,6 +237,8 @@ class _Walker:
             visited: frozenset[str]) -> None:
         status, ref, reason = _dependency_evidence(
             contract, dependency, obj)
+        object_script = _object_script(obj)
+        hop_kind = "script" if object_script else dependency.kind
         source = dependency.source
         source_port = None
         if source.get("kind") == "port":
@@ -183,7 +252,7 @@ class _Walker:
         hop = {
             "from": name,
             "to": to_address,
-            "kind": dependency.kind,
+            "kind": hop_kind,
             "condition": (dict(dependency.condition)
                           if dependency.condition is not None else None),
             "state": (dict(dependency.state)
