@@ -16,10 +16,10 @@
 - `evidence.status = contract` только если каждый функциональный хоп проходит правило: `measured` именно отношения источник-выход, `claim` из утверждённой строки, `derived` только при `review.status = approved`. `preliminary` всегда даёт `not_established`.
 - Структурный `measured` (порты, число входов) не подтверждает функциональную зависимость.
 - `selected_input` раскрывается по явному `mapping`; подставлять `port.index` вместо значения управляющего сигнала запрещено.
-- Переход по `boundary` не подтверждает причинность; внутренний `unknown` понижает цепочку до `not_established`, даже если внешний контракт дал `contract`.
+- Переход по `boundary` не подтверждает причинность; внутренний `unknown` понижает зависимость передаваемого значения до `not_established`, даже если внешний контракт дал `contract`. Отдельная управляющая зависимость `control` сохраняется: известен факт управления, не выбранная ветвь.
 - `pilot_scope` (`live_acceptance`, `synthetic_only`, `auxiliary`) сохраняется в контракте; `auxiliary` не входит в живую приёмку.
-- `script` не сворачивается в `unknown`: сохраняются `kind: script`, `reason: object_script`, `evidence.status: not_established`.
-- `known_absences` не входят в `items` и не являются терминальными узлами влияния.
+- `script` не сворачивается в `unknown`: сохраняются `kind: script`, `reason: object_script`, `evidence.status: not_established`. При пустом `dependencies` всё равно создаётся терминальный `script`-элемент с адресом `объект@script:слот`.
+- `known_absences` не входят в `items` и не являются терминальными узлами влияния. `claim`/`derived` выдаются только при `review.status = approved`, `measured` именно этого отсутствия - всегда; иначе отсутствие не выдаётся и не считается в `known_absences_total`.
 - По худшему звену агрегируется только `evidence.status`. `hops` сохраняют `kind`, `condition`, `state` и provenance каждого перехода.
 - 958-классовый реестр не расширяется. Коммутатор по номеру порта живёт в тестовом контракте; `nport_named` не добавляется в production-данные.
 - Никакого длинного тире (U+2014) и никакой атрибуции Claude в коммитах, комментариях и документах.
