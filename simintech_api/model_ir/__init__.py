@@ -67,7 +67,13 @@ from .ir import (
 )
 from .graph import ModelIndex, QueryResult
 from .manifest import build_manifest
-from .semantics import influence, semantic_coverage
+from .semantics import (
+    BehaviorScenario,
+    BehaviorSpec,
+    influence,
+    parse_behavior_spec,
+    semantic_coverage,
+)
 from .merge import build_model_ir
 from .system_spec import (
     CompiledSpec,
@@ -88,6 +94,8 @@ __all__ = [
     "SCHEMA",
     "VERSION",
     "Behavior",
+    "BehaviorScenario",
+    "BehaviorSpec",
     "BlockContract",
     "BlockContractRegistry",
     "BoundaryPort",
@@ -147,6 +155,7 @@ __all__ = [
     "content_hash",
     "influence",
     "load_default_contracts",
+    "parse_behavior_spec",
     "parse_model_text",
     "parse_xprt",
     "parse_xprt_file",

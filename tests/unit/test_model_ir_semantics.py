@@ -4,6 +4,8 @@ import copy
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from simintech_api.model_ir import (  # noqa: E402
@@ -11,10 +13,12 @@ from simintech_api.model_ir import (  # noqa: E402
     VERSION,
     BlockContractRegistry,
     ModelIndex,
+    ModelQueryError,
     parse_xprt,
 )
 from simintech_api.model_ir.semantics import (  # noqa: E402
     influence,
+    parse_behavior_spec,
     semantic_coverage,
 )
 
@@ -525,3 +529,34 @@ def test_semantic_coverage_pilot_scope_counts_auxiliary():
     coverage = semantic_coverage(parse_xprt(MODEL), _semantic_registry(data))
     assert coverage["pilot_scope_counts"]["auxiliary"] == 1
     assert coverage["pilot_scope_counts"]["live_acceptance"] == 2
+
+
+def test_behavior_spec_parses_scenarios():
+    spec = parse_behavior_spec({
+        "schema": "behavior-spec/1",
+        "model_hash": "abc",
+        "scenarios": [{
+            "id": "speed_response",
+            "target": "main::S:0",
+            "inputs": ["main::K:0"],
+            "checks": [{"op": "changed"}],
+        }],
+    })
+    assert spec.schema == "behavior-spec/1"
+    assert spec.scenarios[0].id == "speed_response"
+    assert spec.scenarios[0].checks[0]["op"] == "changed"
+
+
+def test_behavior_spec_rejects_unknown_schema():
+    with pytest.raises(ModelQueryError):
+        parse_behavior_spec({"schema": "behavior-spec/2",
+                             "model_hash": "abc", "scenarios": []})
+
+
+def test_behavior_spec_requires_target():
+    with pytest.raises(ModelQueryError):
+        parse_behavior_spec({
+            "schema": "behavior-spec/1",
+            "model_hash": "abc",
+            "scenarios": [{"id": "broken"}],
+        })

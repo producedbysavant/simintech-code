@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping as MappingABC
+from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
 from .codes import ObjectKind, PortDirection
@@ -26,6 +28,58 @@ _STRUCTURAL_KINDS = frozenset({"wire", "branch", "boundary"})
 _CALC_SCRIPT_SLOTS = ("script", "Script", "OnInitScript", "OnRunScript")
 _INCLUDE = frozenset({"contract", "not_established"})
 _MAX_UNKNOWN = 200
+
+
+@dataclass(frozen=True, slots=True)
+class BehaviorScenario:
+    id: str
+    target: str
+    inputs: tuple[str, ...] = ()
+    checks: tuple[Mapping[str, Any], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class BehaviorSpec:
+    schema: str
+    model_hash: str
+    scenarios: tuple[BehaviorScenario, ...] = ()
+
+
+def parse_behavior_spec(data: Mapping[str, Any]) -> BehaviorSpec:
+    """Разобрать сценарии поведения модели; `checks` не исполняются."""
+    schema = str(data.get("schema", ""))
+    if schema != "behavior-spec/1":
+        raise ModelQueryError(
+            f"behavior-spec: неизвестная схема {schema!r}")
+    model_hash = str(data.get("model_hash", "")).strip()
+    if not model_hash:
+        raise ModelQueryError("behavior-spec: пустой model_hash")
+    raw_scenarios = data.get("scenarios", [])
+    if not isinstance(raw_scenarios, list):
+        raise ModelQueryError("behavior-spec: scenarios не список")
+    scenarios: list[BehaviorScenario] = []
+    for pos, item in enumerate(raw_scenarios):
+        where = f"behavior-spec.scenarios[{pos}]"
+        if not isinstance(item, MappingABC):
+            raise ModelQueryError(f"{where}: не объект")
+        ident = str(item.get("id", "")).strip()
+        target = str(item.get("target", "")).strip()
+        if not ident or not target:
+            raise ModelQueryError(f"{where}: нужны id и target")
+        raw_inputs = item.get("inputs", [])
+        if not isinstance(raw_inputs, list) or not all(
+                isinstance(value, str) for value in raw_inputs):
+            raise ModelQueryError(f"{where}: inputs не список строк")
+        raw_checks = item.get("checks", [])
+        if not isinstance(raw_checks, list) or not all(
+                isinstance(value, MappingABC) for value in raw_checks):
+            raise ModelQueryError(f"{where}: checks не список объектов")
+        scenarios.append(BehaviorScenario(
+            id=ident, target=target, inputs=tuple(raw_inputs),
+            checks=tuple(dict(value) for value in raw_checks)))
+    return BehaviorSpec(
+        schema=schema, model_hash=model_hash,
+        scenarios=tuple(scenarios))
 
 
 def influence(
