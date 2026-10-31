@@ -1225,7 +1225,7 @@ git commit -m "feat(model-ir): эталонная таблица семанти�
 **Files:**
 - Modify: `simintech_api/model_ir/contracts.py` (тестовая портовая модель)
 - Create: `tests/fixtures/semantics/commutator_contract.json`
-- Create: `tests/fixtures/semantics/commutator_model.xprt`
+- Create: модель коммутатора строкой в `tests/unit/test_model_ir_commutator.py`
 - Create: `tests/fixtures/semantics/synthetic_questions.yaml`
 - Test: `tests/unit/test_model_ir_commutator.py`
 
@@ -1297,7 +1297,7 @@ def test_synthetic_questions_are_public_and_expected_unknowns():
     assert data["schema"] == "synthetic-questions/1"
     assert data["questions"]
     assert data["questions"][0]["expected_unknown"]
-    assert "electric-drive" not in text
+    assert "internal" not in text.lower()
 ```
 Run:
 ```bash

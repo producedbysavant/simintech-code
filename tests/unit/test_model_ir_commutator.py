@@ -18,8 +18,25 @@ from simintech_api.model_ir import (  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "tests" / "fixtures" / "semantics" / "commutator_contract.json"
-MODEL = ROOT / "tests" / "fixtures" / "semantics" / "commutator_model.xprt"
 QUESTIONS = ROOT / "tests" / "fixtures" / "semantics" / "synthetic_questions.yaml"
+
+MODEL_TEXT = """<Header><project><page>
+  <object>
+    <name>`Mux`</name>
+    <class_name>`Коммутатор входных сигналов по номеру порта`</class_name>
+    <obj_type>`100`</obj_type>
+    <custom_props>
+      <data><name>`nport`</name><value>`3`</value></data>
+    </custom_props>
+    <ports>
+      <port><name>`number`</name><mode>`0`</mode></port>
+      <port><name>`data_1`</name><mode>`0`</mode></port>
+      <port><name>`data_2`</name><mode>`0`</mode></port>
+      <port><name>`data_3`</name><mode>`0`</mode></port>
+      <port><name>`outport`</name><mode>`1`</mode></port>
+    </ports>
+  </object>
+</page></project></Header>"""
 
 
 def _registry():
@@ -37,7 +54,7 @@ def test_nport_named_ports_expand():
 
 
 def test_influence_commutator_control_and_data_separate():
-    index = ModelIndex(parse_xprt(MODEL.read_text(encoding="utf-8")))
+    index = ModelIndex(parse_xprt(MODEL_TEXT))
     result = influence(index, _registry(), "main::Mux:4")
     control = [item for item in result.items
                if any(hop["kind"] == "control" for hop in item["hops"])]
@@ -59,4 +76,4 @@ def test_synthetic_questions_are_public_and_expected_unknowns():
     assert data["schema"] == "synthetic-questions/1"
     assert data["questions"]
     assert data["questions"][0]["expected_unknown"]
-    assert "electric-drive" not in text
+    assert "internal" not in text.lower()
