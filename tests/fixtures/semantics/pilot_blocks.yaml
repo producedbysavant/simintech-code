@@ -157,11 +157,11 @@ classes:
       expression: "y = data[number]"
       provenance: {status: derived, ref: "help"}
     dependencies:
-      - output: 0
+      - output: all_outputs
         source: {kind: port, index: 0}
         kind: control
         provenance: {status: derived, ref: "help"}
-      - output: 0
+      - output: all_outputs
         source: {kind: port, role: selected_input,
                  selector: {kind: port, index: 0},
                  mapping: [{value: 1, input: 1},

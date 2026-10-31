@@ -347,6 +347,33 @@ class BlockContractRegistry:
                 provenance=ports.provenance)
         elif ports.model == "weights":
             result = _weights_ports(contract, props)
+        elif ports.model == "nport_named":
+            raw = props.get(ports.nport_property or "nport",
+                            _default(contract,
+                                     ports.nport_property or "nport"))
+            try:
+                count = int(raw)
+            except (TypeError, ValueError) as exc:
+                raise ModelQueryError(
+                    f"{class_name}: {ports.nport_property or 'nport'}="
+                    f"{raw!r} не целое число") from exc
+            if count < 1:
+                raise ModelQueryError(
+                    f"{class_name}: число входов {count} меньше единицы")
+            base = (ports.inputs[0] if ports.inputs
+                    else PortSpec(0, "number", PortDirection.IN))
+            inputs = [PortSpec(0, base.name or "number", PortDirection.IN)]
+            inputs.extend(PortSpec(index, f"data_{index}",
+                                   PortDirection.IN)
+                          for index in range(1, count + 1))
+            outputs = tuple(
+                PortSpec(count + 1 + pos, item.name, PortDirection.OUT)
+                for pos, item in enumerate(ports.outputs))
+            result = PortContract(
+                model="nport_named", inputs=tuple(inputs), outputs=outputs,
+                nport_property=ports.nport_property or "nport",
+                name_status=ports.name_status,
+                provenance=ports.provenance)
         return _with_variants(contract, result, props)
 
     def dependencies_for(
@@ -557,8 +584,8 @@ def _nport_input(ports: PortContract, number: int) -> PortSpec:
 
 
 _ALLOWED_STATUS = {"measured", "derived", "unknown"}
-_ALLOWED_PORT_MODELS = {"fixed", "nport", "portnames", "submodel",
-                        "weights", "unknown"}
+_ALLOWED_PORT_MODELS = {"fixed", "nport", "nport_named", "portnames",
+                        "submodel", "weights", "unknown"}
 _ALLOWED_NAME_STATUS = {"measured", "missing", "unknown",
                         "instance_defined", "weights"}
 _ALLOWED_CREATION = {"derived", "blocked", "unknown"}
@@ -787,14 +814,17 @@ def validate_contract_data(data: Mapping[str, Any],
             if not ports.get("reason"):
                 problems.append(f"{name}: unknown без reason")
         nport_prop = str(ports.get("nport_property", ""))
-        if model == "nport" and not nport_prop:
-            problems.append(f"{name}: nport без nport_property")
-        if model == "nport" and nport_prop and catalog_classes and \
+        if model in ("nport", "nport_named") and not nport_prop:
+            problems.append(f"{name}: {model} без nport_property")
+        if model in ("nport", "nport_named") and nport_prop and \
+                catalog_classes and \
                 nport_prop not in catalog_classes.get(name, {}):
             problems.append(
                 f"{name}: nport_property {nport_prop!r} не свойство класса")
-        if model != "nport" and ports.get("nport_property"):
-            problems.append(f"{name}: nport_property вне nport")
+        if model not in ("nport", "nport_named") and \
+                ports.get("nport_property"):
+            problems.append(
+                f"{name}: nport_property вне nport/nport_named")
         if model == "portnames" and ports.get(
                 "portnames_property") != "PortNames":
             problems.append(f"{name}: portnames без PortNames")
