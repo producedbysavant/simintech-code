@@ -1,0 +1,186 @@
+# Черновик семантики пилота. Автор черновика не подтверждает сам себя:
+# строки остаются preliminary до проверки владельцем.
+schema: pilot-semantics/1
+classes:
+  Константа:
+    scope: live_acceptance
+    behavior:
+      operation: constant
+      expression: "y = a"
+      parameters: [a]
+      provenance: {status: derived, ref: "block_catalog"}
+    dependencies:
+      - output: 0
+        source: {kind: property, name: a}
+        kind: unconditional
+        provenance: {status: derived, ref: "block_catalog"}
+    known_absences: []
+    review: {status: preliminary, reviewer: "", date: ""}
+
+  Усилитель:
+    scope: live_acceptance
+    behavior:
+      operation: gain
+      expression: "y = a * u"
+      parameters: [a]
+      provenance: {status: derived, ref: "block_catalog"}
+    dependencies:
+      - output: 0
+        source: {kind: port, index: 1}
+        kind: unconditional
+        provenance: {status: derived, ref: "block_contract"}
+      - output: 0
+        source: {kind: property, name: a}
+        kind: unconditional
+        provenance: {status: derived, ref: "block_catalog"}
+    known_absences: []
+    review: {status: preliminary, reviewer: "", date: ""}
+
+  Интегратор:
+    scope: live_acceptance
+    behavior:
+      operation: integrate
+      expression: "y = integral(k * u) + x0"
+      parameters: [k, x0]
+      provenance: {status: derived, ref: "help"}
+    dependencies:
+      - output: 1
+        source: {kind: port, index: 0}
+        kind: stateful
+        state: {kind: history, window: unbounded}
+        provenance: {status: derived, ref: "help"}
+      - output: 1
+        source: {kind: property, name: k}
+        kind: unconditional
+        provenance: {status: derived, ref: "block_catalog"}
+      - output: 1
+        source: {kind: property, name: x0}
+        kind: stateful
+        state: {kind: initial, property: x0}
+        provenance: {status: derived, ref: "block_catalog"}
+    known_absences: []
+    review: {status: preliminary, reviewer: "", date: ""}
+
+  Сумматор:
+    scope: live_acceptance
+    behavior:
+      operation: sum
+      expression: "y = sum(a_i * u_i)"
+      parameters: [a]
+      provenance: {status: derived, ref: "help"}
+    dependencies:
+      - output: 0
+        source: {kind: port, role: all_inputs, weight_property: a}
+        kind: unconditional
+        provenance: {status: derived, ref: "block_contract"}
+    known_absences: []
+    review: {status: preliminary, reviewer: "", date: ""}
+
+  Перемножитель:
+    scope: live_acceptance
+    behavior:
+      operation: product
+      expression: "y = product(u_i)"
+      provenance: {status: derived, ref: "help"}
+    dependencies:
+      - output: 0
+        source: {kind: port, role: all_inputs}
+        kind: unconditional
+        provenance: {status: derived, ref: "block_contract"}
+    known_absences: []
+    review: {status: preliminary, reviewer: "", date: ""}
+
+  Мультиплексор:
+    scope: live_acceptance
+    behavior:
+      operation: vector
+      expression: "y = [u_1, ..., u_n]"
+      provenance: {status: derived, ref: "help"}
+    dependencies:
+      - output: 0
+        source: {kind: port, role: all_inputs}
+        kind: unconditional
+        provenance: {status: derived, ref: "help"}
+    known_absences: []
+    review: {status: preliminary, reviewer: "", date: ""}
+
+  Демультиплексор:
+    scope: live_acceptance
+    behavior:
+      operation: split
+      expression: "y_i = u_i"
+      provenance: {status: derived, ref: "help"}
+    dependencies:
+      - output: all_outputs
+        source: {kind: port, index: 0}
+        kind: unconditional
+        provenance: {status: derived, ref: "help"}
+    known_absences: []
+    review: {status: preliminary, reviewer: "", date: ""}
+
+  Язык программирования:
+    scope: live_acceptance
+    behavior:
+      operation: script
+      expression: "поведение задано скриптом"
+      provenance: {status: derived, ref: "help"}
+    dependencies: []
+    known_absences: []
+    review: {status: preliminary, reviewer: "", date: ""}
+
+  Ключ управляемый перекидной по входам тип 2:
+    scope: live_acceptance
+    behavior:
+      operation: select
+      expression: "y = control ? inport_2 : inport_1"
+      parameters: [k, fl]
+      provenance: {status: derived, ref: "help"}
+    dependencies:
+      - output: 2
+        source: {kind: port, index: 1}
+        kind: control
+        provenance: {status: derived, ref: "help"}
+      - output: 2
+        source: {kind: port, role: selected_input,
+                 selector: {kind: port, index: 1}}
+        kind: conditional
+        condition: null
+        reason: condition_unknown
+        provenance: {status: derived, ref: "help"}
+    known_absences: []
+    review: {status: preliminary, reviewer: "", date: ""}
+
+  Коммутатор входных сигналов по номеру порта:
+    scope: synthetic_only
+    behavior:
+      operation: select
+      expression: "y = data[number]"
+      provenance: {status: derived, ref: "help"}
+    dependencies:
+      - output: 0
+        source: {kind: port, index: 0}
+        kind: control
+        provenance: {status: derived, ref: "help"}
+      - output: 0
+        source: {kind: port, role: selected_input,
+                 selector: {kind: port, index: 0},
+                 mapping: [{value: 1, input: 1},
+                           {value: 2, input: 2},
+                           {value: 3, input: 3}]}
+        kind: conditional
+        condition: {op: select, source: {kind: port, index: 0}}
+        provenance: {status: derived, ref: "help"}
+    known_absences: []
+    review: {status: preliminary, reviewer: "", date: ""}
+
+  Ключ-3:
+    scope: auxiliary
+    behavior:
+      operation: select
+      expression: "y = select(Port_1, Port_2, Port_3)"
+      parameters: [fl, k]
+      provenance: {status: derived, ref: "help"}
+    # Управление и ветви не установлены: до эксперимента не заполняются.
+    dependencies: []
+    known_absences: []
+    review: {status: preliminary, reviewer: "", date: ""}
