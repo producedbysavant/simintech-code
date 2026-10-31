@@ -67,6 +67,7 @@ from .ir import (
 )
 from .graph import ModelIndex, QueryResult
 from .manifest import build_manifest
+from .semantics import influence
 from .merge import build_model_ir
 from .system_spec import (
     CompiledSpec,
@@ -144,6 +145,7 @@ __all__ = [
     "build_model_ir",
     "compile_system_spec",
     "content_hash",
+    "influence",
     "load_default_contracts",
     "parse_model_text",
     "parse_xprt",
