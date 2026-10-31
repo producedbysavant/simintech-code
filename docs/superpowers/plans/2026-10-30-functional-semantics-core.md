@@ -15,6 +15,9 @@
 - Схема контрактов: `block-contract/2`, версия `2`. Старые поля сохраняются; отсутствие нового поля означает `unknown`.
 - `evidence.status = contract` только если каждый функциональный хоп проходит правило: `measured` именно отношения источник-выход, `claim` из утверждённой строки, `derived` только при `review.status = approved`. `preliminary` всегда даёт `not_established`.
 - Структурный `measured` (порты, число входов) не подтверждает функциональную зависимость.
+- `selected_input` раскрывается по явному `mapping`; подставлять `port.index` вместо значения управляющего сигнала запрещено.
+- Переход по `boundary` не подтверждает причинность; внутренний `unknown` понижает цепочку до `not_established`, даже если внешний контракт дал `contract`.
+- `pilot_scope` (`live_acceptance`, `synthetic_only`, `auxiliary`) сохраняется в контракте; `auxiliary` не входит в живую приёмку.
 - `script` не сворачивается в `unknown`: сохраняются `kind: script`, `reason: object_script`, `evidence.status: not_established`.
 - `known_absences` не входят в `items` и не являются терминальными узлами влияния.
 - По худшему звену агрегируется только `evidence.status`. `hops` сохраняют `kind`, `condition`, `state` и provenance каждого перехода.
@@ -69,7 +72,7 @@ Expected: известный результат репозитория. Запи
   - `Behavior(operation: str, expression: str, parameters: tuple[str, ...], provenance: ProvenanceClaim)`
   - `Dependency(output: int | str, source: Mapping[str, Any], kind: str, condition: Mapping[str, Any] | None, state: Mapping[str, Any] | None, reason: str, provenance: ProvenanceClaim)`
   - `KnownAbsence(output: int | str, source: Mapping[str, Any], provenance: ProvenanceClaim)`
-  - `BlockContract.behavior`, `.dependencies`, `.signal_types`, `.review`, `.known_absences`
+  - `BlockContract.behavior`, `.dependencies`, `.signal_types`, `.review`, `.known_absences`, `.pilot_scope`
   - `SCHEMA = "block-contract/2"`, `VERSION = 2`
 
 - [ ] **Step 1: Написать падающий тест разбора**
@@ -84,6 +87,7 @@ def test_contract_v2_parses_pilot_fields():
             "Тестовый блок": {
                 "class": "Тестовый блок",
                 "status": "derived",
+                "pilot_scope": "live_acceptance",
                 "ports": {"model": "fixed", "inputs": [], "outputs": []},
                 "behavior": {
                     "operation": "gain",
@@ -117,6 +121,7 @@ def test_contract_v2_parses_pilot_fields():
     assert contract.dependencies[0].kind == "unconditional"
     assert contract.review.status == "preliminary"
     assert contract.known_absences[0].source["index"] == 2
+    assert contract.pilot_scope == "live_acceptance"
 ```
 
 - [ ] **Step 2: Убедиться, что тест падает**
@@ -136,12 +141,20 @@ Expected: FAIL, `TypeError` или отсутствующие атрибуты.
 - в `_contract()` разобрать новые поля;
 - в `validate_contract_data()` добавить проверки:
   - `review.status` из `{"preliminary", "approved"}`;
+  - `pilot_scope` из `{"", "live_acceptance", "synthetic_only", "auxiliary"}`;
   - `behavior.operation` из `{"identity", "constant", "gain", "sum", "product", "integrate", "select", "vector", "split", "script", "unknown"}`;
+  - `behavior.provenance.status` из `{"measured", "derived", "claim", "experiment", "unknown"}`;
   - `dependencies[].kind` из `{"unconditional", "conditional", "control", "stateful", "script", "unknown"}`;
   - `dependencies[].provenance.status` из `{"measured", "derived", "claim", "experiment", "unknown"}`;
   - `stateful` без `state` отвергается;
   - `conditional` без `condition` отвергается только при пустом `reason`;
-  - `known_absences[].source.kind` из `{"port", "property", "state"}`.
+  - `known_absences[].source.kind` из `{"port", "property", "state"}`;
+  - `condition.op` из `{"equals", "in", "threshold", "select"}`; обязательные поля: `equals` - `source` и `value`; `in` - `source` и `values`; `threshold` - `source` и `above`; `select` - `source` и `cases`;
+  - `select` требует `cases`, кроме зависимости с `role: selected_input`, где cases строятся из `mapping`;
+  - `state.kind` из `{"initial", "history", "memory"}`; обязательные поля: `initial` - `property`; `history` - `window`; `memory` - `cell`;
+  - `source.kind` из `{"port", "property", "state", "memory", "boundary"}`;
+  - роли портов из `{"all_inputs", "selected_input", "control"}`; `selected_input` требует `selector`, `mapping` необязателен, элементы `mapping` имеют `value` и `input`;
+  - `signal_types` имеет `inputs`, `outputs`, `provenance`, а элементы портов имеют `index`, `type`, `unit`; `type` из `{"real", "integer", "boolean", "vector", "unknown"}`.
 - в `simintech_api/data/block_contracts.json` заменить `"schema": "block-contract/1"` на `2` и `"version": 1` на `2`.
 
 - [ ] **Step 4: Прогнать тест и весь файл**
@@ -181,6 +194,72 @@ def test_contract_v2_accepts_conditional_with_unknown_condition():
         "output": 1, "source": {"kind": "port", "index": 1},
         "kind": "conditional", "condition": None,
         "reason": "condition_unknown",
+        "provenance": {"status": "derived", "ref": "x"},
+    }]
+    assert validate_contract_data(data, _catalog()) == []
+
+
+def test_contract_v2_rejects_unknown_condition_op():
+    data = _contracts()
+    data["classes"]["Усилитель"]["dependencies"] = [{
+        "output": 1, "source": {"kind": "port", "index": 1},
+        "kind": "conditional",
+        "condition": {"op": "matches", "source": {"kind": "port", "index": 1}},
+        "provenance": {"status": "derived", "ref": "x"},
+    }]
+    assert validate_contract_data(data, _catalog())
+
+
+def test_contract_v2_rejects_select_without_cases():
+    data = _contracts()
+    data["classes"]["Усилитель"]["dependencies"] = [{
+        "output": 1, "source": {"kind": "port", "index": 1},
+        "kind": "conditional",
+        "condition": {"op": "select", "source": {"kind": "port", "index": 1}},
+        "provenance": {"status": "derived", "ref": "x"},
+    }]
+    assert validate_contract_data(data, _catalog())
+
+
+def test_contract_v2_rejects_unknown_state_kind():
+    data = _contracts()
+    data["classes"]["Интегратор"]["dependencies"] = [{
+        "output": 0, "source": {"kind": "port", "index": 1},
+        "kind": "stateful", "state": {"kind": "eternal"},
+        "provenance": {"status": "derived", "ref": "x"},
+    }]
+    assert validate_contract_data(data, _catalog())
+
+
+def test_contract_v2_rejects_bad_signal_types():
+    data = _contracts()
+    data["classes"]["Усилитель"]["signal_types"] = {
+        "inputs": [{"index": 1, "type": "complex", "unit": "V"}],
+        "outputs": [],
+        "provenance": {"status": "unknown", "ref": ""},
+    }
+    assert validate_contract_data(data, _catalog())
+
+
+def test_contract_v2_rejects_bad_behavior_provenance():
+    data = _contracts()
+    data["classes"]["Усилитель"]["behavior"] = {
+        "operation": "gain",
+        "provenance": {"status": "guess", "ref": "x"},
+    }
+    assert validate_contract_data(data, _catalog())
+
+
+def test_contract_v2_accepts_selected_input_select_without_cases():
+    data = _contracts()
+    data["classes"]["Усилитель"]["dependencies"] = [{
+        "output": 1,
+        "source": {"kind": "port", "role": "selected_input",
+                   "selector": {"kind": "port", "role": "control"},
+                   "mapping": [{"value": 0, "input": 1}]},
+        "kind": "conditional",
+        "condition": {"op": "select",
+                      "source": {"kind": "port", "role": "control"}},
         "provenance": {"status": "derived", "ref": "x"},
     }]
     assert validate_contract_data(data, _catalog()) == []
@@ -261,7 +340,9 @@ def test_selected_input_expands_without_control():
                  "provenance": {"status": "claim", "ref": "test"}},
                 {"output": 0,
                  "source": {"kind": "port", "role": "selected_input",
-                            "selector": {"kind": "port", "role": "control"}},
+                            "selector": {"kind": "port", "role": "control"},
+                            "mapping": [{"value": 0, "input": 1},
+                                        {"value": 1, "input": 2}]},
                  "kind": "conditional",
                  "condition": {"op": "select",
                                "source": {"kind": "port", "role": "control"}},
@@ -272,8 +353,41 @@ def test_selected_input_expands_without_control():
     deps = registry.dependencies_for("Тестовый выбор")
     selected = [item for item in deps if item.kind == "conditional"]
     assert [item.source["index"] for item in selected] == [1, 2]
-    assert all(item.condition["value"] in (1, 2) for item in selected)
+    assert [item.condition["cases"][0]["value"] for item in selected] == [0, 1]
+    assert [item.condition["cases"][0]["input"] for item in selected] == [1, 2]
     assert all(item.source["index"] != 0 for item in selected)
+
+
+def test_selected_input_without_mapping_is_condition_unknown():
+    registry = _test_registry({
+        "Тестовый выбор": {
+            "class": "Тестовый выбор", "status": "derived",
+            "ports": {
+                "model": "fixed",
+                "inputs": [
+                    {"index": 0, "name": "number", "direction": "in"},
+                    {"index": 1, "name": "data_1", "direction": "in"},
+                    {"index": 2, "name": "data_2", "direction": "in"},
+                ],
+                "outputs": [{"index": 0, "name": "out", "direction": "out"}],
+            },
+            "dependencies": [
+                {"output": 0, "source": {"kind": "port", "index": 0},
+                 "kind": "control",
+                 "provenance": {"status": "claim", "ref": "test"}},
+                {"output": 0,
+                 "source": {"kind": "port", "role": "selected_input",
+                            "selector": {"kind": "port", "role": "control"}},
+                 "kind": "conditional",
+                 "provenance": {"status": "claim", "ref": "test"}},
+            ],
+        },
+    })
+    selected = [item for item in registry.dependencies_for("Тестовый выбор")
+                if item.kind == "conditional"]
+    assert [item.source["index"] for item in selected] == [1, 2]
+    assert all(item.condition is None for item in selected)
+    assert all(item.reason == "condition_unknown" for item in selected)
 
 
 def test_all_outputs_expand_by_ports():
@@ -315,7 +429,9 @@ Expected: FAIL, метода нет.
 - `control_index` берётся из зависимости `kind == "control"` с конкретным `source.index`;
 - `output == "all_outputs"` разворачивается по `ports.outputs`;
 - `source.role == "all_inputs"` разворачивается по `ports.inputs`;
-- `source.role == "selected_input"` разворачивается по всем входам, кроме `control_index`; в условие добавляется `value: port.index`;
+- `source.role == "selected_input"` разворачивается по всем входам, кроме `control_index`;
+- если задан `mapping`, условие получает один case `{"value": v, "input": i}` из таблицы; подставлять `port.index` вместо значения запрещено;
+- если `mapping` нет, зависимость остаётся `conditional`, `condition` равен `null`, `reason` равен `condition_unknown`;
 - конкретные `output`/`source.index` возвращаются как есть;
 - неразрешимая роль даёт `ModelQueryError`.
 
@@ -717,23 +833,58 @@ git commit -m "feat(model-ir): статусы contract/not_established и отд
 - [ ] **Step 1: Написать падающие тесты**
 
 ```python
+from test_model_ir_graph import CYCLE, MEMORY
+
+
 def test_influence_boundary_without_contract_is_not_established():
-    # Субмодель с одним входом и выходом, внутри блок без контракта.
-    ...
+    # SUB_MODEL: субмодель Sub (класс Субмодель) с внешними u/y,
+    # внутри порт-блоки и блок K класса Неизвестный.
+    index = ModelIndex(parse_xprt(SUB_MODEL))
+    result = influence(index, _submodel_registry(), "main::Sub:1")
     assert all(item["evidence"]["status"] != "contract" for item in result.items)
     assert any("class_unknown" in item for item in result.unknown)
 
 
 def test_influence_memory_edge_is_stateful():
-    ...
+    index = ModelIndex(parse_xprt(MEMORY))
+    result = influence(index, _empty_registry(), "main::From:0")
+    hops = [hop for item in result.items for hop in item["hops"]]
     assert any(hop["kind"] == "stateful" and hop["state"]["kind"] == "memory"
-               for item in result.items for hop in item["hops"])
+               for hop in hops)
 
 
 def test_influence_cycle_stops_unknown():
-    ...
+    index = ModelIndex(parse_xprt(CYCLE))
+    result = influence(index, _semantic_registry(), "main::A:1")
     assert any("cycle" in item for item in result.unknown)
+
+
+def test_influence_submodel_known_contract_two_branches():
+    # SUB_KEY: субмодель с контрактом control + selected_input(mapping),
+    # внутри Key3 класса Ключ-3 без контракта.
+    index = ModelIndex(parse_xprt(SUB_KEY))
+    result = influence(index, _key_registry(), "main::Sub:2")
+    control = [item for item in result.items
+               if any(hop["kind"] == "control" for hop in item["hops"])]
+    branches = [item for item in result.items
+                if any(hop["kind"] == "conditional" for hop in item["hops"])]
+    assert len(control) == 1
+    assert len(branches) == 2
+    assert {hop["condition"]["cases"][0]["value"]
+            for item in branches for hop in item["hops"]
+            if hop["kind"] == "conditional"} == {0, 1}
+    assert control[0]["evidence"]["status"] == "contract"
+    assert all(item["evidence"]["status"] == "not_established"
+               for item in branches)
+    assert any("class_unknown" in item for item in result.unknown)
 ```
+
+`SUB_MODEL`, `SUB_KEY`, `_submodel_registry`, `_empty_registry` и `_key_registry`
+строятся в этом же файле по образцу `MODEL` из Task 4. `SUB_KEY` содержит
+внешние `inport_1`, `control`, `inport_2`, `outport`, источник на `control`
+и внутренний `Key3` класса `Ключ-3`; контракт
+`Ключ управляемый перекидной по входам тип 2` утверждён, `selected_input`
+имеет `mapping` на две ветви.
 
 - [ ] **Step 2: Убедиться, что тесты падают**
 
@@ -745,9 +896,10 @@ Expected: FAIL.
 
 - [ ] **Step 3: Реализовать обход**
 
-- На выходном порту субмодели идти по `boundary`-ребру внутрь страницы;
+- На выходном порту, у которого есть входящее `memory`-ребро, идти по нему раньше контракта: ребро даёт хоп `stateful` с `state: {"kind": "memory"}`;
+- на выходном порту субмодели сначала добавить внешние функциональные хопы по контракту, затем пройти `boundary` внутрь страницы;
 - внешняя субмодель без страницы даёт терминальный `unknown` с причиной `external_submodel`;
-- `memory`-ребро даёт хоп `stateful` с `state: {"kind": "memory"}`;
+- внутренний `unknown` понижает цепочку до `not_established`, даже если внешний контракт дал `contract`;
 - повтор порта на текущем пути даёт терминальный `unknown` с причиной `cycle` и не продолжается;
 - превышение `max_depth` даёт `unknown` с причиной `depth_limit`.
 
@@ -778,9 +930,10 @@ git commit -m "feat(model-ir): границы субмоделей, память
 **Interfaces:**
 - Produces: `semantic_coverage(model: ModelIR, registry: BlockContractRegistry | None = None) -> dict[str, Any]` с полями:
   - `objects_total`, `objects_with_behavior`, `objects_with_approved_behavior`, `objects_with_known_ports`;
-  - `objects_unknown` с причинами `class_unknown`, `script_defined`, `object_script`, `external_submodel`, `behavior_unknown`, `unapproved`;
+  - `objects_unknown` с причинами `class_unknown`, `object_script`, `script_defined`, `external_submodel`, `behavior_unknown`, `unapproved`;
   - `dependencies_total`, `dependencies_known`, `known_absences_total`;
-  - `by_class`.
+  - `pilot_scope_counts` по `live_acceptance`/`synthetic_only`/`auxiliary`;
+  - `by_class` с `objects`, `with_behavior`, `approved`, `pilot_scope`.
 
 - [ ] **Step 1: Написать падающие тесты**
 
@@ -796,8 +949,18 @@ def test_semantic_coverage_separates_approved_and_unknown():
 
 ```python
 def test_semantic_coverage_counts_object_script():
+    # Класс «Язык программирования» и непустой Script у экземпляра:
+    # более конкретная причина object_script важнее script_defined.
     ...
     assert data["objects_unknown"]["object_script"] == 1
+    assert data["objects_unknown"].get("script_defined", 0) == 0
+
+
+def test_semantic_coverage_pilot_scope_counts_auxiliary():
+    # Ключ-3 с pilot_scope: auxiliary.
+    ...
+    assert data["pilot_scope_counts"]["auxiliary"] == 1
+    assert data["pilot_scope_counts"].get("live_acceptance", 0) == 0
 ```
 
 - [ ] **Step 2: Убедиться, что тесты падают**
@@ -813,8 +976,9 @@ Expected: FAIL.
 - объекты: `kind in (BLOCK, SUBMODEL, UNKNOWN)`;
 - `dependencies_total` считается после `dependencies_for`;
 - `dependencies_known` учитывает `measured`/`claim` и `derived` с approved;
-- каждый объект попадает ровно в одну причину `objects_unknown` в порядке: `class_unknown`, `script_defined`, `object_script`, `external_submodel`, `behavior_unknown`, `unapproved`;
-- `by_class` содержит `objects`, `with_behavior`, `approved`.
+- каждый объект попадает ровно в одну причину `objects_unknown` в порядке: `class_unknown`, `object_script`, `script_defined`, `external_submodel`, `behavior_unknown`, `unapproved`;
+- `pilot_scope_counts` считает классы, у которых `pilot_scope` непустой; `auxiliary` не входит в `live_acceptance`;
+- `by_class` содержит `objects`, `with_behavior`, `approved`, `pilot_scope`.
 
 - [ ] **Step 4: Прогнать тесты**
 
@@ -987,6 +1151,8 @@ classes:
     review: {status: preliminary, reviewer: "", date: ""}
 ```
 Десять строк: восемь базовых, ключ типа 2, коммутатор по номеру порта.
+У ключа типа 2 зависимости `control` и `selected_input` без `mapping`;
+до эксперимента `condition: null`, `reason: condition_unknown`.
 `Ключ-3` добавить отдельным ключом с `scope: auxiliary`, без счёта десяти:
 behavior `select`, зависимости `control` и две `conditional`; значение
 `control` не заполняется до эксперимента, ставится `condition: null`,
@@ -1003,6 +1169,12 @@ def test_pilot_table_has_ten_classes_and_scopes():
                 if row["scope"] != "auxiliary"]) == 10
     assert classes["Коммутатор входных сигналов по номеру порта"]["scope"] == "synthetic_only"
     assert classes["Ключ управляемый перекидной по входам тип 2"]["scope"] == "live_acceptance"
+    assert classes["Ключ-3"]["scope"] == "auxiliary"
+
+
+def test_auxiliary_scope_is_preserved():
+    registry = load_default_contracts()
+    assert registry.require("Ключ-3").pilot_scope == "auxiliary"
 
 
 def test_pilot_table_matches_registry():
@@ -1022,7 +1194,8 @@ Expected: FAIL.
 - [ ] **Step 4: Реализовать merge-скрипт**
 
 - читает YAML и JSON;
-- переносит `behavior`, `dependencies`, `signal_types`, `review`, `known_absences` только для `scope: live_acceptance` и `scope: auxiliary`;
+- переносит `behavior`, `dependencies`, `signal_types`, `review`, `known_absences`, `pilot_scope` только для `scope: live_acceptance` и `scope: auxiliary`;
+- `scope` из YAML записывает в `pilot_scope` контракта;
 - `synthetic_only` не переносит в production-реестр: контракт коммутатора живёт в `tests/fixtures/semantics/commutator_contract.json` (Task 10);
 - добавляет `pilot:<date>` в `provenance`;
 - `--check` сравнивает поля только для `live_acceptance` и `auxiliary` и печатает расхождения;
@@ -1101,8 +1274,11 @@ Expected: FAIL.
 - [ ] **Step 4: Написать тест синтетического influence**
 
 Модель: коммутатор с тремя `data` входами, выход в график. Контракт:
+- `pilot_scope: synthetic_only`;
 - `control` для `number`;
-- `conditional` для `selected_input` с `condition.op = select`.
+- `conditional` для `selected_input` с `mapping`
+  `[{value: 1, input: 1}, {value: 2, input: 2}, {value: 3, input: 3}]`
+  и `condition.op = select`.
 Проверить:
 ```python
 assert any(item["source"]["address"].endswith(":0") and

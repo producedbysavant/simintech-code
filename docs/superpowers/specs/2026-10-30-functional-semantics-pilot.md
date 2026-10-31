@@ -88,6 +88,7 @@ Model IR уже отвечает на структурные вопросы: ч�
 {
   "class": "Усилитель",
   "status": "measured",
+  "pilot_scope": "live_acceptance",
   "ports": {"model": "fixed", "inputs": [{"index": 1, "name": "inport", "direction": "in"}], "outputs": [{"index": 0, "name": "outport", "direction": "out"}]},
   "behavior": {
     "operation": "gain",
@@ -127,6 +128,10 @@ Model IR уже отвечает на структурные вопросы: ч�
 В примере `status: measured` относится к портовой модели. Поведение и
 зависимости имеют `provenance.status: derived`, поэтому до утверждения строки
 `contract` не выдаётся.
+
+`pilot_scope` отделяет область применения записи: `live_acceptance`,
+`synthetic_only` или `auxiliary`. `auxiliary` не входит в счёт десяти классов
+пилота и не увеличивает число классов живой приёмки.
 
 Поля `review` и `known_absences` дополняют запись:
 
@@ -181,13 +186,20 @@ Model IR уже отвечает на структурные вопросы: ч�
 
 ```json
 {"source": {"kind": "port", "role": "all_inputs"}}
-{"source": {"kind": "port", "role": "selected_input", "selector": {"kind": "port", "index": 0}}}
+{"source": {"kind": "port", "role": "selected_input",
+            "selector": {"kind": "port", "index": 0},
+            "mapping": [{"value": 0, "input": 1}, {"value": 1, "input": 2}]}}
 {"output": {"role": "all_outputs"}}
 ```
 
 `dependencies_for(class_name, props)` разворачивает роли по фактическому
 `nport` или весам `a`. Без этого Сумматор, Перемножитель, Мультиплексор и
 Демультиплексор не представимы.
+
+`mapping` задаёт соответствие значения управляющего сигнала и входа. Если
+`mapping` нет, `dependencies_for` разворачивает все входы данных с
+`condition: null` и `reason: condition_unknown`; подставлять `port.index`
+вместо значения управляющего сигнала запрещено.
 
 `nport_named` для коммутатора реализуется в тестовом контракте, а не в
 production-реестре 958 классов: каталог его не содержит. Синтетическая
@@ -290,6 +302,17 @@ production-реестре 958 классов: каталог его не сод�
 7. Для внешней субмодели без страницы добавить `unknown` с причиной
    `external_submodel`.
 
+Для субмодели с известным контрактом:
+
+1. Контракт описывает функциональные зависимости на внешнем интерфейсе.
+2. Переход по `boundary` детализирует объяснение внутри страницы.
+3. Наличие `boundary` само по себе не подтверждает причинность.
+4. Если внутренняя цепочка упирается в блок с неизвестной семантикой, это
+   неизвестное место сохраняется, и статус всей цепочки не может быть
+   `contract`.
+5. Внешние и внутренние хопы не смешиваются: итоговый статус цепочки берётся
+   по худшему из них.
+
 Элемент ответа:
 
 ```json
@@ -366,18 +389,26 @@ production-реестре 958 классов: каталог его не сод�
   "objects_with_behavior": 610,
   "objects_with_approved_behavior": 8,
   "objects_with_known_ports": 700,
-  "objects_unknown": {"script_defined": 20, "object_script": 5, "external_submodel": 11, "behavior_unknown": 201, "unapproved": 602},
+  "objects_unknown": {"object_script": 5, "script_defined": 20, "external_submodel": 11, "behavior_unknown": 201, "unapproved": 602},
   "dependencies_total": 1200,
   "dependencies_known": 800,
   "known_absences_total": 0,
+  "pilot_scope_counts": {"live_acceptance": 9, "auxiliary": 1},
   "paths_contract": 0,
   "paths_not_established": 0
 }
 ```
 
+Причина неизвестности выбирается по приоритету: `class_unknown`,
+`object_script`, `script_defined`, `external_submodel`, `behavior_unknown`,
+`unapproved`. Конкретная причина экземпляра важнее классовой: объект с
+непустым `Script` считается `object_script`, даже если его класс объявляет
+порты скриптом.
+
 `dependencies_total` считается после разворачивания ролей по экземпляру, а не
 по статической записи реестра. `objects_with_approved_behavior` отделяет
-утверждённые строки от `derived`.
+утверждённые строки от `derived`. `pilot_scope_counts` считает только классы
+с заполненным `pilot_scope`; `auxiliary` не входит в живую приёмку.
 
 Поля `paths_*` заполняются конкретным запросом `influence`, а не хранятся в
 модели. Сводка по классам добавляется в `get_model_manifest`.
