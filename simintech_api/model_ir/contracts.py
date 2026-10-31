@@ -349,6 +349,98 @@ class BlockContractRegistry:
             result = _weights_ports(contract, props)
         return _with_variants(contract, result, props)
 
+    def dependencies_for(
+            self, class_name: str,
+            properties: Mapping[str, Any] | None = None
+    ) -> tuple[Dependency, ...]:
+        """Зависимости класса, развёрнутые по фактическим портам.
+
+        Роли `all_inputs`, `selected_input` и `all_outputs` раскрываются по
+        `nport` и весам. `selected_input` без `mapping` даёт
+        `condition: null` и `reason: condition_unknown`: подставлять индекс
+        порта вместо значения управляющего сигнала запрещено.
+        """
+        contract = self.require(class_name)
+        ports = self.ports_for(class_name, properties)
+        control_index = None
+        for dependency in contract.dependencies:
+            source = dependency.source
+            if dependency.kind == "control" and \
+                    source.get("kind") == "port" and \
+                    isinstance(source.get("index"), int):
+                control_index = source["index"]
+                break
+        result: list[Dependency] = []
+        for dependency in contract.dependencies:
+            for output in _expand_outputs(dependency, ports):
+                for source, condition, reason in _expand_sources(
+                        dependency, ports, control_index):
+                    result.append(replace(
+                        dependency, output=output, source=source,
+                        condition=condition, reason=reason))
+        return tuple(result)
+
+
+def _concrete_source(source: Mapping[str, Any], index: int) -> dict[str, Any]:
+    """Источник с конкретным индексом: шаблонные поля роли убираются."""
+    item = dict(source)
+    item["index"] = index
+    for key in ("role", "selector", "mapping"):
+        item.pop(key, None)
+    return item
+
+
+def _expand_outputs(dependency: Dependency,
+                    ports: PortContract) -> list[int | str]:
+    if dependency.output == "all_outputs":
+        return [item.index for item in ports.outputs]
+    return [dependency.output]
+
+
+def _expand_sources(
+        dependency: Dependency, ports: PortContract,
+        control_index: int | None
+) -> list[tuple[Mapping[str, Any], Mapping[str, Any] | None, str]]:
+    source = dependency.source
+    role = source.get("role")
+    if role == "all_inputs":
+        return [(_concrete_source(source, item.index),
+                 dependency.condition, dependency.reason)
+                for item in ports.inputs]
+    if role == "selected_input":
+        return _selected_sources(dependency, ports, control_index)
+    return [(dict(source), dependency.condition, dependency.reason)]
+
+
+def _selected_sources(
+        dependency: Dependency, ports: PortContract,
+        control_index: int | None
+) -> list[tuple[Mapping[str, Any], Mapping[str, Any] | None, str]]:
+    source = dependency.source
+    data_inputs = [item for item in ports.inputs
+                   if item.index != control_index]
+    cases: dict[int, dict[str, Any]] = {}
+    mapping = source.get("mapping")
+    if isinstance(mapping, list):
+        for case in mapping:
+            if isinstance(case, MappingABC) and \
+                    isinstance(case.get("input"), int):
+                cases.setdefault(case["input"], dict(case))
+    result: list[tuple[Mapping[str, Any], Mapping[str, Any] | None, str]] = []
+    for item in data_inputs:
+        concrete = _concrete_source(source, item.index)
+        case = cases.get(item.index)
+        if case is None:
+            result.append((concrete, None, "condition_unknown"))
+            continue
+        condition = dict(dependency.condition or {
+            "op": "select",
+            "source": dict(source.get("selector", {})),
+        })
+        condition["cases"] = [case]
+        result.append((concrete, condition, dependency.reason))
+    return result
+
 
 def _default(contract: BlockContract, name: str) -> str:
     prop = contract.properties.get(name)
