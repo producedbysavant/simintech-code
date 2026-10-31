@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Mapping
@@ -15,8 +16,8 @@ from typing import Any, Mapping
 from .codes import PortDirection
 from .errors import ModelQueryError
 
-SCHEMA = "block-contract/1"
-VERSION = 1
+SCHEMA = "block-contract/2"
+VERSION = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +75,55 @@ class Constraint:
 
 
 @dataclass(frozen=True, slots=True)
+class ProvenanceClaim:
+    """Происхождение одного утверждения о поведении."""
+
+    status: str = "unknown"
+    ref: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class Review:
+    """Инженерная проверка строки эталона."""
+
+    status: str = "preliminary"
+    reviewer: str = ""
+    date: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class Behavior:
+    """Машиночитаемое описание операции блока."""
+
+    operation: str = "unknown"
+    expression: str = ""
+    parameters: tuple[str, ...] = ()
+    provenance: ProvenanceClaim = field(default_factory=ProvenanceClaim)
+
+
+@dataclass(frozen=True, slots=True)
+class Dependency:
+    """Зависимость выхода от входа, свойства или состояния."""
+
+    output: int | str = 0
+    source: Mapping[str, Any] = field(default_factory=dict)
+    kind: str = "unknown"
+    condition: Mapping[str, Any] | None = None
+    state: Mapping[str, Any] | None = None
+    reason: str = ""
+    provenance: ProvenanceClaim = field(default_factory=ProvenanceClaim)
+
+
+@dataclass(frozen=True, slots=True)
+class KnownAbsence:
+    """Проверенное отсутствие зависимости."""
+
+    output: int | str = 0
+    source: Mapping[str, Any] = field(default_factory=dict)
+    provenance: ProvenanceClaim = field(default_factory=ProvenanceClaim)
+
+
+@dataclass(frozen=True, slots=True)
 class BlockContract:
     class_name: str
     status: str
@@ -83,6 +133,12 @@ class BlockContract:
     constraints: tuple[Constraint, ...]
     provenance: tuple[str, ...]
     claims: tuple[str, ...] = ()
+    behavior: Behavior = field(default_factory=Behavior)
+    dependencies: tuple[Dependency, ...] = ()
+    signal_types: Mapping[str, Any] = field(default_factory=dict)
+    review: Review = field(default_factory=Review)
+    known_absences: tuple[KnownAbsence, ...] = ()
+    pilot_scope: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +179,47 @@ def _ports(data: Mapping[str, Any]) -> PortContract:
         provenance=str(data.get("provenance", "")))
 
 
+def _provenance(data: Mapping[str, Any]) -> ProvenanceClaim:
+    return ProvenanceClaim(
+        status=str(data.get("status", "unknown")),
+        ref=str(data.get("ref", "")))
+
+
+def _behavior(data: Mapping[str, Any]) -> Behavior:
+    return Behavior(
+        operation=str(data.get("operation", "unknown")),
+        expression=str(data.get("expression", "")),
+        parameters=tuple(str(item) for item in data.get("parameters", ())),
+        provenance=_provenance(data.get("provenance", {})))
+
+
+def _review(data: Mapping[str, Any]) -> Review:
+    return Review(
+        status=str(data.get("status", "preliminary")),
+        reviewer=str(data.get("reviewer", "")),
+        date=str(data.get("date", "")))
+
+
+def _dependency(data: Mapping[str, Any]) -> Dependency:
+    condition = data.get("condition")
+    state = data.get("state")
+    return Dependency(
+        output=data.get("output", 0),
+        source=dict(data.get("source", {})),
+        kind=str(data.get("kind", "unknown")),
+        condition=dict(condition) if isinstance(condition, MappingABC) else None,
+        state=dict(state) if isinstance(state, MappingABC) else None,
+        reason=str(data.get("reason", "")),
+        provenance=_provenance(data.get("provenance", {})))
+
+
+def _known_absence(data: Mapping[str, Any]) -> KnownAbsence:
+    return KnownAbsence(
+        output=data.get("output", 0),
+        source=dict(data.get("source", {})),
+        provenance=_provenance(data.get("provenance", {})))
+
+
 def _contract(name: str, data: Mapping[str, Any]) -> BlockContract:
     return BlockContract(
         class_name=str(data.get("class", name)),
@@ -148,7 +245,15 @@ def _contract(name: str, data: Mapping[str, Any]) -> BlockContract:
                        provenance=str(item.get("provenance", "")))
             for item in data.get("constraints", ())),
         provenance=tuple(str(item) for item in data.get("provenance", ())),
-        claims=tuple(str(item) for item in data.get("claims", ())))
+        claims=tuple(str(item) for item in data.get("claims", ())),
+        behavior=_behavior(data.get("behavior", {})),
+        dependencies=tuple(_dependency(item)
+                           for item in data.get("dependencies", ())),
+        signal_types=dict(data.get("signal_types", {})),
+        review=_review(data.get("review", {})),
+        known_absences=tuple(_known_absence(item)
+                             for item in data.get("known_absences", ())),
+        pilot_scope=str(data.get("pilot_scope", "")))
 
 
 class BlockContractRegistry:
@@ -365,6 +470,185 @@ _ALLOWED_PORT_MODELS = {"fixed", "nport", "portnames", "submodel",
 _ALLOWED_NAME_STATUS = {"measured", "missing", "unknown",
                         "instance_defined", "weights"}
 _ALLOWED_CREATION = {"derived", "blocked", "unknown"}
+_ALLOWED_PILOT_SCOPE = {"", "live_acceptance", "synthetic_only", "auxiliary"}
+_ALLOWED_REVIEW = {"preliminary", "approved"}
+_ALLOWED_BEHAVIOR = {
+    "identity", "constant", "gain", "sum", "product", "integrate",
+    "select", "vector", "split", "script", "unknown",
+}
+_ALLOWED_DEPENDENCY = {
+    "unconditional", "conditional", "control", "stateful", "script",
+    "unknown",
+}
+_ALLOWED_PROVENANCE = {
+    "measured", "derived", "claim", "experiment", "unknown",
+}
+_ALLOWED_CONDITION = {"equals", "in", "threshold", "select"}
+_ALLOWED_STATE = {"initial", "history", "memory"}
+_ALLOWED_SOURCE = {"port", "property", "state", "memory", "boundary"}
+_ALLOWED_ROLE = {"all_inputs", "selected_input", "control"}
+_ALLOWED_SIGNAL_TYPE = {"real", "integer", "boolean", "vector", "unknown"}
+
+
+def _check_provenance(where: str, data: Any,
+                      problems: list[str]) -> None:
+    if not isinstance(data, MappingABC):
+        problems.append(f"{where}: provenance не объект")
+        return
+    if data.get("status") not in _ALLOWED_PROVENANCE:
+        problems.append(
+            f"{where}: недопустимый provenance.status "
+            f"{data.get('status')!r}")
+
+
+def _check_source(where: str, source: Any, problems: list[str]) -> None:
+    if not isinstance(source, MappingABC):
+        problems.append(f"{where}: source не объект")
+        return
+    kind = source.get("kind")
+    if kind not in _ALLOWED_SOURCE:
+        problems.append(f"{where}: недопустимый source.kind {kind!r}")
+        return
+    if kind == "port":
+        role = source.get("role")
+        if role is not None and role not in _ALLOWED_ROLE:
+            problems.append(f"{where}: недопустимая role {role!r}")
+        if role is None and not isinstance(source.get("index"), int):
+            problems.append(f"{where}: port без index или role")
+        if role == "selected_input":
+            if not isinstance(source.get("selector"), MappingABC):
+                problems.append(f"{where}: selected_input без selector")
+            mapping = source.get("mapping")
+            if mapping is not None:
+                if not isinstance(mapping, list):
+                    problems.append(f"{where}: mapping не список")
+                else:
+                    for case in mapping:
+                        if not isinstance(case, MappingABC) or \
+                                "value" not in case or \
+                                not isinstance(case.get("input"), int):
+                            problems.append(
+                                f"{where}: mapping без value/input")
+    elif kind == "property" and not source.get("name"):
+        problems.append(f"{where}: property без name")
+    elif kind == "state" and not source.get("name"):
+        problems.append(f"{where}: state без name")
+
+
+def _check_condition(where: str, condition: Any, source: Any,
+                     problems: list[str]) -> None:
+    if not isinstance(condition, MappingABC):
+        problems.append(f"{where}: condition не объект")
+        return
+    op = condition.get("op")
+    if op not in _ALLOWED_CONDITION:
+        problems.append(f"{where}: недопустимый condition.op {op!r}")
+        return
+    if not isinstance(condition.get("source"), MappingABC):
+        problems.append(f"{where}: condition без source")
+    if op == "equals" and "value" not in condition:
+        problems.append(f"{where}: equals без value")
+    if op == "in" and not isinstance(condition.get("values"), list):
+        problems.append(f"{where}: in без values")
+    if op == "threshold" and not isinstance(
+            condition.get("above"), (int, float)):
+        problems.append(f"{where}: threshold без above")
+    if op == "select":
+        cases = condition.get("cases")
+        role = source.get("role") if isinstance(source, MappingABC) else None
+        if cases is None:
+            if role != "selected_input":
+                problems.append(f"{where}: select без cases")
+        elif not isinstance(cases, list):
+            problems.append(f"{where}: cases не список")
+        else:
+            for case in cases:
+                if not isinstance(case, MappingABC) or \
+                        "value" not in case or \
+                        not isinstance(case.get("input"), int):
+                    problems.append(f"{where}: case без value/input")
+
+
+def _check_state(where: str, state: Any, problems: list[str]) -> None:
+    if not isinstance(state, MappingABC):
+        problems.append(f"{where}: state не объект")
+        return
+    kind = state.get("kind")
+    if kind not in _ALLOWED_STATE:
+        problems.append(f"{where}: недопустимый state.kind {kind!r}")
+        return
+    if kind == "initial" and not state.get("property"):
+        problems.append(f"{where}: initial без property")
+    if kind == "history" and not state.get("window"):
+        problems.append(f"{where}: history без window")
+    if kind == "memory" and not state.get("cell"):
+        problems.append(f"{where}: memory без cell")
+
+
+def _check_behavior(where: str, data: Any, problems: list[str]) -> None:
+    if not isinstance(data, MappingABC):
+        problems.append(f"{where}: behavior не объект")
+        return
+    if data.get("operation") not in _ALLOWED_BEHAVIOR:
+        problems.append(
+            f"{where}: недопустимый behavior.operation "
+            f"{data.get('operation')!r}")
+    _check_provenance(f"{where}.behavior",
+                      data.get("provenance", {}), problems)
+
+
+def _check_signal_types(where: str, data: Any, problems: list[str]) -> None:
+    if not isinstance(data, MappingABC):
+        problems.append(f"{where}: signal_types не объект")
+        return
+    for key in ("inputs", "outputs"):
+        items = data.get(key, [])
+        if not isinstance(items, list):
+            problems.append(f"{where}.{key}: не список")
+            continue
+        for pos, item in enumerate(items):
+            if not isinstance(item, MappingABC):
+                problems.append(f"{where}.{key}[{pos}]: не объект")
+                continue
+            if not isinstance(item.get("index"), int):
+                problems.append(f"{where}.{key}[{pos}]: без index")
+            if item.get("type") not in _ALLOWED_SIGNAL_TYPE:
+                problems.append(
+                    f"{where}.{key}[{pos}]: недопустимый type "
+                    f"{item.get('type')!r}")
+            if not isinstance(item.get("unit", ""), str):
+                problems.append(f"{where}.{key}[{pos}]: unit не строка")
+    _check_provenance(f"{where}.signal_types",
+                      data.get("provenance", {}), problems)
+
+
+def _check_dependency(where: str, data: Any,
+                      problems: list[str]) -> None:
+    if not isinstance(data, MappingABC):
+        problems.append(f"{where}: зависимость не объект")
+        return
+    output = data.get("output")
+    if not (isinstance(output, int) or output == "all_outputs"):
+        problems.append(f"{where}: недопустимый output {output!r}")
+    kind = data.get("kind")
+    if kind not in _ALLOWED_DEPENDENCY:
+        problems.append(f"{where}: недопустимый kind {kind!r}")
+    source = data.get("source", {})
+    _check_source(f"{where}.source", source, problems)
+    _check_provenance(where, data.get("provenance", {}), problems)
+    state = data.get("state")
+    if kind == "stateful" and state is None:
+        problems.append(f"{where}: stateful без state")
+    elif state is not None:
+        _check_state(f"{where}.state", state, problems)
+    condition = data.get("condition")
+    if kind == "conditional" and condition is None:
+        if not data.get("reason"):
+            problems.append(f"{where}: conditional без condition")
+    elif condition is not None:
+        _check_condition(f"{where}.condition", condition, source, problems)
+    if kind == "script" and not data.get("reason"):
+        problems.append(f"{where}: script без reason")
 
 
 def validate_contract_data(data: Mapping[str, Any],
@@ -447,6 +731,49 @@ def validate_contract_data(data: Mapping[str, Any],
                         problems.append(f"{name}: {key} без index")
                     if spec.get("direction") not in ("in", "out", "undirected"):
                         problems.append(f"{name}: {key} с дурным direction")
+        scope = item.get("pilot_scope", "")
+        if scope not in _ALLOWED_PILOT_SCOPE:
+            problems.append(f"{name}: недопустимый pilot_scope {scope!r}")
+        if "behavior" in item:
+            _check_behavior(f"{name}", item.get("behavior"), problems)
+        if "review" in item:
+            review = item.get("review")
+            if not isinstance(review, MappingABC):
+                problems.append(f"{name}: review не объект")
+            elif review.get("status") not in _ALLOWED_REVIEW:
+                problems.append(
+                    f"{name}: недопустимый review.status "
+                    f"{review.get('status')!r}")
+        if "dependencies" in item:
+            dependencies = item.get("dependencies")
+            if not isinstance(dependencies, list):
+                problems.append(f"{name}: dependencies не список")
+            else:
+                for pos, dependency in enumerate(dependencies):
+                    _check_dependency(
+                        f"{name}.dependencies[{pos}]", dependency, problems)
+        if "signal_types" in item:
+            _check_signal_types(
+                f"{name}", item.get("signal_types"), problems)
+        if "known_absences" in item:
+            absences = item.get("known_absences")
+            if not isinstance(absences, list):
+                problems.append(f"{name}: known_absences не список")
+            else:
+                for pos, absence in enumerate(absences):
+                    where = f"{name}.known_absences[{pos}]"
+                    if not isinstance(absence, MappingABC):
+                        problems.append(f"{where}: не объект")
+                        continue
+                    output = absence.get("output")
+                    if not (isinstance(output, int)
+                            or output == "all_outputs"):
+                        problems.append(
+                            f"{where}: недопустимый output {output!r}")
+                    _check_source(f"{where}.source",
+                                  absence.get("source", {}), problems)
+                    _check_provenance(
+                        where, absence.get("provenance", {}), problems)
         for path in item.get("creation", {}).get("paths", ()):
             if path.get("status") not in _ALLOWED_CREATION:
                 problems.append(f"{name}: недопустимый creation.status")

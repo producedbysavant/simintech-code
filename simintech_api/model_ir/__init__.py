@@ -8,14 +8,21 @@
 from __future__ import annotations
 
 from .contracts import (
+    SCHEMA,
+    VERSION,
+    Behavior,
     BlockContract,
     BlockContractRegistry,
     Constraint,
     ContractCoverage,
     CreationPath,
+    Dependency,
+    KnownAbsence,
     PortContract,
     PortSpec,
     PropertyContract,
+    ProvenanceClaim,
+    Review,
     load_default_contracts,
     validate_contract_data,
 )
@@ -77,6 +84,9 @@ from .xprt_model import Limits, parse_xprt, parse_xprt_file
 
 __all__ = [
     "IR_SCHEMA_VERSION",
+    "SCHEMA",
+    "VERSION",
+    "Behavior",
     "BlockContract",
     "BlockContractRegistry",
     "BoundaryPort",
@@ -85,6 +95,10 @@ __all__ = [
     "CompiledSpec",
     "ContractCoverage",
     "CreationPath",
+    "Dependency",
+    "KnownAbsence",
+    "ProvenanceClaim",
+    "Review",
     "ExpectedLevel",
     "ExpectedModel",
     "ExpectedObject",

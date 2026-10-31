@@ -79372,6 +79372,6 @@
     ],
     "version": "not recorded in corpus"
   },
-  "schema": "block-contract/1",
-  "version": 1
+  "schema": "block-contract/2",
+  "version": 2
 }
