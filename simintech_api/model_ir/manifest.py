@@ -14,10 +14,11 @@ from .contracts import load_default_contracts
 from .errors import ModelQueryError
 from .graph import ModelIndex, coverage_dict
 from .ir import Container, ModelIR
+from .semantics import semantic_coverage
 
 _FOCUS = frozenset({
-    "containers", "classes", "signals", "contracts", "discrepancies",
-    "geometry",
+    "containers", "classes", "signals", "contracts", "semantics",
+    "discrepancies", "geometry",
 })
 
 
@@ -196,6 +197,35 @@ def _geometry(index: ModelIndex) -> list[str]:
     return lines
 
 
+def _semantics(model: ModelIR) -> list[str]:
+    try:
+        data = semantic_coverage(model)
+    except ModelQueryError as exc:
+        return ["## Semantics", f"registry: unavailable ({exc})"]
+    lines = [
+        "## Semantics",
+        f"objects_with_behavior: {data['objects_with_behavior']}"
+        f"/{data['objects_total']}",
+        "objects_with_approved_behavior: "
+        f"{data['objects_with_approved_behavior']}",
+        f"objects_with_known_ports: {data['objects_with_known_ports']}",
+        f"dependencies: {data['dependencies_known']}"
+        f"/{data['dependencies_total']}",
+        f"known_absences: {data['known_absences_total']}",
+    ]
+    unknown = ", ".join(
+        f"{name}={count}"
+        for name, count in data["objects_unknown"].items() if count)
+    if unknown:
+        lines.append(f"unknown: {unknown}")
+    scopes = ", ".join(
+        f"{name}={count}"
+        for name, count in sorted(data["pilot_scope_counts"].items()))
+    if scopes:
+        lines.append(f"pilot_scope: {scopes}")
+    return lines
+
+
 def _join(blocks: list[list[str]]) -> str:
     return "\n".join(line for lines in blocks for line in lines)
 
@@ -219,6 +249,7 @@ def build_manifest(model: ModelIR, budget_tokens: int = 3000,
         ("classes", _classes(index)),
         ("signals", _signals(index)),
         ("contracts", _contracts(model)),
+        ("semantics", _semantics(model)),
         ("hot", _hot(index)),
         ("discrepancies", _discrepancies(model)),
     ]

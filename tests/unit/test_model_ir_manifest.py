@@ -100,3 +100,16 @@ def test_manifest_omits_what_does_not_fit():
     assert len(text) <= 2000 * 3
     assert "## Omitted" in text
     assert "query_model" in text
+
+
+def test_manifest_has_semantics_section():
+    text = build_manifest(parse_xprt(MODEL), budget_tokens=3000)
+    assert "## Semantics" in text
+    assert "objects_with_approved_behavior" in text
+
+
+def test_manifest_focus_semantics():
+    text = build_manifest(
+        parse_xprt(MODEL), budget_tokens=3000, focus="semantics")
+    assert "## Semantics" in text
+    assert "## Classes" not in text
