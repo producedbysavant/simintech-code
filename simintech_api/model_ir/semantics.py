@@ -18,6 +18,7 @@ from .contracts import (
     BlockContract,
     BlockContractRegistry,
     Dependency,
+    KnownAbsence,
     load_default_contracts,
 )
 from .errors import ModelQueryError
@@ -169,7 +170,9 @@ def semantic_coverage(
             deps_known += sum(
                 1 for dependency in dependencies
                 if _dependency_known(contract, dependency, obj))
-            absences_total += len(contract.known_absences)
+            absences_total += sum(
+                1 for absence in contract.known_absences
+                if _absence_known(contract, absence))
     scopes: dict[str, int] = {}
     for name in registry.classes():
         item = registry.get(name)
@@ -193,7 +196,22 @@ def semantic_coverage(
 def _behavior_known(contract: BlockContract) -> bool:
     if contract.behavior.operation == "unknown":
         return False
-    return bool(contract.dependencies) or bool(contract.known_absences)
+    return bool(contract.dependencies) or any(
+        _absence_known(contract, absence)
+        for absence in contract.known_absences)
+
+
+def _absence_known(contract: BlockContract, absence: KnownAbsence) -> bool:
+    """Отсутствие установлено, если оно измерено или строка утверждена.
+
+    Claim/derived из предварительной строки не становится известным
+    отсутствием: иначе предварительная таблица выдала бы утверждение.
+    """
+    status = absence.provenance.status
+    if status == "measured":
+        return True
+    return (status in ("claim", "derived")
+            and contract.review.status == "approved")
 
 
 def _unknown_reason(obj: ModelObject,
@@ -352,9 +370,24 @@ class _Walker:
                             obj.class_name, _props(obj))
                         if dependency.output == port.index]
         if not dependencies:
-            reason = ("script_defined_ports" if _object_script(obj)
-                      else "behavior_unknown")
-            self.unknown.append(f"{name}: {reason}")
+            script = _object_script(obj)
+            if script:
+                address = _source_address(
+                    obj, {"kind": "script", "name": script})
+                hop = {
+                    "from": name,
+                    "to": address,
+                    "kind": "script",
+                    "condition": None,
+                    "state": None,
+                    "evidence": _evidence(
+                        "not_established", "", "object_script"),
+                }
+                self._emit({"kind": "script", "address": address},
+                           hops + [hop], path)
+                self.unknown.append(f"{name}: object_script")
+            else:
+                self.unknown.append(f"{name}: behavior_unknown")
             self._detail_and_downgrade(port, start)
             return
         for dependency in dependencies:
@@ -452,6 +485,8 @@ class _Walker:
             return
         for absence in contract.known_absences:
             if absence.output != output:
+                continue
+            if not _absence_known(contract, absence):
                 continue
             self.absences.append({
                 "target": target,

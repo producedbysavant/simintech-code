@@ -203,6 +203,87 @@ def test_influence_script_preserves_kind_and_reason():
     assert chain["evidence"]["status"] == "not_established"
 
 
+def test_influence_script_object_without_dependencies_keeps_script():
+    data = copy.deepcopy(_semantic_data())
+    data["Константа"]["dependencies"] = []
+    result = influence(
+        ModelIndex(parse_xprt(SCRIPT_MODEL)), _semantic_registry(data),
+        "main::S:0")
+    scripts = [item for item in result.items
+               if item["source"]["kind"] == "script"]
+    assert len(scripts) == 1
+    item = scripts[0]
+    assert item["hops"][-1]["kind"] == "script"
+    assert item["hops"][-1]["evidence"]["reason"] == "object_script"
+    assert item["evidence"]["status"] == "not_established"
+    assert any(entry.endswith(": object_script") for entry in result.unknown)
+    assert not any("script_defined_ports" in entry for entry in result.unknown)
+
+
+def _with_absence(status, review):
+    data = copy.deepcopy(_semantic_data())
+    data["Усилитель"]["dependencies"] = []
+    data["Усилитель"]["known_absences"] = [{
+        "output": 1,
+        "source": {"kind": "port", "index": 0},
+        "provenance": {"status": status, "ref": "test"},
+    }]
+    data["Усилитель"]["review"]["status"] = review
+    return _semantic_registry(data)
+
+
+@pytest.mark.parametrize("status, review, expected", [
+    ("claim", "preliminary", 0),
+    ("derived", "preliminary", 0),
+    ("claim", "approved", 1),
+    ("derived", "approved", 1),
+    ("measured", "preliminary", 1),
+])
+def test_influence_known_absence_requires_evidence(status, review, expected):
+    result = influence(
+        ModelIndex(parse_xprt(MODEL)), _with_absence(status, review),
+        "main::S:0")
+    assert len(result.evidence["known_absences"]) == expected
+
+
+def test_semantic_coverage_known_absences_counts_only_known():
+    data = copy.deepcopy(_semantic_data())
+    data["Усилитель"]["known_absences"] = [{
+        "output": 1,
+        "source": {"kind": "port", "index": 0},
+        "provenance": {"status": "claim", "ref": "test"},
+    }]
+    data["Усилитель"]["review"]["status"] = "preliminary"
+    coverage = semantic_coverage(
+        parse_xprt(MODEL), _semantic_registry(data))
+    assert coverage["known_absences_total"] == 0
+
+    data["Усилитель"]["review"]["status"] = "approved"
+    coverage = semantic_coverage(
+        parse_xprt(MODEL), _semantic_registry(data))
+    assert coverage["known_absences_total"] == 1
+
+    data["Усилитель"]["known_absences"][0]["provenance"]["status"] = "measured"
+    data["Усилитель"]["review"]["status"] = "preliminary"
+    coverage = semantic_coverage(
+        parse_xprt(MODEL), _semantic_registry(data))
+    assert coverage["known_absences_total"] == 1
+
+
+def test_semantic_coverage_unapproved_absence_is_not_behavior_known():
+    data = copy.deepcopy(_semantic_data())
+    data["Усилитель"]["dependencies"] = []
+    data["Усилитель"]["known_absences"] = [{
+        "output": 1,
+        "source": {"kind": "port", "index": 0},
+        "provenance": {"status": "claim", "ref": "test"},
+    }]
+    data["Усилитель"]["review"]["status"] = "preliminary"
+    coverage = semantic_coverage(
+        parse_xprt(MODEL), _semantic_registry(data))
+    assert coverage["objects_unknown"]["behavior_unknown"] >= 1
+
+
 def test_influence_conditional_keeps_condition():
     data = copy.deepcopy(_semantic_data())
     data["Усилитель"]["dependencies"][0]["kind"] = "conditional"
