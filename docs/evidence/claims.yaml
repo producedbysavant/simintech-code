@@ -119,6 +119,18 @@
     observed_at: '2026-09-15'
   reproduction: '`OpenTemplate` + `SetLayerProp(endtime)` + модель «Константа → Усилитель → В файл» дала 6 строк результата со значением 6 (2×3)'
   tests: []
+- id: template-project-keeps-template-name
+  statement: '`OpenTemplate` открывает файл шаблона как проект, а не копирует его; `GetOpenedFileName` возвращает имя шаблона; `NewProject` даёт `Noname.prt`; `SaveProjectBinary` и `SaveProjectXML` имя открытого файла не меняют'
+  status: live-verified
+  source:
+    type: controlled-experiment
+    ref: docs/reference/com_api_inventory.md §18
+  environment:
+    product: SimInTech64
+    version: 2.26.9.29
+    observed_at: '2026-11-02'
+  reproduction: '`OpenTemplate` шаблона: `GetOpenedFileName` = «Схема модели общего вида.prt»; после `SaveProjectBinary` и `SaveProjectXML` в другие файлы имя не изменилось; `NewProject` дал `Noname.prt`; `GetProjectIdByFileName` по короткому имени шаблона вернул id, по полному пути шаблона и пути сохранённого `.prt` дал -1'
+  tests: []
 - id: floating-input-stops-calculation
   statement: 'Неподключённый вход блока молча останавливает расчёт всей модели: ошибки нет, модельное время стоит'
   status: live-verified
@@ -1094,12 +1106,12 @@
   reproduction: 'Живой прогон: создать ветвь через библиотечный метод и сверить с connect_branch'
   tests: []
 - id: comclient-project-enumeration-unverified
-  statement: Группа перечисления открытых проектов в `COMClient` (GetProjectCount/IdByNumber/IdByFileName/ActiveProject) на живом SimInTech не проверялась
+  statement: Группа перечисления открытых проектов в `COMClient` (GetProjectCount/IdByNumber/IdByFileName/ActiveProject) на живом SimInTech проверена не полностью; для `GetProjectIdByFileName` есть отдельный замер о коротком имени шаблона
   status: unknown
   source:
     type: source-code
     ref: simintech_api/core/com_client.py:477-540
-  reproduction: Живой прогон с двумя открытыми проектами
+  reproduction: 'Живой прогон с двумя открытыми проектами; частичный замер: claim `template-project-keeps-template-name`'
   tests: []
 - id: pack-run-to-semantics-unverified
   statement: '`Pack.run_to` возвращает `WaitForTimePack` «как есть»: значение False не интерпретировано (ожидание не подтверждено) — семантика не выяснена'

@@ -14,6 +14,7 @@
 | `summator-ports-need-setportcount` | live-verified | live-com | 2.26.6.23 | 2026-09-15 | `tests/unit/test_block.py::test_set_in_port_count_adds_inputs` (unit-fake) |
 | `new-project-does-not-calculate` | live-verified | controlled-experiment | 2.26.6.23 | 2026-09-15 | - |
 | `template-project-calculates` | live-verified | controlled-experiment | 2.26.6.23 | 2026-09-15 | - |
+| `template-project-keeps-template-name` | live-verified | controlled-experiment | 2.26.9.29 | 2026-11-02 | - |
 | `floating-input-stops-calculation` | live-verified | controlled-experiment | 2.26.6.23 | 2026-09-15 | - |
 | `runto-is-not-blocking` | live-verified | controlled-experiment | 2.26.6.23 | 2026-09-15 | - |
 | `signals-need-signal-base` | live-verified | live-com | 2.26.6.23 | 2026-09-10 | `tests/integration/test_lifecycle.py::test_signal_by_name_refuses_without_signal_base` (live) |

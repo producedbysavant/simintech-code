@@ -25,8 +25,8 @@ IID: `{145848B3-2BE8-4497-9A6B-8A42DA658844}`
 | `CloseProject` | `(__int64 ProjectId)` | ✅ | Закрыть проект |
 | `GetActiveProject` | `() → __int64` | ✅ | ID активного проекта |
 | `NewProject` | `() → __int64` | ✅ | Создать новый пустой проект. **В нём нет расчётного слоя — не считает, см. §18** |
-| `OpenTemplate` | `(BSTR TemplateName) → __int64` | ✅ | Создать проект из шаблона; нужен полный путь к `.prt` (см. §18) |
-| `GetOpenedFileName` | `(__int64 ProjectId) → BSTR` | ✅ | Путь к открытому файлу проекта |
+| `OpenTemplate` | `(BSTR TemplateName) → __int64` | ✅ | Открыть файл шаблона как проект; нужен полный путь к `.prt`, копирования нет (см. §18) |
+| `GetOpenedFileName` | `(__int64 ProjectId) → BSTR` | ✅ | Имя открытого файла: у файловых проектов полный путь, у шаблонного имя шаблона, у `NewProject` `Noname.prt` (замер 02.11.2026) |
 
 ---
 
@@ -461,8 +461,8 @@ StartPort, EndPort, 0)` на проекте из шаблона:
 | `PageUp` | `(__int64 PageId) → __int64` | ✅ | Родительская страница |
 | `LoadSubmodel` | `(__int64 BlockId, BSTR FileName)` | ✅ | Загрузить субмодель в блок |
 | `AssignSubmodel` | `(__int64 ProjectId, __int64 BlockId, BSTR FileName)` | ✅ | Назначить субмодель |
-| `SaveProjectBinary` | `(__int64 PrjId, BSTR FileName)` | ✅ | Сохранить как .prt |
-| `SaveProjectXML` | `(__int64 PrjId, BSTR FileName)` | ✅ | Сохранить как XML (для отладки) |
+| `SaveProjectBinary` | `(__int64 PrjId, BSTR FileName)` | ✅ | Сохранить как .prt; имя открытого файла не меняет (замер 02.11.2026) |
+| `SaveProjectXML` | `(__int64 PrjId, BSTR FileName)` | ✅ | Сохранить как XML (для отладки); имя открытого файла не меняет (замер 02.11.2026) |
 | `SetPageScript` | `(__int64 ProjectId, BSTR Script, long CompileNow)` | ✅ | Скрипт страницы |
 | `SetPageWindow` | `(__int64 PageId, Left, Top, Width, Height)` | ✅ | Окно страницы |
 | `SetPageCoords` | `(__int64 PageId, double X, double Y, double Scale)` | ✅ | Координаты страницы |
@@ -722,6 +722,15 @@ C:\SimInTech64\bin\Template\Схема модели общего вида.prt
 имени (без пути) `OpenTemplate` возвращает `0`, нужен полный путь. Рядом лежат
 и другие шаблоны: `Схема БТС.prt`, `Схема ГПС.prt`, `Схема теплогидравлическая.prt`,
 `Схема электрическая.prt`, `Web интерфейс.prt`.
+
+**Шаблон открывается как проект, а не копируется.** Живой замер 02.11.2026:
+`GetOpenedFileName` у шаблонного проекта возвращает короткое имя шаблона
+`Схема модели общего вида.prt`; `SaveProjectBinary` и `SaveProjectXML` в
+другой файл это имя не меняют. У `NewProject` имя `Noname.prt`, а не пустая
+строка. Поэтому имя файла не годится как признак «новый проект или прежний»:
+у всех проектов из одного шаблона оно одинаковое. `GetProjectIdByFileName`
+находит проект по короткому имени шаблона, а полный путь шаблона и путь
+сохранённого `.prt` дают -1.
 
 **Настройки расчёта меняются свойством расчётного слоя** (`SetLayerProp`),
 номер слоя `0`, значение — строкой:
