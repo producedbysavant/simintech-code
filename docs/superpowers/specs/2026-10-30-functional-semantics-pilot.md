@@ -137,13 +137,24 @@ Model IR уже отвечает на структурные вопросы: ч�
 
 ```json
 {
-  "review": {"status": "preliminary", "reviewer": "", "date": ""},
+  "review": {
+    "status": "preliminary", "reviewer": "", "date": "",
+    "ref": "pilot_blocks.yaml:Усилитель"
+  },
   "known_absences": [
     {"output": 0, "source": {"kind": "port", "index": 2},
      "provenance": {"status": "claim", "ref": "pilot_blocks.yaml:Усилитель"}}
   ]
 }
 ```
+
+`review.status` принимает `preliminary`, `approved` или `rejected`.
+`approved` действителен только при непустых `reviewer` и `date`: строка
+`approved` без подписи считается `preliminary`, а валидатор сообщает об
+этом. `rejected` не участвует в семантике даже при `measured`: зависимости
+и отсутствия отвергнутой строки не выдаются, а причина называется
+`rejected`. `review.ref` ссылается на строку эталонной таблицы; скрипт
+`merge_pilot_semantics.py` выводит её из имени класса.
 
 `known_absences` перечисляет проверенные отсутствия зависимости. Запись с
 `provenance.status = claim|derived` попадает в ответ только при
@@ -164,15 +175,22 @@ Model IR уже отвечает на структурные вопросы: ч�
 - `stateful`: влияние зависит от начального состояния или истории.
 - `script`: поведение задано скриптом и не разобрано; влияние неизвестно.
   Это не только класс «Язык программирования»: если у экземпляра есть
-  непустой скрипт в слоте `Script`, `OnInitScript` или `OnRunScript`,
+  непустой run-скрипт в слоте `script`, `Script` или `OnRunScript`,
   зависимости класса для этого объекта понижаются до `script` с причиной
-  `object_script`. `OnDestroyScript` расчёт не меняет и в понижение не входит.
-  В ответе `influence` это `kind: "script"` с `reason: "object_script"` и
-  `evidence.status: "not_established"`, а не общий `unknown`. Если у
-  объекта нет ни одной зависимости класса, терминальный элемент всё равно
-  создаётся: источник `kind: "script"`, адрес `объект@script:слот`, причина
-  `object_script`. Сворачивать его в `script_defined_ports` запрещено:
-  портовая модель класса не заменяет скрипт экземпляра.
+  `object_script_run`. `OnDestroyScript` расчёт не меняет и в понижение не
+  входит. В ответе `influence` это `kind: "script"` с
+  `reason: "object_script_run"` и `evidence.status: "not_established"`, а не
+  общий `unknown`. Если у объекта нет ни одной зависимости класса,
+  терминальный элемент всё равно создаётся: источник `kind: "script"`,
+  адрес `объект@script:слот`, причина `object_script_run`. Сворачивать его в
+  `script_defined_ports` запрещено: портовая модель класса не заменяет
+  скрипт экземпляра.
+- `OnInitScript` задаёт начальное состояние, а не поведение. Он не понижает
+  контрактные зависимости и учитывается отдельно: счётчик
+  `objects_with_init_script`, ограничение `init_script` в ответе `influence`.
+  Если у контракта нет ни зависимостей, ни известных отсутствий, объект
+  получает причину `object_script_init`; при известном поведении причина
+  определяется review-статусом строки, а не init-скриптом.
 - `unknown`: контракт не позволяет утверждать ни наличие, ни отсутствие связи.
 
 Отсутствие зависимости не выводится из неудачного эксперимента. Оно может
@@ -250,17 +268,23 @@ production-реестре 958 классов: каталог его не сод�
 - `experiment`: наблюдение в конкретном прогоне;
 - `unknown`: сведений нет.
 
-Для эталонной таблицы дополнительно: `review.status` (`preliminary` или
-`approved`), `review.reviewer`, `review.date`.
+Для эталонной таблицы дополнительно: `review.status` (`preliminary`,
+`approved` или `rejected`), `review.reviewer`, `review.date` и `review.ref`
+со ссылкой на строку таблицы.
 
 Правило выдачи `contract`:
 
 - `measured` допускается только как измерение самого функционального
   отношения источник-выход, с ссылкой на это измерение;
-- `claim` допускается только из строки с `review.status = approved`;
-- `derived` допускается только при `review.status = approved`;
-- `preliminary` даёт `not_established` всегда, даже если запись помечена
-  `claim`.
+- `claim` допускается только из строки с `review.status = approved` и
+  непустыми `reviewer` и `date`;
+- `derived` допускается только при подписанном `approved`;
+- `preliminary` и `approved` без подписи дают `not_established` всегда,
+  даже если запись помечена `claim`;
+- `rejected` даёт `not_established` с причиной `rejected` даже при
+  `measured`: отвергнутая строка не участвует в семантике;
+- `experiment` сам по себе не даёт `contract`: нужен валидный
+  `ExperimentRecord` с обоими хешами.
 
 `measured` в `BlockContract.status` или `ports.provenance` относится к
 структуре: портам, числу входов, именам. Оно не подтверждает функциональное
@@ -291,8 +315,10 @@ production-реестре 958 классов: каталог его не сод�
 
 - `target`: адрес выхода (`объект:индекс` или имя объекта);
 - `max_depth`: предел обхода, по умолчанию 64;
-- `include`: какие статусы включать (`contract`, `not_established`);
-- `max_items`: предел элементов, не больше 200.
+- `include`: какие статусы включать (`contract`, `experiment`,
+  `not_established`);
+- `max_items`: предел элементов, не больше 200;
+- `experiments`: необязательный список записей `experiment-record/1`.
 
 Алгоритм:
 
@@ -302,14 +328,23 @@ production-реестре 958 классов: каталог его не сод�
    зависимости выхода по контракту блока.
 4. Если контракт известен, добавить рёбра с типом зависимости и условием.
 5. Если контракт неизвестен, добавить терминальный узел `kind: "unknown"` с
-   причиной. Если поведение задано скриптом, добавить терминальный узел
-   `kind: "script"` с `reason: "object_script"` и
+   причиной. Если поведение задано run-скриптом, добавить терминальный узел
+   `kind: "script"` с `reason: "object_script_run"` и
    `evidence.status: "not_established"`. В обоих случаях путь не
    продолжается: ложная цепочка запрещена. Причина скрипта не сворачивается
    в общий `unknown`.
 6. Для `stateful` добавить узел состояния.
 7. Для внешней субмодели без страницы добавить `unknown` с причиной
    `external_submodel`.
+8. Экспериментальные свидетельства применяются к готовой цепочке. Оба
+   хеша записи должны совпадать со снимком; иначе запись неприменима и
+   попадает в `limitations`. Положительное наблюдение переводит цепочку из
+   `not_established` с причиной `unapproved` в `experiment`; `contract` не
+   понижается. Отрицательное наблюдение не создаёт `known_absences` и не
+   удаляет цепочку. Причины `rejected`, `object_script_run`, `class_unknown`,
+   `script_defined` и `external_submodel` эксперимент не отменяет.
+   `limitations` присутствует всегда: сценарий, неполнота, неизвестность,
+   усечение и ограничения самой записи.
 
 Для субмодели с известным контрактом:
 
@@ -381,12 +416,16 @@ production-реестре 958 классов: каталог его не сод�
 Статусы доказательства:
 
 - `contract`: следует из проверенного контракта;
-- `observed`: наблюдалось в эксперименте, с ссылкой на свидетельство;
+- `experiment`: наблюдалось в конкретном прогоне, с обоими хешами модели и
+  ссылкой на свидетельство; слабее контракта и не доказывает механизм;
 - `not_established`: имеющихся сведений недостаточно.
 
-В ответе `influence` статус `observed` не появляется: запрос не читает
-эксперименты. `observed` возникает в отчёте приёмки, который сопоставляет
-ответ с эталоном и свидетельствами. Так контракт и наблюдение не смешиваются.
+`influence` возвращает `experiment`, только если переданы валидные записи
+`experiment-record/1`. Положительное наблюдение не понижает `contract` и не
+отменяет причины `rejected`, `object_script_run`, `class_unknown`,
+`script_defined` и `external_submodel`. Отрицательное наблюдение не создаёт
+`known_absences`. Ограничения сценария, неизвестности и усечения остаются в
+`evidence.limitations`; контракт и наблюдение не смешиваются.
 
 Если путь содержит хоть один `unknown`- или `script`-узел, итоговый статус
 не может быть `contract`.
@@ -401,26 +440,42 @@ production-реестре 958 классов: каталог его не сод�
   "objects_with_behavior": 610,
   "objects_with_approved_behavior": 8,
   "objects_with_known_ports": 700,
-  "objects_unknown": {"object_script": 5, "script_defined": 20, "external_submodel": 11, "behavior_unknown": 201, "unapproved": 602},
+  "objects_with_init_script": 85,
+  "objects_unknown": {"class_unknown": 0, "object_script_run": 5, "rejected": 0, "object_script_init": 12, "script_defined": 20, "external_submodel": 11, "behavior_unknown": 201, "unapproved": 602},
   "dependencies_total": 1200,
   "dependencies_known": 800,
   "known_absences_total": 0,
   "pilot_scope_counts": {"live_acceptance": 9, "auxiliary": 1},
-  "paths_contract": 0,
-  "paths_not_established": 0
+  "review_counts": {"approved": 0, "preliminary": 10, "rejected": 0},
+  "preliminary_classes": ["Усилитель"],
+  "review_refs": {"Усилитель": "pilot_blocks.yaml:Усилитель"},
+  "by_class": {
+    "Усилитель": {
+      "objects": 1, "with_behavior": 1, "approved": 0,
+      "with_init_script": 1, "pilot_scope": "live_acceptance",
+      "review_status": "preliminary",
+      "review_ref": "pilot_blocks.yaml:Усилитель"
+    }
+  }
 }
 ```
 
 Причина неизвестности выбирается по приоритету: `class_unknown`,
-`object_script`, `script_defined`, `external_submodel`, `behavior_unknown`,
-`unapproved`. Конкретная причина экземпляра важнее классовой: объект с
-непустым `Script` считается `object_script`, даже если его класс объявляет
-порты скриптом.
+`object_script_run`, `rejected`, `object_script_init` (только когда у
+контракта нет ни зависимостей, ни известных отсутствий), `script_defined`,
+`external_submodel`, `behavior_unknown`, `unapproved`. Конкретная причина
+экземпляра важнее классовой: объект с непустым run-скриптом считается
+`object_script_run`, даже если его класс объявляет порты скриптом.
+`OnInitScript` сам по себе поведение не понижает.
 
 `dependencies_total` считается после разворачивания ролей по экземпляру, а не
 по статической записи реестра. `objects_with_approved_behavior` отделяет
-утверждённые строки от `derived`. `pilot_scope_counts` считает только классы
-с заполненным `pilot_scope`; `auxiliary` не входит в живую приёмку.
+подписанные утверждённые строки от `derived`. `pilot_scope_counts` считает
+классы реестра с заполненным `pilot_scope`; `auxiliary` не входит в живую
+приёмку. `review_counts`, `preliminary_classes` и `review_refs` считают
+строки эталонной таблицы, а не объекты модели: это ответ на вопрос «сколько
+строк утверждено и какие именно». `by_class` дополнительно называет
+эффективный review-статус и ссылку на строку для классов модели.
 
 Поля `paths_*` заполняются конкретным запросом `influence`, а не хранятся в
 модели. Сводка по классам добавляется в `get_model_manifest`.
@@ -445,10 +500,13 @@ production-реестре 958 классов: каталог его не сод�
 
 ### 6.11. Поверхность MCP
 
-- `query_model(query="influence", arguments=...)`: новый запрос.
+- `query_model(query="influence", arguments=...)`: новый запрос; необязательные
+  `experiments`, ответ несёт `evidence.limitations`.
 - `query_model(query="semantic_coverage")`: сводка по снимку.
-- `get_model_manifest`: секция `semantics`, если она помещается в бюджет.
-- `load_model`: `semantic_coverage` в компактном ответе.
+- `get_model_manifest`: обязательная секция `## Review`, секция `semantics`,
+  если помещается в бюджет; `estimated_tokens` и `budget_tokens` в заголовке.
+- `load_model`: `semantic_coverage` в компактном ответе, включая
+  `objects_with_init_script` и `review_counts`.
 - `inspect_submodel`: без изменений.
 
 Новых инструментов не добавляется: поверхность остаётся компактной.
@@ -531,6 +589,7 @@ production-реестре 958 классов: каталог его не сод�
 
 ```json
 {
+  "schema": "experiment-record/1",
   "id": "exp-speed-step-01",
   "structure_hash": "...",
   "content_hash": "...",
@@ -538,14 +597,21 @@ production-реестре 958 классов: каталог его не сод�
   "run": {"step": 1e-6, "to_time": 0.5, "baseline": "exp-speed-base-01"},
   "observation": {"target": "Двигатель:1", "changed": true, "first_change_at": 0.1002},
   "status": "observed",
-  "recorded_at": "2026-10-30"
+  "recorded_at": "2026-10-30",
+  "limitations": ["один сценарий"]
 }
 ```
 
 Свидетельство без условий прогона и обоих хешей модели недействительно.
 Расхождение `structure_hash` или `content_hash` с текущим снимком делает
-наблюдение неприменимым: оно относится к другой модели. Реальные
-свидетельства не публикуются даже с псевдонимами.
+наблюдение неприменимым: оно относится к другой модели и попадает в
+`limitations`, не меняя цепочки. `observation.changed = false` не создаёт
+`known_absences`: один сценарий не доказывает отсутствие влияния.
+`scenario.changed` и `observation.target` сопоставляются с адресами Model IR
+точно; адрес объекта допускает совпадение с его портами и отмечается
+ограничением. Набор ограничен 100 записями, у записи не больше 20
+ограничений длиной до 500 символов. Реальные свидетельства не публикуются
+даже с псевдонимами.
 
 ### 8.4. Экспериментальная установка
 
@@ -578,6 +644,15 @@ DATA_POLICY.
 - Условная зависимость сохраняет условие в ответе.
 - `stateful` без состояния отвергается.
 - `semantic_coverage` считает причины неизвестности раздельно.
+- `OnInitScript` не понижает контрактные зависимости; run-слоты дают
+  `object_script_run`, init без поведения даёт `object_script_init`.
+- `approved` без `reviewer`/`date` не считается утверждённым; `rejected`
+  не участвует в семантике; счётчики review совпадают с таблицей.
+- Валидная запись эксперимента с обоими хешами даёт `experiment`;
+  отрицательное наблюдение не создаёт `known_absences`; `limitations`
+  присутствует всегда.
+- `estimate_tokens` консервативен для кириллицы; паспорт укладывается в
+  `budget_tokens`, `estimated_tokens` совпадает с оценкой текста.
 
 ### 9.2. Мутационные проверки
 
@@ -587,14 +662,21 @@ DATA_POLICY.
 - `unknown` заменяется на `contract`;
 - условие теряется при сериализации;
 - `preliminary`-строка проходит как `approved`;
+- `approved` без подписи проходит как утверждённый;
+- `rejected`-строка участвует в семантике;
 - `derived`-зависимость возвращается как `contract`;
 - структурный `measured` (порты, число входов) переносится на
   функциональную зависимость;
-- `script` сворачивается в общий `unknown` и теряет `object_script`;
+- `OnInitScript` снова понижает контрактные зависимости;
+- run-скрипт перестаёт давать `object_script_run`;
+- отрицательный эксперимент создаёт `known_absences`;
+- запись с несовпавшим хешем применяется к цепочке;
+- эксперимент отменяет причину `rejected` или `class_unknown`;
 - `known_absences` попадает в `items` как источник влияния;
 - общий `kind` подменяет типы отдельных хопов;
 - свойство или состояние теряется на терминальном узле;
-- роли `all_inputs`/`all_outputs` не разворачиваются по экземпляру.
+- роли `all_inputs`/`all_outputs` не разворачиваются по экземпляру;
+- бюджет паспорта снова считается в символах, а не в токенах.
 
 ### 9.3. Живые проверки
 
