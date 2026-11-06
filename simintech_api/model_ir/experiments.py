@@ -73,13 +73,14 @@ def _text(where: str, value: Any) -> str:
     return result
 
 
-def _number(where: str, value: Any, *, positive: bool = False) -> float:
+def _number(where: str, value: Any, *, positive: bool = False,
+            non_negative: bool = False) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ModelQueryError(f"{where}: нужно число")
     result = float(value)
     if positive and result <= 0:
         raise ModelQueryError(f"{where}: нужно положительное число")
-    if result < 0:
+    if non_negative and result < 0:
         raise ModelQueryError(f"{where}: отрицательное время")
     return result
 
@@ -101,7 +102,8 @@ def parse_experiment_record(data: Mapping[str, Any]) -> ExperimentRecord:
     _text("experiment.scenario.changed", scenario.get("changed"))
     _number("experiment.scenario.from", scenario.get("from"))
     _number("experiment.scenario.to", scenario.get("to"))
-    _number("experiment.scenario.at", scenario.get("at"))
+    _number("experiment.scenario.at", scenario.get("at"),
+            non_negative=True)
     run = _mapping("experiment.run", data.get("run"))
     _number("experiment.run.step", run.get("step"), positive=True)
     _number("experiment.run.to_time", run.get("to_time"), positive=True)
@@ -115,7 +117,7 @@ def parse_experiment_record(data: Mapping[str, Any]) -> ExperimentRecord:
             "experiment.observation.changed: нужен bool")
     if changed and "first_change_at" in observation:
         _number("experiment.observation.first_change_at",
-                observation.get("first_change_at"))
+                observation.get("first_change_at"), non_negative=True)
     status = str(data.get("status", "observed"))
     if status not in _ALLOWED_STATUS:
         raise ModelQueryError(

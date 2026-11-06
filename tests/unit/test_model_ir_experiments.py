@@ -78,6 +78,14 @@ def test_parse_experiment_record_requires_hashes(field):
         parse_experiment_record(data)
 
 
+def test_parse_experiment_record_allows_negative_scenario_values():
+    data = _record(_index())
+    data["scenario"]["from"] = -1.0
+    data["scenario"]["to"] = 0.0
+    record = parse_experiment_record(data)
+    assert record.scenario["from"] == -1.0
+
+
 def test_parse_experiment_record_requires_changed_source():
     data = _record(_index())
     data["scenario"]["changed"] = ""
