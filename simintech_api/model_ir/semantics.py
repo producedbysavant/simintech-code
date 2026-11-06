@@ -23,9 +23,8 @@ from .contracts import (
 )
 from .errors import ModelQueryError
 from .experiments import (
-    MAX_RECORDS,
     ExperimentRecord,
-    parse_experiment_record,
+    coerce_experiment_records,
 )
 from .graph import ModelIndex, QueryResult
 from .ir import ModelIR, ModelObject
@@ -155,10 +154,9 @@ class _ExperimentSet:
         self.negative: list[ExperimentRecord] = []
         self.inapplicable: list[dict[str, str]] = []
         self.applied: list[ExperimentRecord] = []
-        self.blocked: list[ExperimentRecord] = []
+        self.blocked: dict[str, ExperimentRecord] = {}
         self.limitations: list[dict[str, str]] = []
         self._notes: set[tuple[str, str, str]] = set()
-        self._limit_hit = False
         self._by_target: dict[str, list[ExperimentRecord]] = {}
         structure_hash = index.model.meta.structure_hash
         content_hash = index.model.meta.content_hash
@@ -180,9 +178,6 @@ class _ExperimentSet:
         if key in self._notes:
             return
         self._notes.add(key)
-        if len(self.limitations) >= _MAX_LIMITATIONS:
-            self._limit_hit = True
-            return
         item = {"kind": kind, "text": text}
         if ref:
             item["ref"] = ref
@@ -218,7 +213,7 @@ class _ExperimentSet:
                     evidence.pop("reason", None)
                     supported.add(record.id)
                 else:
-                    self.blocked.append(record)
+                    self.blocked[record.id] = record
                     self._note(
                         "experiment_not_applicable", record.id,
                         f"свидетельство не отменяет причину "
@@ -283,20 +278,7 @@ def influence(
     превращают отрицательный результат в известное отсутствие.
     """
     allowed = _include_filter(include)
-    if isinstance(experiments, (ExperimentRecord, MappingABC)):
-        experiments = (experiments,)
-    records: list[ExperimentRecord] = []
-    for item in experiments:
-        if len(records) >= MAX_RECORDS:
-            raise ModelQueryError(
-                f"experiment: больше {MAX_RECORDS} записей")
-        if isinstance(item, ExperimentRecord):
-            records.append(item)
-        elif isinstance(item, MappingABC):
-            records.append(parse_experiment_record(item))
-        else:
-            raise ModelQueryError(
-                "experiment: запись не ExperimentRecord и не объект")
+    records = coerce_experiment_records(experiments)
     experiment_set = _ExperimentSet(index, records)
     limitations: list[dict[str, str]] = []
     items: list[dict[str, Any]] = []
@@ -348,9 +330,36 @@ def influence(
 
 
 _UNKNOWN_REASONS = (
-    "class_unknown", "object_script_run", "rejected", "object_script_init",
-    "script_defined", "external_submodel", "behavior_unknown", "unapproved",
+    "class_unknown", "object_script_run", "rejected", "script_defined",
+    "external_submodel", "object_script_init", "behavior_unknown",
+    "unapproved",
 )
+
+
+def review_summary(registry: BlockContractRegistry) -> dict[str, Any]:
+    """Состояние проверки строк эталонной таблицы."""
+    counts = {"approved": 0, "preliminary": 0, "rejected": 0}
+    preliminary: list[str] = []
+    refs: dict[str, str] = {}
+    invalid = 0
+    for name in registry.classes():
+        contract = registry.get(name)
+        if contract is None or not contract.pilot_scope:
+            continue
+        status = contract.review.effective_status
+        counts[status] = counts.get(status, 0) + 1
+        if contract.review.status == "approved" and not contract.review.approved:
+            invalid += 1
+        if status == "preliminary":
+            preliminary.append(name)
+        if contract.review.ref:
+            refs[name] = contract.review.ref
+    return {
+        "counts": counts,
+        "preliminary": preliminary,
+        "refs": refs,
+        "invalid": invalid,
+    }
 
 
 def semantic_coverage(
@@ -396,7 +405,7 @@ def semantic_coverage(
                 entry["approved"] += 1
         reason = _unknown_reason(obj, contract)
         if reason:
-            unknown[reason] += 1
+            unknown[reason] = unknown.get(reason, 0) + 1
         if contract is not None:
             try:
                 dependencies = registry.dependencies_for(
@@ -411,22 +420,12 @@ def semantic_coverage(
                 1 for absence in contract.known_absences
                 if _absence_known(contract, absence))
     scopes: dict[str, int] = {}
-    review_counts = {"approved": 0, "preliminary": 0, "rejected": 0}
-    preliminary_classes: list[str] = []
-    review_refs: dict[str, str] = {}
     for name in registry.classes():
         item = registry.get(name)
         scope = item.pilot_scope if item is not None else ""
         if scope:
             scopes[scope] = scopes.get(scope, 0) + 1
-        if item is None or not item.pilot_scope:
-            continue
-        status = item.review.effective_status
-        review_counts[status] = review_counts.get(status, 0) + 1
-        if status == "preliminary":
-            preliminary_classes.append(name)
-        if item.review.ref:
-            review_refs[name] = item.review.ref
+    review = review_summary(registry)
     return {
         "objects_total": total,
         "objects_with_behavior": with_behavior,
@@ -438,9 +437,9 @@ def semantic_coverage(
         "dependencies_known": deps_known,
         "known_absences_total": absences_total,
         "pilot_scope_counts": scopes,
-        "review_counts": review_counts,
-        "preliminary_classes": preliminary_classes,
-        "review_refs": review_refs,
+        "review_counts": review["counts"],
+        "preliminary_classes": review["preliminary"],
+        "review_refs": review["refs"],
         "by_class": by_class,
     }
 
@@ -453,6 +452,15 @@ def _behavior_known(contract: BlockContract) -> bool:
     return _has_contract_semantics(contract)
 
 
+def _provenance_holds(contract: BlockContract, status: str) -> bool:
+    """Правило допуска утверждения контракта."""
+    if contract.review.rejected:
+        return False
+    if status == "measured":
+        return True
+    return status in ("claim", "derived") and contract.review.approved
+
+
 def _absence_known(contract: BlockContract, absence: KnownAbsence) -> bool:
     """Отсутствие установлено, если оно измерено или строка утверждена.
 
@@ -460,13 +468,7 @@ def _absence_known(contract: BlockContract, absence: KnownAbsence) -> bool:
     отсутствием: иначе предварительная таблица выдала бы утверждение.
     Отвергнутая строка не участвует в семантике даже при `measured`.
     """
-    if contract.review.rejected:
-        return False
-    status = absence.provenance.status
-    if status == "measured":
-        return True
-    return (status in ("claim", "derived")
-            and contract.review.approved)
+    return _provenance_holds(contract, absence.provenance.status)
 
 
 def _unknown_reason(obj: ModelObject,
@@ -482,7 +484,7 @@ def _unknown_reason(obj: ModelObject,
     if obj.kind is ObjectKind.SUBMODEL and obj.filename:
         return "external_submodel"
     if not _behavior_known(contract):
-        if _object_init_script(obj):
+        if _object_init_script(obj) and not _has_contract_semantics(contract):
             return "object_script_init"
         return "behavior_unknown"
     if not contract.review.approved:
@@ -507,16 +509,11 @@ def _dependency_known(contract: BlockContract, dependency: Dependency,
                       obj: ModelObject) -> bool:
     if _object_run_script(obj):
         return False
-    if contract.review.rejected:
-        return False
     if dependency.kind in ("script", "unknown"):
         return False
     if dependency.kind == "conditional" and dependency.condition is None:
         return False
-    if dependency.provenance.status == "measured":
-        return True
-    return (dependency.provenance.status in ("claim", "derived")
-            and contract.review.approved)
+    return _provenance_holds(contract, dependency.provenance.status)
 
 
 def _include_filter(include: Iterable[str]) -> frozenset[str]:
@@ -859,10 +856,7 @@ def _dependency_evidence(
     if dependency.kind == "conditional" and dependency.condition is None:
         return ("not_established", ref,
                 dependency.reason or "condition_unknown", review_ref)
-    status = dependency.provenance.status
-    if status == "measured":
-        return "contract", ref, "", review_ref
-    if status in ("claim", "derived") and contract.review.approved:
+    if _provenance_holds(contract, dependency.provenance.status):
         return "contract", ref, "", review_ref
     return "not_established", ref, "unapproved", review_ref
 

@@ -15,6 +15,7 @@ from simintech_api.model_ir import (  # noqa: E402
 )
 from simintech_api.model_ir.experiments import (  # noqa: E402
     EXPERIMENT_SCHEMA,
+    ExperimentRecord,
     parse_experiment_record,
     parse_experiment_records,
 )
@@ -81,14 +82,29 @@ def test_parse_experiment_record_requires_hashes(field):
 def test_parse_experiment_record_allows_negative_scenario_values():
     data = _record(_index())
     data["scenario"]["from"] = -1.0
-    data["scenario"]["to"] = 0.0
+    data["scenario"]["to"] = -2.0
     record = parse_experiment_record(data)
     assert record.scenario["from"] == -1.0
+    assert record.scenario["to"] == -2.0
 
 
 def test_parse_experiment_record_rejects_target_as_source():
     data = _record(_index())
     data["scenario"]["changed"] = "main::S:0"
+    with pytest.raises(ModelQueryError):
+        parse_experiment_record(data)
+
+
+def test_parse_experiment_record_rejects_target_object_as_source():
+    data = _record(_index())
+    data["scenario"]["changed"] = "main::S"
+    with pytest.raises(ModelQueryError):
+        parse_experiment_record(data)
+
+
+def test_parse_experiment_record_rejects_long_limitation():
+    data = _record(_index())
+    data["limitations"] = ["я" * 501]
     with pytest.raises(ModelQueryError):
         parse_experiment_record(data)
 
@@ -263,6 +279,65 @@ def test_influence_rejects_too_many_experiments():
         influence(
             index, _preliminary_registry(), "main::S:0",
             experiments=records)
+
+
+def test_influence_rejects_duplicate_experiment_ids():
+    index = _index()
+    data = _record(index)
+    with pytest.raises(ModelQueryError):
+        influence(
+            index, _preliminary_registry(), "main::S:0",
+            experiments=[data, dict(data)])
+
+
+def test_influence_rejects_invalid_experiment_record():
+    index = _index()
+    record = ExperimentRecord(
+        id="exp-1",
+        structure_hash=index.model.meta.structure_hash,
+        content_hash=index.model.meta.content_hash,
+        scenario={},
+        run={},
+        observation={},
+        status="bogus",
+    )
+    with pytest.raises(ModelQueryError):
+        influence(
+            index, _preliminary_registry(), "main::S:0",
+            experiments=[record])
+
+
+def test_influence_blocked_counts_unique_records():
+    index = _index()
+    data = copy.deepcopy(_semantic_data())
+    data["Усилитель"]["review"] = {
+        "status": "rejected", "reviewer": "инженер",
+        "date": "2026-11-06",
+    }
+    record = _record(index)
+    record["scenario"]["changed"] = "main::G"
+    result = influence(
+        index, _semantic_registry(data), "main::S:0",
+        experiments=[record])
+    assert result.evidence["experiments"]["blocked"] == 1
+
+
+def test_influence_hop_denial_blocks_experiment():
+    from test_model_ir_semantics import SCRIPT_MODEL
+
+    index = ModelIndex(parse_xprt(SCRIPT_MODEL))
+    data = copy.deepcopy(_semantic_data())
+    data["Усилитель"]["review"] = {
+        "status": "preliminary", "reviewer": "", "date": "",
+    }
+    record = _record(index)
+    result = influence(
+        index, _semantic_registry(data), "main::S:0",
+        experiments=[record])
+    chain = _chain_to(result, "main::K@property:a")
+    assert chain["evidence"]["reason"] == "unapproved"
+    assert result.evidence["experiments"]["blocked"] == 1
+    assert "experiments" not in chain["evidence"]
 
 
 def test_parse_experiment_record_rejects_too_many_limitations():

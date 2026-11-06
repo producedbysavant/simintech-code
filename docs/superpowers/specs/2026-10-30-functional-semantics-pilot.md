@@ -344,7 +344,8 @@ production-реестре 958 классов: каталог его не сод�
    удаляет цепочку. Причины `rejected`, `object_script_run`, `class_unknown`,
    `script_defined` и `external_submodel` эксперимент не отменяет.
    `limitations` присутствует всегда: сценарий, неполнота, неизвестность,
-   усечение и ограничения самой записи.
+   усечение и ограничения самой записи. Сводка `evidence.experiments`
+   содержит `supplied`, `applied`, `blocked`, `negative`, `inapplicable`.
 
 Для субмодели с известным контрактом:
 
@@ -461,9 +462,9 @@ production-реестре 958 классов: каталог его не сод�
 ```
 
 Причина неизвестности выбирается по приоритету: `class_unknown`,
-`object_script_run`, `rejected`, `object_script_init` (только когда у
-контракта нет ни зависимостей, ни известных отсутствий), `script_defined`,
-`external_submodel`, `behavior_unknown`, `unapproved`. Конкретная причина
+`object_script_run`, `rejected`, `script_defined`, `external_submodel`,
+`object_script_init` (только когда у контракта нет ни зависимостей, ни
+известных отсутствий), `behavior_unknown`, `unapproved`. Конкретная причина
 экземпляра важнее классовой: объект с непустым run-скриптом считается
 `object_script_run`, даже если его класс объявляет порты скриптом.
 `OnInitScript` сам по себе поведение не понижает.

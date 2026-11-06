@@ -37,9 +37,10 @@ def test_estimate_tokens_is_monotone():
     assert estimate_tokens(text + "x") >= estimate_tokens(text)
 
 
-def test_estimate_tokens_is_deterministic():
-    text = "## Semantics\nobjects_with_init_script: 0\n"
-    assert estimate_tokens(text) == estimate_tokens(text)
+def test_estimate_tokens_mixed_exact():
+    assert estimate_tokens("a\nя") == 2
+    assert estimate_tokens("aя") == 2
+    assert estimate_tokens("\n") == 1
     assert ESTIMATOR_VERSION == "chars/1"
 
 

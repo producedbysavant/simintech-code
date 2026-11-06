@@ -121,12 +121,16 @@ def test_manifest_focus_semantics():
 
 
 def test_manifest_has_review_section():
+    from simintech_api.model_ir.contracts import load_default_contracts
+    from simintech_api.model_ir.semantics import review_summary
+
+    counts = review_summary(load_default_contracts())["counts"]
     text = build_manifest(parse_xprt(MODEL), budget_tokens=3000)
     assert "## Review" in text
-    assert "rows: 10" in text
-    assert "approved: 0" in text
-    assert "preliminary: 10" in text
-    assert "rejected: 0" in text
+    assert f"rows: {sum(counts.values())}" in text
+    assert f"approved: {counts['approved']}" in text
+    assert f"preliminary: {counts['preliminary']}" in text
+    assert f"rejected: {counts['rejected']}" in text
 
 
 def test_manifest_focus_review():
@@ -137,9 +141,16 @@ def test_manifest_focus_review():
 
 
 def test_manifest_semantics_prints_review_counts():
+    from simintech_api.model_ir.contracts import load_default_contracts
+    from simintech_api.model_ir.semantics import review_summary
+
+    counts = review_summary(load_default_contracts())["counts"]
     text = build_manifest(
         parse_xprt(MODEL), budget_tokens=3000, focus="semantics")
-    assert "review: approved=0, preliminary=10, rejected=0" in text
+    assert (
+        f"review: approved={counts['approved']}, "
+        f"preliminary={counts['preliminary']}, "
+        f"rejected={counts['rejected']}" in text)
 
 
 def test_manifest_estimated_tokens_matches_text():

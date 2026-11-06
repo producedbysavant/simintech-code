@@ -280,9 +280,9 @@ U+2014 в авторских описаниях. Генератор детерм
 и усечение.
 
 `semantic_coverage` отделяет разобранную структуру от известной семантики:
-причины `class_unknown`, `object_script_run`, `rejected`,
-`object_script_init`, `script_defined`, `external_submodel`,
-`behavior_unknown`, `unapproved`; `pilot_scope` отделяет живую,
+причины `class_unknown`, `object_script_run`, `rejected`, `script_defined`,
+`external_submodel`, `object_script_init`, `behavior_unknown`,
+`unapproved`; `pilot_scope` отделяет живую,
 синтетическую и вспомогательную области. `review_counts`,
 `preliminary_classes` и `review_refs` считают строки эталонной таблицы и
 называют состояние проверки; `by_class` добавляет `review_status` и

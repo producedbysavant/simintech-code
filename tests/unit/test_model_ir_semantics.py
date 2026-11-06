@@ -411,6 +411,8 @@ def _with_absence(status, review):
     ("claim", "approved", 1),
     ("derived", "approved", 1),
     ("measured", "preliminary", 1),
+    ("measured", "rejected", 0),
+    ("claim", "rejected", 0),
 ])
 def test_influence_known_absence_requires_evidence(status, review, expected):
     result = influence(
@@ -441,6 +443,23 @@ def test_semantic_coverage_known_absences_counts_only_known():
     coverage = semantic_coverage(
         parse_xprt(MODEL), _semantic_registry(data))
     assert coverage["known_absences_total"] == 1
+
+
+def test_semantic_coverage_rejected_measured_absence_not_counted():
+    data = copy.deepcopy(_semantic_data())
+    data["Усилитель"]["dependencies"] = []
+    data["Усилитель"]["known_absences"] = [{
+        "output": 1,
+        "source": {"kind": "port", "index": 0},
+        "provenance": {"status": "measured", "ref": "test"},
+    }]
+    data["Усилитель"]["review"] = {
+        "status": "rejected", "reviewer": "инженер",
+        "date": "2026-11-06",
+    }
+    coverage = semantic_coverage(parse_xprt(MODEL), _semantic_registry(data))
+    assert coverage["known_absences_total"] == 0
+    assert coverage["objects_unknown"]["rejected"] == 1
 
 
 def test_semantic_coverage_unapproved_absence_is_not_behavior_known():

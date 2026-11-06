@@ -113,9 +113,12 @@ def parse_experiment_record(data: Mapping[str, Any]) -> ExperimentRecord:
                            data.get("observation"))
     target = _text("experiment.observation.target",
                    observation.get("target"))
-    if changed_source == target:
+    if (changed_source == target
+            or target.startswith(changed_source + ":")
+            or target.startswith(changed_source + "@")):
         raise ModelQueryError(
-            "experiment: scenario.changed совпадает с observation.target")
+            "experiment: scenario.changed совпадает с observation.target "
+            "или является его объектом")
     observed_changed = observation.get("changed")
     if not isinstance(observed_changed, bool):
         raise ModelQueryError(
@@ -152,19 +155,36 @@ def parse_experiment_record(data: Mapping[str, Any]) -> ExperimentRecord:
     )
 
 
-def parse_experiment_records(
-        items: Iterable[Mapping[str, Any]]) -> tuple[ExperimentRecord, ...]:
-    """Разобрать набор записей и проверить уникальность идентификаторов."""
+def coerce_experiment_records(
+        items: Iterable[Mapping[str, Any] | ExperimentRecord] | None
+        ) -> tuple[ExperimentRecord, ...]:
+    """Привести записи к валидному набору: форма, лимит, уникальность."""
+    if items is None:
+        return ()
+    if isinstance(items, (ExperimentRecord, Mapping)):
+        items = (items,)
     records: list[ExperimentRecord] = []
+    seen: set[str] = set()
     for item in items:
         if len(records) >= MAX_RECORDS:
             raise ModelQueryError(
                 f"experiment: больше {MAX_RECORDS} записей")
-        records.append(parse_experiment_record(item))
-    seen: set[str] = set()
-    for record in records:
+        if isinstance(item, ExperimentRecord):
+            record = parse_experiment_record(item.to_dict())
+        elif isinstance(item, Mapping):
+            record = parse_experiment_record(item)
+        else:
+            raise ModelQueryError(
+                "experiment: запись не ExperimentRecord и не объект")
         if record.id in seen:
             raise ModelQueryError(
                 f"experiment: повтор идентификатора {record.id!r}")
         seen.add(record.id)
+        records.append(record)
     return tuple(records)
+
+
+def parse_experiment_records(
+        items: Iterable[Mapping[str, Any]]) -> tuple[ExperimentRecord, ...]:
+    """Разобрать набор записей и проверить уникальность идентификаторов."""
+    return coerce_experiment_records(items)

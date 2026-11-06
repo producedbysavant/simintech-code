@@ -14,8 +14,8 @@ from .contracts import load_default_contracts
 from .errors import ModelQueryError
 from .graph import ModelIndex, coverage_dict
 from .ir import Container, ModelIR
-from .semantics import semantic_coverage
-from .tokens import estimate_tokens
+from .semantics import review_summary, semantic_coverage
+from .tokens import estimate_tokens, fits_budget
 
 _FOCUS = frozenset({
     "containers", "classes", "signals", "contracts", "semantics",
@@ -69,27 +69,19 @@ def _review() -> list[str]:
         registry = load_default_contracts()
     except ModelQueryError as exc:
         return ["## Review", f"review: unavailable ({exc})"]
-    counts = {"approved": 0, "preliminary": 0, "rejected": 0}
-    preliminary: list[str] = []
-    invalid = 0
-    for name in registry.classes():
-        contract = registry.get(name)
-        if contract is None or not contract.pilot_scope:
-            continue
-        status = contract.review.effective_status
-        counts[status] = counts.get(status, 0) + 1
-        if contract.review.status == "approved" and not contract.review.approved:
-            invalid += 1
-        if status == "preliminary":
-            ref = contract.review.ref
-            preliminary.append(f"- {name}" + (f" [{ref}]" if ref else ""))
+    summary = review_summary(registry)
+    counts = summary["counts"]
     lines = ["## Review", f"rows: {sum(counts.values())}"]
     for status in ("approved", "preliminary", "rejected"):
         lines.append(f"{status}: {counts[status]}")
-    lines.append(f"invalid: {invalid}")
+    lines.append(f"invalid: {summary['invalid']}")
+    preliminary = summary["preliminary"]
     if preliminary:
         lines.append("preliminary:")
-        lines.extend(preliminary[:10])
+        refs = summary["refs"]
+        for name in preliminary[:10]:
+            ref = refs.get(name, "")
+            lines.append(f"- {name}" + (f" [{ref}]" if ref else ""))
         if len(preliminary) > 10:
             lines.append(f"... ещё {len(preliminary) - 10}")
     return lines
@@ -275,7 +267,7 @@ def _join(blocks: list[list[str]]) -> str:
 
 
 def _fits(blocks: list[list[str]], budget_tokens: int) -> bool:
-    return estimate_tokens(_join(blocks)) <= budget_tokens
+    return fits_budget(_join(blocks), budget_tokens)
 
 
 def _replace_estimate(text: str, value: int) -> str:
@@ -357,10 +349,11 @@ def build_manifest(model: ModelIR, budget_tokens: int = 3000,
             break
         if not extra:
             required = estimate_tokens(_join(base))
+            omitted_tokens = estimate_tokens(_join([block]))
             raise ModelQueryError(
                 f"паспорт не помещается в бюджет: обязательная часть "
-                f"требует ~{required} токенов при бюджете "
-                f"{budget_tokens}")
+                f"~{required} токенов и Omitted ~{omitted_tokens} токенов "
+                f"при бюджете {budget_tokens}")
         extra.pop()
         omitted.append(included.pop())
     return _finalize_estimate(_join(base + extra), budget_tokens)
