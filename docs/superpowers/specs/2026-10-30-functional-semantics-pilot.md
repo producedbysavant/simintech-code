@@ -442,7 +442,7 @@ production-реестре 958 классов: каталог его не сод�
   "objects_with_approved_behavior": 8,
   "objects_with_known_ports": 700,
   "objects_with_init_script": 85,
-  "objects_unknown": {"class_unknown": 0, "object_script_run": 5, "rejected": 0, "object_script_init": 12, "script_defined": 20, "external_submodel": 11, "behavior_unknown": 201, "unapproved": 602},
+  "objects_unknown": {"class_unknown": 0, "object_script_run": 5, "rejected": 0, "script_defined": 20, "external_submodel": 11, "object_script_init": 12, "behavior_unknown": 201, "unapproved": 602},
   "dependencies_total": 1200,
   "dependencies_known": 800,
   "known_absences_total": 0,

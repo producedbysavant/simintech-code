@@ -696,9 +696,6 @@ class _Walker:
                             obj.class_name, _props(obj))
                         if dependency.output == port.index]
         if not dependencies:
-            if _has_known_absence(contract, port.index):
-                self._detail_and_downgrade(port, start)
-                return
             script = _object_run_script(obj)
             if script:
                 address = _source_address(
@@ -715,6 +712,9 @@ class _Walker:
                 self._emit({"kind": "script", "address": address},
                            hops + [hop], path)
                 self.unknown.append(f"{name}: object_script_run")
+            elif _has_known_absence(contract, port.index):
+                self._detail_and_downgrade(port, start)
+                return
             else:
                 reason = _no_dependency_reason(obj, contract)
                 self.unknown.append(f"{name}: {reason}")

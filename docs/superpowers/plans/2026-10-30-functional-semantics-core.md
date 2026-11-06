@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Исторический план:** выполнен в 0.19.0. Актуальные правила: `docs/superpowers/specs/2026-10-30-functional-semantics-pilot.md`. Причины `object_script_run`/`object_script_init`, review gate и experiment evidence добавлены в 0.20.0.
+
 **Goal:** Научить `simintech_api.model_ir` отвечать на вопрос о функциональном влиянии входов на выход, не выдавая структурную достижимость за причинность, и дать проверяемое покрытие семантики.
 
 **Architecture:** Один Model IR, без второго представления. `BlockContract` расширяется полями `behavior`, `dependencies`, `signal_types`, `review`, `known_absences`. Граф сохраняет типы рёбер; запросы получают фильтр `edge_kinds`. Новый модуль `semantics.py` реализует `influence` и `semantic_coverage` поверх существующих `ModelIndex` и реестра контрактов.
@@ -18,7 +20,7 @@
 - `selected_input` раскрывается по явному `mapping`; подставлять `port.index` вместо значения управляющего сигнала запрещено.
 - Переход по `boundary` не подтверждает причинность; внутренний `unknown` понижает зависимость передаваемого значения до `not_established`, даже если внешний контракт дал `contract`. Отдельная управляющая зависимость `control` сохраняется: известен факт управления, не выбранная ветвь.
 - `pilot_scope` (`live_acceptance`, `synthetic_only`, `auxiliary`) сохраняется в контракте; `auxiliary` не входит в живую приёмку.
-- `script` не сворачивается в `unknown`: сохраняются `kind: script`, `reason: object_script`, `evidence.status: not_established`. При пустом `dependencies` всё равно создаётся терминальный `script`-элемент с адресом `объект@script:слот`.
+- `script` не сворачивается в `unknown`: сохраняются `kind: script`, `reason: object_script_run`, `evidence.status: not_established`. При пустом `dependencies` всё равно создаётся терминальный `script`-элемент с адресом `объект@script:слот`.
 - `known_absences` не входят в `items` и не являются терминальными узлами влияния. `claim`/`derived` выдаются только при `review.status = approved`, `measured` именно этого отсутствия - всегда; иначе отсутствие не выдаётся и не считается в `known_absences_total`.
 - По худшему звену агрегируется только `evidence.status`. `hops` сохраняют `kind`, `condition`, `state` и provenance каждого перехода.
 - 958-классовый реестр не расширяется. Коммутатор по номеру порта живёт в тестовом контракте; `nport_named` не добавляется в production-данные.
@@ -755,7 +757,7 @@ def test_influence_script_preserves_kind_and_reason():
     # Блок с непустым Script в объекте.
     ...
     assert result.items[0]["hops"][-1]["kind"] == "script"
-    assert result.items[0]["hops"][-1]["evidence"]["reason"] == "object_script"
+    assert result.items[0]["hops"][-1]["evidence"]["reason"] == "object_script_run"
     assert result.items[0]["evidence"]["status"] == "not_established"
 
 
@@ -799,7 +801,7 @@ Expected: FAIL.
 - `claim` требует `review.status == approved`;
 - `derived` требует `review.status == approved`;
 - `preliminary` всегда `not_established`;
-- `script` сохраняет `kind: script`, `reason: object_script`;
+- `script` сохраняет `kind: script`, `reason: object_script_run`;
 - `known_absences` не попадают в `items`;
 - `stateful` без `state` уже отвергнут валидатором.
 
@@ -930,7 +932,7 @@ git commit -m "feat(model-ir): границы субмоделей, память
 **Interfaces:**
 - Produces: `semantic_coverage(model: ModelIR, registry: BlockContractRegistry | None = None) -> dict[str, Any]` с полями:
   - `objects_total`, `objects_with_behavior`, `objects_with_approved_behavior`, `objects_with_known_ports`;
-  - `objects_unknown` с причинами `class_unknown`, `object_script`, `script_defined`, `external_submodel`, `behavior_unknown`, `unapproved`;
+  - `objects_unknown` с причинами `class_unknown`, `object_script_run`, `script_defined`, `external_submodel`, `behavior_unknown`, `unapproved`;
   - `dependencies_total`, `dependencies_known`, `known_absences_total`;
   - `pilot_scope_counts` по `live_acceptance`/`synthetic_only`/`auxiliary`;
   - `by_class` с `objects`, `with_behavior`, `approved`, `pilot_scope`.
@@ -948,11 +950,11 @@ def test_semantic_coverage_separates_approved_and_unknown():
 ```
 
 ```python
-def test_semantic_coverage_counts_object_script():
+def test_semantic_coverage_counts_object_script_run():
     # Класс «Язык программирования» и непустой Script у экземпляра:
-    # более конкретная причина object_script важнее script_defined.
+    # более конкретная причина object_script_run важнее script_defined.
     ...
-    assert data["objects_unknown"]["object_script"] == 1
+    assert data["objects_unknown"]["object_script_run"] == 1
     assert data["objects_unknown"].get("script_defined", 0) == 0
 
 
@@ -976,7 +978,7 @@ Expected: FAIL.
 - объекты: `kind in (BLOCK, SUBMODEL, UNKNOWN)`;
 - `dependencies_total` считается после `dependencies_for`;
 - `dependencies_known` учитывает `measured`/`claim` и `derived` с approved;
-- каждый объект попадает ровно в одну причину `objects_unknown` в порядке: `class_unknown`, `object_script`, `script_defined`, `external_submodel`, `behavior_unknown`, `unapproved`;
+- каждый объект попадает ровно в одну причину `objects_unknown` в порядке: `class_unknown`, `object_script_run`, `script_defined`, `external_submodel`, `behavior_unknown`, `unapproved`;
 - `pilot_scope_counts` считает классы, у которых `pilot_scope` непустой; `auxiliary` не входит в `live_acceptance`;
 - `by_class` содержит `objects`, `with_behavior`, `approved`, `pilot_scope`.
 

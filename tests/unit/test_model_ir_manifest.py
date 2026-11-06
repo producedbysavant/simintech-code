@@ -178,6 +178,17 @@ def test_manifest_refuses_when_mandatory_part_exceeds_budget(monkeypatch):
         build_manifest(parse_xprt(MODEL), budget_tokens=2000)
 
 
+def test_manifest_omits_russian_section_over_token_budget(monkeypatch):
+    from simintech_api.model_ir import manifest
+
+    monkeypatch.setattr(
+        manifest, "_classes",
+        lambda index: ["## Classes"] + ["я" * 1000 for _ in range(5)])
+    text = build_manifest(parse_xprt(MODEL), budget_tokens=2000)
+    assert "## Classes" not in text
+    assert "classes" in text.split("## Omitted", 1)[1]
+
+
 def test_manifest_long_russian_names_stay_in_budget():
     parts = ["<Header><project><page>"]
     for index in range(300):

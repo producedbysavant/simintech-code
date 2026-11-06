@@ -530,6 +530,27 @@ def test_influence_known_absence_is_separate():
     assert result.evidence["known_absences"][0]["source"]["index"] == 0
 
 
+def test_run_script_wins_over_known_absence():
+    data = copy.deepcopy(_semantic_data())
+    data["Константа"]["dependencies"] = []
+    data["Константа"]["known_absences"] = [{
+        "output": 0,
+        "source": {"kind": "property", "name": "a"},
+        "provenance": {"status": "claim", "ref": "test"},
+    }]
+    data["Константа"]["review"] = {
+        "status": "approved", "reviewer": "test", "date": "2026-10-31",
+    }
+    result = influence(
+        ModelIndex(parse_xprt(SCRIPT_MODEL)), _semantic_registry(data),
+        "main::S:0")
+    scripts = [item for item in result.items
+               if item["source"]["kind"] == "script"]
+    assert len(scripts) == 1
+    assert scripts[0]["hops"][-1]["evidence"]["reason"] == "object_script_run"
+    assert result.evidence["known_absences"]
+
+
 def test_influence_known_absence_does_not_add_behavior_unknown():
     result = influence(
         ModelIndex(parse_xprt(MODEL)), _with_absence("claim", "approved"),
@@ -798,6 +819,22 @@ def test_influence_script_defined_reason_matches_coverage():
     coverage = semantic_coverage(parse_xprt(MODEL),
                                  _semantic_registry(data))
     assert coverage["objects_unknown"]["script_defined"] == 1
+
+
+def test_init_does_not_override_script_defined():
+    data = copy.deepcopy(_semantic_data())
+    data["Константа"]["ports"] = {
+        "model": "unknown", "reason": "script_defined_ports"}
+    data["Константа"]["dependencies"] = []
+    data["Константа"]["behavior"] = {"operation": "unknown"}
+    model = _with_scripts(MODEL, [("OnInitScript", "n = 1;")])
+    result = influence(
+        ModelIndex(parse_xprt(model)), _semantic_registry(data), "main::S:0")
+    assert any(entry.endswith(": script_defined")
+               for entry in result.unknown)
+    coverage = semantic_coverage(parse_xprt(model), _semantic_registry(data))
+    assert coverage["objects_unknown"]["script_defined"] == 1
+    assert coverage["objects_unknown"]["object_script_init"] == 0
 
 
 def test_semantic_coverage_counts_object_script_run():
