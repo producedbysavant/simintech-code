@@ -14,6 +14,7 @@ from simintech_api.model_ir import (  # noqa: E402
     ModelIndex,
     build_manifest,
     compile_system_spec,
+    estimate_tokens,
     parse_xprt,
     verify_model,
 )
@@ -393,7 +394,7 @@ def test_manifest_hard_budget_on_scale_models(budget):
                   wide_model(40)):
         text = build_manifest(parse_xprt(model.text),
                               budget_tokens=budget)
-        assert len(text) <= budget * 3
+        assert estimate_tokens(text) <= budget
         assert text.startswith("# Model IR")
         assert "## Coverage" in text
         assert "<?xml" not in text and "<object" not in text
@@ -427,6 +428,6 @@ def test_manifest_omitted_is_reserved(monkeypatch):
 
     text = manifest.build_manifest(ir, budget_tokens=2000)
 
-    assert len(text) <= 6000
+    assert estimate_tokens(text) <= 2000
     assert "## Omitted" in text
     assert "containers" in text.split("## Omitted", 1)[1]

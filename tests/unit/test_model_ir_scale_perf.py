@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 from simintech_api.model_ir import (  # noqa: E402
     ModelIndex,
     build_manifest,
+    estimate_tokens,
     parse_xprt,
 )
 
@@ -45,7 +46,7 @@ def test_flat_10000_parse_index_manifest_within_ceilings():
     assert parsed < 10.0, parsed
     assert indexed < 3.0, indexed
     assert manifest < 3.0, manifest
-    assert len(text) <= 3000 * 3
+    assert estimate_tokens(text) <= 3000
 
 
 def test_branch_6000_within_ceiling():

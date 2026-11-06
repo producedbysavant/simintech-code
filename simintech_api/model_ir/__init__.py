@@ -72,6 +72,7 @@ from .experiments import (
 )
 from .graph import ModelIndex, QueryResult
 from .manifest import build_manifest
+from .tokens import estimate_tokens
 from .semantics import (
     BehaviorScenario,
     BehaviorSpec,
@@ -159,6 +160,7 @@ __all__ = [
     "build_model_ir",
     "compile_system_spec",
     "content_hash",
+    "estimate_tokens",
     "influence",
     "load_default_contracts",
     "parse_behavior_spec",
