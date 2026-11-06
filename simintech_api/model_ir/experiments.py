@@ -14,7 +14,9 @@ from typing import Any
 from .errors import ModelQueryError
 
 EXPERIMENT_SCHEMA = "experiment-record/1"
-_MAX_RECORDS = 100
+MAX_RECORDS = 100
+MAX_RECORD_LIMITATIONS = 20
+MAX_LIMITATION_CHARS = 500
 _ALLOWED_STATUS = {"observed", "experiment", "unknown"}
 
 
@@ -123,6 +125,13 @@ def parse_experiment_record(data: Mapping[str, Any]) -> ExperimentRecord:
     if not isinstance(raw_limitations, list) or not all(
             isinstance(item, str) for item in raw_limitations):
         raise ModelQueryError("experiment.limitations: нужен список строк")
+    if len(raw_limitations) > MAX_RECORD_LIMITATIONS:
+        raise ModelQueryError(
+            f"experiment.limitations: больше {MAX_RECORD_LIMITATIONS}")
+    if any(len(item) > MAX_LIMITATION_CHARS for item in raw_limitations):
+        raise ModelQueryError(
+            f"experiment.limitations: строка длиннее "
+            f"{MAX_LIMITATION_CHARS} символов")
     return ExperimentRecord(
         id=ident,
         structure_hash=structure_hash,
@@ -139,14 +148,16 @@ def parse_experiment_record(data: Mapping[str, Any]) -> ExperimentRecord:
 def parse_experiment_records(
         items: Iterable[Mapping[str, Any]]) -> tuple[ExperimentRecord, ...]:
     """Разобрать набор записей и проверить уникальность идентификаторов."""
-    records = tuple(parse_experiment_record(item) for item in items)
-    if len(records) > _MAX_RECORDS:
-        raise ModelQueryError(
-            f"experiment: больше {_MAX_RECORDS} записей")
+    records: list[ExperimentRecord] = []
+    for item in items:
+        if len(records) >= MAX_RECORDS:
+            raise ModelQueryError(
+                f"experiment: больше {MAX_RECORDS} записей")
+        records.append(parse_experiment_record(item))
     seen: set[str] = set()
     for record in records:
         if record.id in seen:
             raise ModelQueryError(
                 f"experiment: повтор идентификатора {record.id!r}")
         seen.add(record.id)
-    return records
+    return tuple(records)

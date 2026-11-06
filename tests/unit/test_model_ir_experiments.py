@@ -122,7 +122,8 @@ def test_influence_experiment_marks_chain():
     assert chain["evidence"]["ref"] == "experiment:exp-1"
     assert chain["evidence"]["experiments"] == ["exp-1"]
     assert result.evidence["experiments"] == {
-        "supplied": 1, "applied": 1, "negative": 0, "inapplicable": 0}
+        "supplied": 1, "applied": 1, "blocked": 0,
+        "negative": 0, "inapplicable": 0}
     assert any(item["kind"] == "experiment_scope"
                for item in result.evidence["limitations"])
     assert result.evidence["known_absences"] == []
@@ -220,3 +221,37 @@ def test_influence_truncated_adds_limitation():
     assert result.truncated is True
     assert any(item["kind"] == "truncated"
                for item in result.evidence["limitations"])
+
+
+def test_influence_rejected_chain_is_not_upgraded():
+    data = copy.deepcopy(_semantic_data())
+    data["Усилитель"]["review"] = {
+        "status": "rejected", "reviewer": "инженер",
+        "date": "2026-11-06", "ref": "pilot_blocks.yaml:Усилитель",
+    }
+    result = influence(
+        _index(), _semantic_registry(data), "main::S:0",
+        experiments=[_record(_index())])
+    chain = _chain_to(result, "main::K@property:a")
+    assert chain["evidence"]["status"] == "not_established"
+    assert chain["evidence"]["reason"] == "rejected"
+    assert "experiments" not in chain["evidence"]
+    assert result.evidence["experiments"]["blocked"] == 1
+    assert any(item["kind"] == "experiment_not_applicable"
+               for item in result.evidence["limitations"])
+
+
+def test_influence_rejects_too_many_experiments():
+    index = _index()
+    records = [_record(index, id=f"exp-{number}") for number in range(101)]
+    with pytest.raises(ModelQueryError):
+        influence(
+            index, _preliminary_registry(), "main::S:0",
+            experiments=records)
+
+
+def test_parse_experiment_record_rejects_too_many_limitations():
+    data = _record(_index())
+    data["limitations"] = ["ограничение"] * 21
+    with pytest.raises(ModelQueryError):
+        parse_experiment_record(data)

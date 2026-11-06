@@ -22,7 +22,11 @@ from .contracts import (
     load_default_contracts,
 )
 from .errors import ModelQueryError
-from .experiments import (ExperimentRecord, parse_experiment_record)
+from .experiments import (
+    MAX_RECORDS,
+    ExperimentRecord,
+    parse_experiment_record,
+)
 from .graph import ModelIndex, QueryResult
 from .ir import ModelIR, ModelObject
 
@@ -142,8 +146,10 @@ class _ExperimentSet:
         self.negative: list[ExperimentRecord] = []
         self.inapplicable: list[dict[str, str]] = []
         self.applied: list[ExperimentRecord] = []
+        self.blocked: list[ExperimentRecord] = []
         self.limitations: list[dict[str, str]] = []
         self._notes: set[tuple[str, str, str]] = set()
+        self._limit_hit = False
         self._by_target: dict[str, list[ExperimentRecord]] = {}
         structure_hash = index.model.meta.structure_hash
         content_hash = index.model.meta.content_hash
@@ -165,6 +171,9 @@ class _ExperimentSet:
         if key in self._notes:
             return
         self._notes.add(key)
+        if len(self.limitations) >= _MAX_LIMITATIONS:
+            self._limit_hit = True
+            return
         item = {"kind": kind, "text": text}
         if ref:
             item["ref"] = ref
@@ -178,6 +187,7 @@ class _ExperimentSet:
     def apply(self, items: list[dict[str, Any]],
               include: frozenset[str]) -> None:
         used: set[str] = set()
+        supported: set[str] = set()
         for item in items:
             target = str(item.get("target", ""))
             candidates = _item_addresses(item)
@@ -186,10 +196,24 @@ class _ExperimentSet:
                     continue
                 used.add(record.id)
                 evidence = item["evidence"]
-                if evidence.get("status") != "contract":
+                status = str(evidence.get("status", ""))
+                reason = str(evidence.get("reason", ""))
+                if status in ("contract", "experiment"):
+                    supported.add(record.id)
+                elif reason == "unapproved":
                     evidence["status"] = "experiment"
                     evidence["ref"] = f"experiment:{record.id}"
+                    evidence["contract_status"] = status
+                    evidence["contract_reason"] = reason
                     evidence.pop("reason", None)
+                    supported.add(record.id)
+                else:
+                    self.blocked.append(record)
+                    self._note(
+                        "experiment_not_applicable", record.id,
+                        f"свидетельство не отменяет причину "
+                        f"{reason or status}")
+                    continue
                 evidence.setdefault("experiments", []).append(record.id)
                 self._note(
                     "experiment_scope", record.id,
@@ -208,7 +232,7 @@ class _ExperimentSet:
                 for text in record.limitations:
                     self._note("experiment_record", record.id, text)
         self.applied = [record for record in self.applicable
-                        if record.id in used]
+                        if record.id in supported]
         for record in self.applicable:
             if record.id not in used:
                 self._note("experiment_unmatched", record.id,
@@ -227,6 +251,7 @@ class _ExperimentSet:
         return {
             "supplied": self.supplied,
             "applied": len(self.applied),
+            "blocked": len(self.blocked),
             "negative": len(self.negative),
             "inapplicable": len(self.inapplicable),
         }
@@ -252,6 +277,9 @@ def influence(
         experiments = (experiments,)
     records: list[ExperimentRecord] = []
     for item in experiments:
+        if len(records) >= MAX_RECORDS:
+            raise ModelQueryError(
+                f"experiment: больше {MAX_RECORDS} записей")
         if isinstance(item, ExperimentRecord):
             records.append(item)
         elif isinstance(item, MappingABC):
