@@ -97,7 +97,9 @@ class Review:
     def approved(self) -> bool:
         """Утверждено только при непустых подписи и дате."""
         return (self.status == "approved"
+                and isinstance(self.reviewer, str)
                 and bool(self.reviewer.strip())
+                and isinstance(self.date, str)
                 and bool(self.date.strip()))
 
     @property
@@ -214,12 +216,16 @@ def _behavior(data: Mapping[str, Any]) -> Behavior:
         provenance=_provenance(data.get("provenance", {})))
 
 
+def _review_text(value: Any) -> str:
+    return value.strip() if isinstance(value, str) else ""
+
+
 def _review(data: Mapping[str, Any]) -> Review:
     return Review(
         status=str(data.get("status", "preliminary")),
-        reviewer=str(data.get("reviewer", "")),
-        date=str(data.get("date", "")),
-        ref=str(data.get("ref", "")))
+        reviewer=_review_text(data.get("reviewer")),
+        date=_review_text(data.get("date")),
+        ref=_review_text(data.get("ref")))
 
 
 def _dependency(data: Mapping[str, Any]) -> Dependency:
@@ -891,9 +897,11 @@ def validate_contract_data(data: Mapping[str, Any],
             else:
                 if "ref" in review and not isinstance(review.get("ref"), str):
                     problems.append(f"{name}: review.ref не строка")
+                reviewer = review.get("reviewer")
+                date = review.get("date")
                 if review.get("status") == "approved" and not (
-                        str(review.get("reviewer", "")).strip()
-                        and str(review.get("date", "")).strip()):
+                        isinstance(reviewer, str) and reviewer.strip()
+                        and isinstance(date, str) and date.strip()):
                     problems.append(
                         f"{name}: approved без reviewer/date")
         if "dependencies" in item:

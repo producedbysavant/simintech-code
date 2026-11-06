@@ -48,6 +48,7 @@ class ExperimentRecord:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "schema": EXPERIMENT_SCHEMA,
             "id": self.id,
             "structure_hash": self.structure_hash,
             "content_hash": self.content_hash,
@@ -70,6 +71,15 @@ def _text(where: str, value: Any) -> str:
     result = str(value or "").strip()
     if not result:
         raise ModelQueryError(f"{where}: пустое значение")
+    return result
+
+
+def _address(where: str, value: Any) -> str:
+    if not isinstance(value, str):
+        raise ModelQueryError(f"{where}: нужен строковый адрес")
+    result = value.strip()
+    if not result:
+        raise ModelQueryError(f"{where}: пустой адрес")
     return result
 
 
@@ -98,34 +108,37 @@ def parse_experiment_record(data: Mapping[str, Any]) -> ExperimentRecord:
                            data.get("structure_hash"))
     content_hash = _text("experiment.content_hash",
                          data.get("content_hash"))
-    scenario = _mapping("experiment.scenario", data.get("scenario"))
-    changed_source = _text("experiment.scenario.changed",
-                           scenario.get("changed"))
-    _number("experiment.scenario.from", scenario.get("from"))
-    _number("experiment.scenario.to", scenario.get("to"))
-    _number("experiment.scenario.at", scenario.get("at"),
+    scenario_data = dict(_mapping("experiment.scenario",
+                                  data.get("scenario")))
+    changed_source = _address("experiment.scenario.changed",
+                              scenario_data.get("changed"))
+    scenario_data["changed"] = changed_source
+    _number("experiment.scenario.from", scenario_data.get("from"))
+    _number("experiment.scenario.to", scenario_data.get("to"))
+    _number("experiment.scenario.at", scenario_data.get("at"),
             non_negative=True)
     run = _mapping("experiment.run", data.get("run"))
     _number("experiment.run.step", run.get("step"), positive=True)
     _number("experiment.run.to_time", run.get("to_time"), positive=True)
     _text("experiment.run.baseline", run.get("baseline"))
-    observation = _mapping("experiment.observation",
-                           data.get("observation"))
-    target = _text("experiment.observation.target",
-                   observation.get("target"))
+    observation_data = dict(_mapping("experiment.observation",
+                                     data.get("observation")))
+    target = _address("experiment.observation.target",
+                      observation_data.get("target"))
+    observation_data["target"] = target
     if (changed_source == target
             or target.startswith(changed_source + ":")
             or target.startswith(changed_source + "@")):
         raise ModelQueryError(
             "experiment: scenario.changed совпадает с observation.target "
             "или является его объектом")
-    observed_changed = observation.get("changed")
+    observed_changed = observation_data.get("changed")
     if not isinstance(observed_changed, bool):
         raise ModelQueryError(
             "experiment.observation.changed: нужен bool")
-    if observed_changed and "first_change_at" in observation:
+    if observed_changed and "first_change_at" in observation_data:
         _number("experiment.observation.first_change_at",
-                observation.get("first_change_at"), non_negative=True)
+                observation_data.get("first_change_at"), non_negative=True)
     status = str(data.get("status", "observed"))
     if status not in _ALLOWED_STATUS:
         raise ModelQueryError(
@@ -146,9 +159,9 @@ def parse_experiment_record(data: Mapping[str, Any]) -> ExperimentRecord:
         id=ident,
         structure_hash=structure_hash,
         content_hash=content_hash,
-        scenario=dict(scenario),
+        scenario=scenario_data,
         run=dict(run),
-        observation=dict(observation),
+        observation=observation_data,
         status=status,
         recorded_at=recorded_at,
         limitations=tuple(raw_limitations),

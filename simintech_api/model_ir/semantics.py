@@ -119,6 +119,15 @@ def _matches_source(source: str, candidates: set[str]) -> bool:
                for candidate in candidates)
 
 
+def _matches_target(target: str, item_target: str) -> bool:
+    if target == item_target:
+        return True
+    if not _object_address(target):
+        return False
+    return (item_target.startswith(target + ":")
+            or item_target.startswith(target + "@"))
+
+
 def _has_branch(item: Mapping[str, Any]) -> bool:
     return any(str(hop.get("kind", "")) in ("conditional", "control")
                for hop in item.get("hops", ()))
@@ -157,7 +166,6 @@ class _ExperimentSet:
         self.blocked: dict[str, ExperimentRecord] = {}
         self.limitations: list[dict[str, str]] = []
         self._notes: set[tuple[str, str, str]] = set()
-        self._by_target: dict[str, list[ExperimentRecord]] = {}
         structure_hash = index.model.meta.structure_hash
         content_hash = index.model.meta.content_hash
         for record in records:
@@ -171,7 +179,6 @@ class _ExperimentSet:
                 self.negative.append(record)
             else:
                 self.applicable.append(record)
-                self._by_target.setdefault(record.target, []).append(record)
 
     def _note(self, kind: str, ref: str, text: str) -> None:
         key = (kind, ref, text)
@@ -195,7 +202,9 @@ class _ExperimentSet:
         for item in items:
             target = str(item.get("target", ""))
             candidates = _item_addresses(item)
-            for record in self._by_target.get(target, ()):
+            for record in self.applicable:
+                if not _matches_target(record.target, target):
+                    continue
                 if not _matches_source(record.source, candidates):
                     continue
                 used.add(record.id)
@@ -224,6 +233,11 @@ class _ExperimentSet:
                     "experiment_scope", record.id,
                     "наблюдение относится к одному сценарию; вывод не "
                     "переносится на другие входы и модели")
+                if _object_address(record.target):
+                    self._note(
+                        "experiment_object_target", record.id,
+                        "адрес цели задан объектом; совпадение шире "
+                        "конкретного порта")
                 if _object_address(record.source):
                     self._note(
                         "experiment_object_address", record.id,
@@ -553,16 +567,8 @@ def _props(obj: ModelObject) -> dict[str, str]:
 
 
 def _review_ref(contract: BlockContract) -> str:
-    """Ссылка на строку эталона, к которой относится контракт."""
-    if contract.review.ref:
-        return contract.review.ref
-    for dependency in contract.dependencies:
-        if dependency.provenance.ref:
-            return dependency.provenance.ref
-    for absence in contract.known_absences:
-        if absence.provenance.ref:
-            return absence.provenance.ref
-    return contract.behavior.provenance.ref
+    """Ссылка на строку эталона; провенанс зависимости сюда не подмешивается."""
+    return contract.review.ref
 
 
 def _object_run_script(obj: ModelObject) -> str:
@@ -712,11 +718,12 @@ class _Walker:
                 self._emit({"kind": "script", "address": address},
                            hops + [hop], path)
                 self.unknown.append(f"{name}: object_script_run")
-            elif _has_known_absence(contract, port.index):
-                self._detail_and_downgrade(port, start)
-                return
             else:
                 reason = _no_dependency_reason(obj, contract)
+                if reason == "behavior_unknown" and _has_known_absence(
+                        contract, port.index):
+                    self._detail_and_downgrade(port, start)
+                    return
                 self.unknown.append(f"{name}: {reason}")
             self._detail_and_downgrade(port, start)
             return

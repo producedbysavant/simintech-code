@@ -68,7 +68,10 @@ def test_parse_experiment_record_full_fields():
     assert record.source == "main::K:0"
     assert record.observed is True
     assert record.run["baseline"] == "base-1"
+    assert record.to_dict()["schema"] == EXPERIMENT_SCHEMA
     assert record.to_dict()["observation"]["changed"] is True
+    again = parse_experiment_record(record.to_dict())
+    assert again == record
 
 
 @pytest.mark.parametrize("field", ["structure_hash", "content_hash"])
@@ -105,6 +108,23 @@ def test_parse_experiment_record_rejects_target_object_as_source():
 def test_parse_experiment_record_rejects_long_limitation():
     data = _record(_index())
     data["limitations"] = ["я" * 501]
+    with pytest.raises(ModelQueryError):
+        parse_experiment_record(data)
+
+
+def test_parse_experiment_record_normalizes_addresses():
+    data = _record(_index())
+    data["scenario"]["changed"] = " main::K:0 "
+    data["observation"]["target"] = " main::S:0 "
+    record = parse_experiment_record(data)
+    assert record.source == "main::K:0"
+    assert record.target == "main::S:0"
+    assert record.to_dict()["observation"]["target"] == "main::S:0"
+
+
+def test_parse_experiment_record_rejects_nonstring_target():
+    data = _record(_index())
+    data["observation"]["target"] = 123
     with pytest.raises(ModelQueryError):
         parse_experiment_record(data)
 
@@ -204,6 +224,18 @@ def test_influence_experiment_target_missing_is_unmatched():
         index, _preliminary_registry(), "main::S:0", experiments=[data])
     assert result.evidence["experiments"]["applied"] == 0
     assert any(item["kind"] == "experiment_unmatched"
+               for item in result.evidence["limitations"])
+
+
+def test_influence_experiment_object_target_matches_port():
+    index = _index()
+    data = _record(index)
+    data["observation"]["target"] = "main::G"
+    result = influence(
+        index, _preliminary_registry(), "main::G:1", experiments=[data])
+    chain = _chain_to(result, "main::K@property:a")
+    assert chain["evidence"]["status"] == "experiment"
+    assert any(item["kind"] == "experiment_object_target"
                for item in result.evidence["limitations"])
 
 

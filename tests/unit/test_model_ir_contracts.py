@@ -283,6 +283,27 @@ def test_contract_v2_parses_review_ref_and_gate():
     assert review.effective_status == "approved"
 
 
+@pytest.mark.parametrize("reviewer,date", [
+    (None, None), (123, None), ("", "2026-11-06"), (None, ""),
+])
+def test_review_null_or_nonstring_signature_is_preliminary(reviewer, date):
+    registry = BlockContractRegistry(_one_contract({
+        "status": "approved", "reviewer": reviewer, "date": date,
+    }))
+    review = registry.require("Тестовый блок").review
+    assert review.approved is False
+    assert review.effective_status == "preliminary"
+
+
+def test_validator_rejects_null_signature():
+    data = _contracts()
+    data["classes"]["Усилитель"]["review"] = {
+        "status": "approved", "reviewer": None, "date": None,
+    }
+    problems = validate_contract_data(data, _catalog())
+    assert any("approved без reviewer/date" in item for item in problems)
+
+
 def test_review_unsigned_approved_is_preliminary():
     registry = BlockContractRegistry(_one_contract({
         "status": "approved", "reviewer": "", "date": "",

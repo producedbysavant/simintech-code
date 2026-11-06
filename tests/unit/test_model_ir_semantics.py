@@ -244,7 +244,22 @@ def test_semantic_coverage_review_counts_and_preliminary_list():
     assert coverage["review_refs"] == {
         "Усилитель": "pilot_blocks.yaml:Усилитель"}
     assert coverage["by_class"]["Усилитель"]["review_status"] == "rejected"
+    assert (coverage["by_class"]["Усилитель"]["review_ref"]
+            == "pilot_blocks.yaml:Усилитель")
     assert coverage["objects_unknown"]["rejected"] == 1
+
+
+def test_review_ref_does_not_fall_back_to_provenance():
+    data = copy.deepcopy(_semantic_data())
+    data["Усилитель"]["review"] = {
+        "status": "preliminary", "reviewer": "", "date": "",
+    }
+    coverage = semantic_coverage(parse_xprt(MODEL), _semantic_registry(data))
+    assert coverage["by_class"]["Усилитель"]["review_ref"] == ""
+    result = influence(
+        ModelIndex(parse_xprt(MODEL)), _semantic_registry(data), "main::S:0")
+    chain = _chain_to(result, "main::K@property:a")
+    assert "review_ref" not in chain["evidence"]
 
 
 def test_semantic_coverage_rejected_is_not_approved():
@@ -528,6 +543,26 @@ def test_influence_known_absence_is_separate():
         ModelIndex(parse_xprt(MODEL)), _semantic_registry(data), "main::S:0")
     assert result.items == ()
     assert result.evidence["known_absences"][0]["source"]["index"] == 0
+
+
+def test_known_absence_keeps_script_defined_reason():
+    data = copy.deepcopy(_semantic_data())
+    data["Константа"]["ports"] = {
+        "model": "unknown", "reason": "script_defined_ports"}
+    data["Константа"]["dependencies"] = []
+    data["Константа"]["known_absences"] = [{
+        "output": 0,
+        "source": {"kind": "property", "name": "a"},
+        "provenance": {"status": "claim", "ref": "test"},
+    }]
+    data["Константа"]["review"] = {
+        "status": "approved", "reviewer": "test", "date": "2026-10-31",
+    }
+    result = influence(
+        ModelIndex(parse_xprt(MODEL)), _semantic_registry(data), "main::S:0")
+    assert any(entry.endswith(": script_defined")
+               for entry in result.unknown)
+    assert result.evidence["known_absences"]
 
 
 def test_run_script_wins_over_known_absence():
