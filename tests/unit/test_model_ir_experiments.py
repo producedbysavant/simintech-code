@@ -86,6 +86,13 @@ def test_parse_experiment_record_allows_negative_scenario_values():
     assert record.scenario["from"] == -1.0
 
 
+def test_parse_experiment_record_rejects_target_as_source():
+    data = _record(_index())
+    data["scenario"]["changed"] = "main::S:0"
+    with pytest.raises(ModelQueryError):
+        parse_experiment_record(data)
+
+
 def test_parse_experiment_record_requires_changed_source():
     data = _record(_index())
     data["scenario"]["changed"] = ""

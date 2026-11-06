@@ -125,6 +125,15 @@ def _has_branch(item: Mapping[str, Any]) -> bool:
                for hop in item.get("hops", ()))
 
 
+def _hop_denial(item: Mapping[str, Any]) -> str:
+    """Причина хопа, которую эксперимент не имеет права отменить."""
+    for hop in item.get("hops", ()):
+        reason = str(hop.get("evidence", {}).get("reason", ""))
+        if reason and reason != "unapproved":
+            return reason
+    return ""
+
+
 def _cap_limitations(items: list[dict[str, str]]) -> list[dict[str, str]]:
     if len(items) <= _MAX_LIMITATIONS:
         return items
@@ -198,9 +207,10 @@ class _ExperimentSet:
                 evidence = item["evidence"]
                 status = str(evidence.get("status", ""))
                 reason = str(evidence.get("reason", ""))
+                denial = _hop_denial(item)
                 if status in ("contract", "experiment"):
                     supported.add(record.id)
-                elif reason == "unapproved":
+                elif reason == "unapproved" and not denial:
                     evidence["status"] = "experiment"
                     evidence["ref"] = f"experiment:{record.id}"
                     evidence["contract_status"] = status
@@ -212,7 +222,7 @@ class _ExperimentSet:
                     self._note(
                         "experiment_not_applicable", record.id,
                         f"свидетельство не отменяет причину "
-                        f"{reason or status}")
+                        f"{denial or reason or status}")
                     continue
                 evidence.setdefault("experiments", []).append(record.id)
                 self._note(

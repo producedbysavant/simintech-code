@@ -99,7 +99,7 @@ def parse_experiment_record(data: Mapping[str, Any]) -> ExperimentRecord:
     content_hash = _text("experiment.content_hash",
                          data.get("content_hash"))
     scenario = _mapping("experiment.scenario", data.get("scenario"))
-    _text("experiment.scenario.changed", scenario.get("changed"))
+    changed = _text("experiment.scenario.changed", scenario.get("changed"))
     _number("experiment.scenario.from", scenario.get("from"))
     _number("experiment.scenario.to", scenario.get("to"))
     _number("experiment.scenario.at", scenario.get("at"),
@@ -110,7 +110,11 @@ def parse_experiment_record(data: Mapping[str, Any]) -> ExperimentRecord:
     _text("experiment.run.baseline", run.get("baseline"))
     observation = _mapping("experiment.observation",
                            data.get("observation"))
-    _text("experiment.observation.target", observation.get("target"))
+    target = _text("experiment.observation.target",
+                   observation.get("target"))
+    if changed == target:
+        raise ModelQueryError(
+            "experiment: scenario.changed совпадает с observation.target")
     changed = observation.get("changed")
     if not isinstance(changed, bool):
         raise ModelQueryError(
