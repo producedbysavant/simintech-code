@@ -18,7 +18,7 @@ from .semantics import semantic_coverage
 
 _FOCUS = frozenset({
     "containers", "classes", "signals", "contracts", "semantics",
-    "discrepancies", "geometry",
+    "review", "discrepancies", "geometry",
 })
 
 
@@ -54,6 +54,38 @@ def _coverage(model: ModelIR) -> str:
             f"{key}={value}"
             for key, value in sorted(data["discrepancy_counts"].items())))
     return "\n".join(lines)
+
+
+def _review() -> list[str]:
+    """Состояние инженерной проверки эталонных строк."""
+    try:
+        registry = load_default_contracts()
+    except ModelQueryError as exc:
+        return ["## Review", f"review: unavailable ({exc})"]
+    counts = {"approved": 0, "preliminary": 0, "rejected": 0}
+    preliminary: list[str] = []
+    invalid = 0
+    for name in registry.classes():
+        contract = registry.get(name)
+        if contract is None or not contract.pilot_scope:
+            continue
+        status = contract.review.effective_status
+        counts[status] = counts.get(status, 0) + 1
+        if contract.review.status == "approved" and not contract.review.approved:
+            invalid += 1
+        if status == "preliminary":
+            ref = contract.review.ref
+            preliminary.append(f"- {name}" + (f" [{ref}]" if ref else ""))
+    lines = ["## Review", f"rows: {sum(counts.values())}"]
+    for status in ("approved", "preliminary", "rejected"):
+        lines.append(f"{status}: {counts[status]}")
+    lines.append(f"invalid: {invalid}")
+    if preliminary:
+        lines.append("preliminary:")
+        lines.extend(preliminary[:10])
+        if len(preliminary) > 10:
+            lines.append(f"... ещё {len(preliminary) - 10}")
+    return lines
 
 
 def _container_lines(index: ModelIndex, depth: int = 0,
@@ -214,6 +246,10 @@ def _semantics(model: ModelIR) -> list[str]:
         f"/{data['dependencies_total']}",
         f"known_absences: {data['known_absences_total']}",
     ]
+    review = data.get("review_counts", {})
+    if review:
+        lines.append("review: " + ", ".join(
+            f"{name}={count}" for name, count in review.items()))
     unknown = ", ".join(
         f"{name}={count}"
         for name, count in data["objects_unknown"].items() if count)
@@ -244,6 +280,7 @@ def build_manifest(model: ModelIR, budget_tokens: int = 3000,
     sections: list[tuple[str, list[str]]] = [
         ("header", _header(model).splitlines()),
         ("coverage", _coverage(model).splitlines()),
+        ("review", _review()),
     ]
     optional: list[tuple[str, list[str]]] = [
         ("containers", _container_lines(index)),
@@ -260,7 +297,7 @@ def build_manifest(model: ModelIR, budget_tokens: int = 3000,
                 if not focus or item[0] == focus or (
                     focus in ("containers", "geometry")
                     and item[0] == "containers")]
-    base = [sections[0][1], sections[1][1]]
+    base = [sections[0][1], sections[1][1], sections[2][1]]
     extra: list[list[str]] = []
     included: list[str] = []
     omitted: list[str] = []

@@ -41,3 +41,33 @@ def test_auxiliary_scope_is_preserved():
     assert registry["classes"]["Ключ-3"]["pilot_scope"] == "auxiliary"
     assert ("Коммутатор входных сигналов по номеру порта"
             not in registry["classes"])
+
+
+def test_every_pilot_row_has_review_ref():
+    registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
+    rows = [(name, item) for name, item in registry["classes"].items()
+            if item.get("pilot_scope")]
+    assert len(rows) == 10
+    for name, item in rows:
+        assert item["review"]["ref"] == f"pilot_blocks.yaml:{name}"
+
+
+def test_review_counts_match_table():
+    table = _table()["classes"]
+    expected = {"approved": 0, "preliminary": 0, "rejected": 0}
+    for name, row in table.items():
+        if row.get("scope") == "synthetic_only":
+            continue
+        expected[row["review"]["status"]] += 1
+    registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
+    actual = {"approved": 0, "preliminary": 0, "rejected": 0}
+    for name, item in registry["classes"].items():
+        if not item.get("pilot_scope"):
+            continue
+        status = item["review"]["status"]
+        if status == "approved" and not (
+                item["review"].get("reviewer", "").strip()
+                and item["review"].get("date", "").strip()):
+            status = "preliminary"
+        actual[status] += 1
+    assert actual == expected

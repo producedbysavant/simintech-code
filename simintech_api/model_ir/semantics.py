@@ -119,7 +119,7 @@ def influence(
 
 
 _UNKNOWN_REASONS = (
-    "class_unknown", "object_script_run", "object_script_init",
+    "class_unknown", "object_script_run", "rejected", "object_script_init",
     "script_defined", "external_submodel", "behavior_unknown", "unapproved",
 )
 
@@ -149,6 +149,9 @@ def semantic_coverage(
             "approved": 0,
             "with_init_script": 0,
             "pilot_scope": contract.pilot_scope if contract else "",
+            "review_status": (contract.review.effective_status
+                              if contract else ""),
+            "review_ref": _review_ref(contract) if contract else "",
         })
         entry["objects"] += 1
         if _object_init_script(obj):
@@ -159,7 +162,7 @@ def semantic_coverage(
         if contract is not None and _behavior_known(contract):
             with_behavior += 1
             entry["with_behavior"] += 1
-            if contract.review.status == "approved":
+            if contract.review.approved:
                 approved += 1
                 entry["approved"] += 1
         reason = _unknown_reason(obj, contract)
@@ -179,11 +182,22 @@ def semantic_coverage(
                 1 for absence in contract.known_absences
                 if _absence_known(contract, absence))
     scopes: dict[str, int] = {}
+    review_counts = {"approved": 0, "preliminary": 0, "rejected": 0}
+    preliminary_classes: list[str] = []
+    review_refs: dict[str, str] = {}
     for name in registry.classes():
         item = registry.get(name)
         scope = item.pilot_scope if item is not None else ""
         if scope:
             scopes[scope] = scopes.get(scope, 0) + 1
+        if item is None or not item.pilot_scope:
+            continue
+        status = item.review.effective_status
+        review_counts[status] = review_counts.get(status, 0) + 1
+        if status == "preliminary":
+            preliminary_classes.append(name)
+        if item.review.ref:
+            review_refs[name] = item.review.ref
     return {
         "objects_total": total,
         "objects_with_behavior": with_behavior,
@@ -195,11 +209,16 @@ def semantic_coverage(
         "dependencies_known": deps_known,
         "known_absences_total": absences_total,
         "pilot_scope_counts": scopes,
+        "review_counts": review_counts,
+        "preliminary_classes": preliminary_classes,
+        "review_refs": review_refs,
         "by_class": by_class,
     }
 
 
 def _behavior_known(contract: BlockContract) -> bool:
+    if contract.review.rejected:
+        return False
     if contract.behavior.operation == "unknown":
         return False
     return _has_contract_semantics(contract)
@@ -210,12 +229,15 @@ def _absence_known(contract: BlockContract, absence: KnownAbsence) -> bool:
 
     Claim/derived из предварительной строки не становится известным
     отсутствием: иначе предварительная таблица выдала бы утверждение.
+    Отвергнутая строка не участвует в семантике даже при `measured`.
     """
+    if contract.review.rejected:
+        return False
     status = absence.provenance.status
     if status == "measured":
         return True
     return (status in ("claim", "derived")
-            and contract.review.status == "approved")
+            and contract.review.approved)
 
 
 def _unknown_reason(obj: ModelObject,
@@ -224,6 +246,8 @@ def _unknown_reason(obj: ModelObject,
         return "class_unknown"
     if _object_run_script(obj):
         return "object_script_run"
+    if contract.review.rejected:
+        return "rejected"
     if contract.ports.reason == "script_defined_ports":
         return "script_defined"
     if obj.kind is ObjectKind.SUBMODEL and obj.filename:
@@ -232,7 +256,7 @@ def _unknown_reason(obj: ModelObject,
         if _object_init_script(obj):
             return "object_script_init"
         return "behavior_unknown"
-    if contract.review.status != "approved":
+    if not contract.review.approved:
         return "unapproved"
     return ""
 
@@ -241,6 +265,8 @@ def _dependency_known(contract: BlockContract, dependency: Dependency,
                       obj: ModelObject) -> bool:
     if _object_run_script(obj):
         return False
+    if contract.review.rejected:
+        return False
     if dependency.kind in ("script", "unknown"):
         return False
     if dependency.kind == "conditional" and dependency.condition is None:
@@ -248,7 +274,7 @@ def _dependency_known(contract: BlockContract, dependency: Dependency,
     if dependency.provenance.status == "measured":
         return True
     return (dependency.provenance.status in ("claim", "derived")
-            and contract.review.status == "approved")
+            and contract.review.approved)
 
 
 def _include_filter(include: Iterable[str]) -> frozenset[str]:
@@ -279,6 +305,19 @@ def _target_ports(index: ModelIndex, target: str) -> list[str]:
 
 def _props(obj: ModelObject) -> dict[str, str]:
     return {name: prop.value for name, prop in obj.props.items()}
+
+
+def _review_ref(contract: BlockContract) -> str:
+    """Ссылка на строку эталона, к которой относится контракт."""
+    if contract.review.ref:
+        return contract.review.ref
+    for dependency in contract.dependencies:
+        if dependency.provenance.ref:
+            return dependency.provenance.ref
+    for absence in contract.known_absences:
+        if absence.provenance.ref:
+            return absence.provenance.ref
+    return contract.behavior.provenance.ref
 
 
 def _object_run_script(obj: ModelObject) -> str:
@@ -409,6 +448,8 @@ class _Walker:
                 self._emit({"kind": "script", "address": address},
                            hops + [hop], path)
                 self.unknown.append(f"{name}: object_script_run")
+            elif contract.review.rejected:
+                self.unknown.append(f"{name}: rejected")
             elif _object_init_script(obj) and not _has_contract_semantics(
                     contract):
                 self.unknown.append(f"{name}: object_script_init")
@@ -464,7 +505,7 @@ class _Walker:
             obj: ModelObject, name: str, port: Any,
             hops: list[dict[str, Any]], path: list[str], depth: int,
             visited: frozenset[str]) -> None:
-        status, ref, reason = _dependency_evidence(
+        status, ref, reason, review_ref = _dependency_evidence(
             contract, dependency, obj)
         run_script = _object_run_script(obj)
         hop_kind = "script" if run_script else dependency.kind
@@ -486,7 +527,7 @@ class _Walker:
                           if dependency.condition is not None else None),
             "state": (dict(dependency.state)
                       if dependency.state is not None else None),
-            "evidence": _evidence(status, ref, reason),
+            "evidence": _evidence(status, ref, reason, review_ref),
         }
         if source.get("kind") in ("property", "state"):
             self._emit(
@@ -518,18 +559,19 @@ class _Walker:
                 "target": target,
                 "source": dict(absence.source),
                 "provenance": _evidence(
-                    absence.provenance.status, absence.provenance.ref, ""),
+                    absence.provenance.status, absence.provenance.ref, "",
+                    _review_ref(contract)),
             })
 
     def _emit(self, source: Mapping[str, Any],
               hops: list[dict[str, Any]], path: list[str]) -> None:
-        status, reason = _chain_status(hops)
+        status, reason, review_ref = _chain_status(hops)
         self.items.append({
             "target": path[0] if path else "",
             "source": dict(source),
             "path": list(path),
             "hops": list(hops),
-            "evidence": _evidence(status, "chain", reason),
+            "evidence": _evidence(status, "chain", reason, review_ref),
             "unknown": None,
         })
 
@@ -544,42 +586,48 @@ def _source_address(obj: ModelObject, source: Mapping[str, Any]) -> str:
 
 def _dependency_evidence(
         contract: BlockContract, dependency: Dependency,
-        obj: ModelObject) -> tuple[str, str, str]:
+        obj: ModelObject) -> tuple[str, str, str, str]:
+    ref = dependency.provenance.ref
+    review_ref = _review_ref(contract)
     if _object_run_script(obj):
-        return ("not_established", dependency.provenance.ref,
-                "object_script_run")
+        return "not_established", ref, "object_script_run", review_ref
+    if contract.review.rejected:
+        return "not_established", ref, "rejected", review_ref
     if dependency.kind == "script":
-        return ("not_established", dependency.provenance.ref,
-                dependency.reason or "script")
+        return ("not_established", ref, dependency.reason or "script",
+                review_ref)
     if dependency.kind == "unknown":
-        return ("not_established", dependency.provenance.ref,
-                dependency.reason or "unknown")
+        return ("not_established", ref, dependency.reason or "unknown",
+                review_ref)
     if dependency.kind == "conditional" and dependency.condition is None:
-        return ("not_established", dependency.provenance.ref,
-                dependency.reason or "condition_unknown")
+        return ("not_established", ref,
+                dependency.reason or "condition_unknown", review_ref)
     status = dependency.provenance.status
     if status == "measured":
-        return "contract", dependency.provenance.ref, ""
-    if status in ("claim", "derived") and \
-            contract.review.status == "approved":
-        return "contract", dependency.provenance.ref, ""
-    return "not_established", dependency.provenance.ref, "unapproved"
+        return "contract", ref, "", review_ref
+    if status in ("claim", "derived") and contract.review.approved:
+        return "contract", ref, "", review_ref
+    return "not_established", ref, "unapproved", review_ref
 
 
-def _chain_status(hops: list[dict[str, Any]]) -> tuple[str, str]:
+def _chain_status(hops: list[dict[str, Any]]) -> tuple[str, str, str]:
     if not hops:
-        return "not_established", "no_hops"
+        return "not_established", "no_hops", ""
     for hop in hops:
         evidence = hop["evidence"]
         if evidence["status"] != "contract":
-            return "not_established", str(evidence.get("reason", ""))
-    return "contract", ""
+            return ("not_established", str(evidence.get("reason", "")),
+                    str(evidence.get("review_ref", "")))
+    return "contract", "", ""
 
 
-def _evidence(status: str, ref: str, reason: str) -> dict[str, str]:
+def _evidence(status: str, ref: str, reason: str,
+              review_ref: str = "") -> dict[str, str]:
     result = {"status": status}
     if ref:
         result["ref"] = ref
     if reason:
         result["reason"] = reason
+    if review_ref:
+        result["review_ref"] = review_ref
     return result

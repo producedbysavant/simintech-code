@@ -22,14 +22,17 @@ FIELDS = ("behavior", "dependencies", "signal_types", "review",
           "known_absences")
 
 
-def _expected(row: dict[str, Any]) -> dict[str, Any]:
+def _expected(row: dict[str, Any], name: str = "") -> dict[str, Any]:
     scope = str(row.get("scope", ""))
+    review = dict(row.get("review", {
+        "status": "preliminary", "reviewer": "", "date": "",
+    }))
+    if name:
+        review.setdefault("ref", f"pilot_blocks.yaml:{name}")
     result: dict[str, Any] = {
         "behavior": row.get("behavior", {"operation": "unknown"}),
         "dependencies": row.get("dependencies", []),
-        "review": row.get("review", {
-            "status": "preliminary", "reviewer": "", "date": "",
-        }),
+        "review": review,
         "known_absences": row.get("known_absences", []),
         "pilot_scope": scope,
     }
@@ -49,7 +52,7 @@ def check(table: dict[str, Any], registry: dict[str, Any],
           at: str) -> list[str]:
     problems: list[str] = []
     for name, row in _mergeable(table):
-        expected = _expected(row)
+        expected = _expected(row, name)
         entry = registry.get("classes", {}).get(name)
         if entry is None:
             problems.append(f"{name}: нет в реестре")
@@ -69,7 +72,7 @@ def merge(table: dict[str, Any], registry: dict[str, Any],
         entry = registry.get("classes", {}).get(name)
         if entry is None:
             raise SystemExit(f"{name}: нет в реестре")
-        entry.update(_expected(row))
+        entry.update(_expected(row, name))
         provenance = list(entry.get("provenance", ()))
         mark = f"pilot:{at}"
         if mark not in provenance:

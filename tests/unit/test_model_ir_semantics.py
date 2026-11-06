@@ -178,6 +178,101 @@ def test_influence_preliminary_row_is_not_contract():
     assert chain["evidence"]["reason"] == "unapproved"
 
 
+def test_influence_rejected_dependency_is_rejected():
+    data = copy.deepcopy(_semantic_data())
+    data["Усилитель"]["review"] = {
+        "status": "rejected", "reviewer": "инженер",
+        "date": "2026-11-06", "ref": "pilot_blocks.yaml:Усилитель",
+    }
+    result = influence(
+        ModelIndex(parse_xprt(MODEL)), _semantic_registry(data), "main::S:0")
+    chain = _chain_to(result, "main::K@property:a")
+    assert chain["evidence"]["status"] == "not_established"
+    assert chain["evidence"]["reason"] == "rejected"
+    assert chain["evidence"]["review_ref"] == "pilot_blocks.yaml:Усилитель"
+
+
+def test_influence_rejected_measured_is_still_rejected():
+    data = copy.deepcopy(_semantic_data())
+    data["Усилитель"]["review"] = {
+        "status": "rejected", "reviewer": "инженер",
+        "date": "2026-11-06",
+    }
+    data["Усилитель"]["dependencies"][0]["provenance"]["status"] = "measured"
+    result = influence(
+        ModelIndex(parse_xprt(MODEL)), _semantic_registry(data), "main::S:0")
+    chain = _chain_to(result, "main::K@property:a")
+    assert chain["evidence"]["reason"] == "rejected"
+
+
+def test_influence_approved_without_signature_is_unapproved():
+    data = copy.deepcopy(_semantic_data())
+    data["Усилитель"]["review"] = {
+        "status": "approved", "reviewer": "", "date": "",
+    }
+    result = influence(
+        ModelIndex(parse_xprt(MODEL)), _semantic_registry(data), "main::S:0")
+    chain = _chain_to(result, "main::K@property:a")
+    assert chain["evidence"]["reason"] == "unapproved"
+
+
+def test_influence_unapproved_evidence_carries_review_ref():
+    data = copy.deepcopy(_semantic_data())
+    data["Усилитель"]["review"] = {
+        "status": "preliminary", "reviewer": "", "date": "",
+        "ref": "pilot_blocks.yaml:Усилитель",
+    }
+    result = influence(
+        ModelIndex(parse_xprt(MODEL)), _semantic_registry(data), "main::S:0")
+    chain = _chain_to(result, "main::K@property:a")
+    assert chain["evidence"]["reason"] == "unapproved"
+    assert chain["evidence"]["review_ref"] == "pilot_blocks.yaml:Усилитель"
+
+
+def test_semantic_coverage_review_counts_and_preliminary_list():
+    data = copy.deepcopy(_semantic_data())
+    data["Константа"]["pilot_scope"] = "live_acceptance"
+    data["Усилитель"]["pilot_scope"] = "live_acceptance"
+    data["Усилитель"]["review"] = {
+        "status": "rejected", "reviewer": "инженер",
+        "date": "2026-11-06", "ref": "pilot_blocks.yaml:Усилитель",
+    }
+    coverage = semantic_coverage(parse_xprt(MODEL), _semantic_registry(data))
+    assert coverage["review_counts"] == {
+        "approved": 1, "preliminary": 0, "rejected": 1}
+    assert coverage["preliminary_classes"] == []
+    assert coverage["review_refs"] == {
+        "Усилитель": "pilot_blocks.yaml:Усилитель"}
+    assert coverage["by_class"]["Усилитель"]["review_status"] == "rejected"
+    assert coverage["objects_unknown"]["rejected"] == 1
+
+
+def test_semantic_coverage_rejected_is_not_approved():
+    data = copy.deepcopy(_semantic_data())
+    data["Усилитель"]["review"] = {
+        "status": "rejected", "reviewer": "инженер",
+        "date": "2026-11-06",
+    }
+    coverage = semantic_coverage(parse_xprt(MODEL), _semantic_registry(data))
+    assert coverage["objects_with_behavior"] == 1
+    assert coverage["objects_with_approved_behavior"] == 1
+    assert coverage["dependencies_known"] == 1
+    assert coverage["objects_unknown"]["rejected"] == 1
+
+
+def test_semantic_coverage_unsigned_approved_counts_as_preliminary():
+    data = copy.deepcopy(_semantic_data())
+    data["Константа"]["pilot_scope"] = "live_acceptance"
+    data["Константа"]["review"] = {
+        "status": "approved", "reviewer": "", "date": "",
+    }
+    coverage = semantic_coverage(parse_xprt(MODEL), _semantic_registry(data))
+    assert coverage["review_counts"] == {
+        "approved": 0, "preliminary": 1, "rejected": 0}
+    assert coverage["preliminary_classes"] == ["Константа"]
+    assert coverage["by_class"]["Константа"]["review_status"] == "preliminary"
+
+
 def test_influence_structural_measured_does_not_upgrade_functional():
     registry = _with_dependency_provenance(
         _semantic_registry(), "Усилитель", "derived", review="preliminary")

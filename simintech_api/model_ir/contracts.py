@@ -89,6 +89,27 @@ class Review:
     status: str = "preliminary"
     reviewer: str = ""
     date: str = ""
+    #: Ссылка на строку эталонной таблицы, например
+    #: `pilot_blocks.yaml:Усилитель`.
+    ref: str = ""
+
+    @property
+    def approved(self) -> bool:
+        """Утверждено только при непустых подписи и дате."""
+        return (self.status == "approved"
+                and bool(self.reviewer.strip())
+                and bool(self.date.strip()))
+
+    @property
+    def rejected(self) -> bool:
+        return self.status == "rejected"
+
+    @property
+    def effective_status(self) -> str:
+        """Статус с учётом подписи: unsigned approved не утверждён."""
+        if self.rejected:
+            return "rejected"
+        return "approved" if self.approved else "preliminary"
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,7 +218,8 @@ def _review(data: Mapping[str, Any]) -> Review:
     return Review(
         status=str(data.get("status", "preliminary")),
         reviewer=str(data.get("reviewer", "")),
-        date=str(data.get("date", "")))
+        date=str(data.get("date", "")),
+        ref=str(data.get("ref", "")))
 
 
 def _dependency(data: Mapping[str, Any]) -> Dependency:
@@ -590,7 +612,7 @@ _ALLOWED_NAME_STATUS = {"measured", "missing", "unknown",
                         "instance_defined", "weights"}
 _ALLOWED_CREATION = {"derived", "blocked", "unknown"}
 _ALLOWED_PILOT_SCOPE = {"", "live_acceptance", "synthetic_only", "auxiliary"}
-_ALLOWED_REVIEW = {"preliminary", "approved"}
+_ALLOWED_REVIEW = {"preliminary", "approved", "rejected"}
 _ALLOWED_BEHAVIOR = {
     "identity", "constant", "gain", "sum", "product", "integrate",
     "select", "vector", "split", "script", "unknown",
@@ -866,6 +888,14 @@ def validate_contract_data(data: Mapping[str, Any],
                 problems.append(
                     f"{name}: недопустимый review.status "
                     f"{review.get('status')!r}")
+            else:
+                if "ref" in review and not isinstance(review.get("ref"), str):
+                    problems.append(f"{name}: review.ref не строка")
+                if review.get("status") == "approved" and not (
+                        str(review.get("reviewer", "")).strip()
+                        and str(review.get("date", "")).strip()):
+                    problems.append(
+                        f"{name}: approved без reviewer/date")
         if "dependencies" in item:
             dependencies = item.get("dependencies")
             if not isinstance(dependencies, list):

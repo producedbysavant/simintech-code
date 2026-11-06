@@ -33219,6 +33219,7 @@
       ],
       "review": {
         "date": "",
+        "ref": "pilot_blocks.yaml:Демультиплексор",
         "reviewer": "",
         "status": "preliminary"
       },
@@ -37873,6 +37874,7 @@
       ],
       "review": {
         "date": "",
+        "ref": "pilot_blocks.yaml:Интегратор",
         "reviewer": "",
         "status": "preliminary"
       },
@@ -38703,6 +38705,7 @@
       ],
       "review": {
         "date": "",
+        "ref": "pilot_blocks.yaml:Ключ управляемый перекидной по входам тип 2",
         "reviewer": "",
         "status": "preliminary"
       },
@@ -38785,6 +38788,7 @@
       ],
       "review": {
         "date": "",
+        "ref": "pilot_blocks.yaml:Ключ-3",
         "reviewer": "",
         "status": "preliminary"
       },
@@ -39247,6 +39251,7 @@
       ],
       "review": {
         "date": "",
+        "ref": "pilot_blocks.yaml:Константа",
         "reviewer": "",
         "status": "preliminary"
       },
@@ -54760,6 +54765,7 @@
       ],
       "review": {
         "date": "",
+        "ref": "pilot_blocks.yaml:Мультиплексор",
         "reviewer": "",
         "status": "preliminary"
       },
@@ -57502,6 +57508,7 @@
       ],
       "review": {
         "date": "",
+        "ref": "pilot_blocks.yaml:Перемножитель",
         "reviewer": "",
         "status": "preliminary"
       },
@@ -59711,6 +59718,7 @@
       ],
       "review": {
         "date": "",
+        "ref": "pilot_blocks.yaml:Сумматор",
         "reviewer": "",
         "status": "preliminary"
       },
@@ -62277,6 +62285,7 @@
       ],
       "review": {
         "date": "",
+        "ref": "pilot_blocks.yaml:Усилитель",
         "reviewer": "",
         "status": "preliminary"
       },
@@ -78747,6 +78756,7 @@
       ],
       "review": {
         "date": "",
+        "ref": "pilot_blocks.yaml:Язык программирования",
         "reviewer": "",
         "status": "preliminary"
       },

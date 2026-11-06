@@ -114,3 +114,25 @@ def test_manifest_focus_semantics():
         parse_xprt(MODEL), budget_tokens=3000, focus="semantics")
     assert "## Semantics" in text
     assert "## Classes" not in text
+
+
+def test_manifest_has_review_section():
+    text = build_manifest(parse_xprt(MODEL), budget_tokens=3000)
+    assert "## Review" in text
+    assert "rows: 10" in text
+    assert "approved: 0" in text
+    assert "preliminary: 10" in text
+    assert "rejected: 0" in text
+
+
+def test_manifest_focus_review():
+    text = build_manifest(
+        parse_xprt(MODEL), budget_tokens=3000, focus="review")
+    assert "## Review" in text
+    assert "## Classes" not in text
+
+
+def test_manifest_semantics_prints_review_counts():
+    text = build_manifest(
+        parse_xprt(MODEL), budget_tokens=3000, focus="semantics")
+    assert "review: approved=0, preliminary=10, rejected=0" in text

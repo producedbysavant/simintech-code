@@ -260,6 +260,66 @@ def test_merge_replaces_unknown_with_live_observation(tmp_path):
     assert merged["meta"]["unknown_classes"] == []
 
 
+def _one_contract(review):
+    return {
+        "schema": SCHEMA, "version": VERSION,
+        "classes": {"Тестовый блок": {
+            "class": "Тестовый блок", "status": "derived",
+            "ports": {"model": "fixed", "inputs": [], "outputs": []},
+            "review": review,
+        }},
+        "meta": {},
+    }
+
+
+def test_contract_v2_parses_review_ref_and_gate():
+    registry = BlockContractRegistry(_one_contract({
+        "status": "approved", "reviewer": "инженер",
+        "date": "2026-11-06", "ref": "pilot_blocks.yaml:Тестовый блок",
+    }))
+    review = registry.require("Тестовый блок").review
+    assert review.ref == "pilot_blocks.yaml:Тестовый блок"
+    assert review.approved is True
+    assert review.effective_status == "approved"
+
+
+def test_review_unsigned_approved_is_preliminary():
+    registry = BlockContractRegistry(_one_contract({
+        "status": "approved", "reviewer": "", "date": "",
+    }))
+    review = registry.require("Тестовый блок").review
+    assert review.approved is False
+    assert review.effective_status == "preliminary"
+
+
+def test_review_rejected_effective_status():
+    registry = BlockContractRegistry(_one_contract({
+        "status": "rejected", "reviewer": "инженер", "date": "2026-11-06",
+    }))
+    review = registry.require("Тестовый блок").review
+    assert review.rejected is True
+    assert review.effective_status == "rejected"
+
+
+def test_validator_requires_signature_for_approved():
+    data = _contracts()
+    data["classes"]["Усилитель"]["review"] = {
+        "status": "approved", "reviewer": "", "date": "",
+    }
+    problems = validate_contract_data(data, _catalog())
+    assert any("approved без reviewer/date" in item for item in problems)
+
+
+def test_validator_accepts_rejected_status():
+    data = _contracts()
+    data["classes"]["Усилитель"]["review"] = {
+        "status": "rejected", "reviewer": "инженер", "date": "2026-11-06",
+        "ref": "pilot_blocks.yaml:Усилитель",
+    }
+    problems = validate_contract_data(data, _catalog())
+    assert not any("review.status" in item for item in problems)
+
+
 def test_contract_v2_parses_pilot_fields():
     data = {
         "schema": "block-contract/2",
