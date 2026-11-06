@@ -492,6 +492,12 @@ def _unknown_reason(obj: ModelObject,
     return ""
 
 
+def _has_known_absence(contract: BlockContract, output: int) -> bool:
+    return any(absence.output == output
+               and _absence_known(contract, absence)
+               for absence in contract.known_absences)
+
+
 def _no_dependency_reason(obj: ModelObject, contract: BlockContract) -> str:
     """Причина для выхода без объявленных зависимостей."""
     if contract.review.rejected:
@@ -690,6 +696,9 @@ class _Walker:
                             obj.class_name, _props(obj))
                         if dependency.output == port.index]
         if not dependencies:
+            if _has_known_absence(contract, port.index):
+                self._detail_and_downgrade(port, start)
+                return
             script = _object_run_script(obj)
             if script:
                 address = _source_address(

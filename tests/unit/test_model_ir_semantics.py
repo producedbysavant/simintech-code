@@ -530,6 +530,15 @@ def test_influence_known_absence_is_separate():
     assert result.evidence["known_absences"][0]["source"]["index"] == 0
 
 
+def test_influence_known_absence_does_not_add_behavior_unknown():
+    result = influence(
+        ModelIndex(parse_xprt(MODEL)), _with_absence("claim", "approved"),
+        "main::S:0")
+    assert result.items == ()
+    assert result.evidence["known_absences"]
+    assert not any("behavior_unknown" in item for item in result.unknown)
+
+
 SUB_MODEL = GRAPH_MODEL.replace("`Усилитель`", "`Неизвестный`")
 
 SUB_KEY = """<Header><project><page>
