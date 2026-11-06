@@ -480,6 +480,19 @@ def _unknown_reason(obj: ModelObject,
     return ""
 
 
+def _no_dependency_reason(obj: ModelObject, contract: BlockContract) -> str:
+    """Причина для выхода без объявленных зависимостей."""
+    if contract.review.rejected:
+        return "rejected"
+    if contract.ports.reason == "script_defined_ports":
+        return "script_defined"
+    if obj.kind is ObjectKind.SUBMODEL and obj.filename:
+        return "external_submodel"
+    if _object_init_script(obj) and not _has_contract_semantics(contract):
+        return "object_script_init"
+    return "behavior_unknown"
+
+
 def _dependency_known(contract: BlockContract, dependency: Dependency,
                       obj: ModelObject) -> bool:
     if _object_run_script(obj):
@@ -686,13 +699,9 @@ class _Walker:
                 self._emit({"kind": "script", "address": address},
                            hops + [hop], path)
                 self.unknown.append(f"{name}: object_script_run")
-            elif contract.review.rejected:
-                self.unknown.append(f"{name}: rejected")
-            elif _object_init_script(obj) and not _has_contract_semantics(
-                    contract):
-                self.unknown.append(f"{name}: object_script_init")
             else:
-                self.unknown.append(f"{name}: behavior_unknown")
+                reason = _no_dependency_reason(obj, contract)
+                self.unknown.append(f"{name}: {reason}")
             self._detail_and_downgrade(port, start)
             return
         for dependency in dependencies:

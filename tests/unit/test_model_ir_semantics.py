@@ -757,6 +757,21 @@ def test_semantic_coverage_separates_approved_and_unknown():
     assert data["dependencies_known"] == 3
 
 
+def test_influence_script_defined_reason_matches_coverage():
+    data = copy.deepcopy(_semantic_data())
+    data["Константа"]["ports"] = {
+        "model": "unknown", "reason": "script_defined_ports"}
+    data["Константа"]["dependencies"] = []
+    data["Константа"]["behavior"] = {"operation": "unknown"}
+    result = influence(
+        ModelIndex(parse_xprt(MODEL)), _semantic_registry(data), "main::S:0")
+    assert any(entry.endswith(": script_defined")
+               for entry in result.unknown)
+    coverage = semantic_coverage(parse_xprt(MODEL),
+                                 _semantic_registry(data))
+    assert coverage["objects_unknown"]["script_defined"] == 1
+
+
 def test_semantic_coverage_counts_object_script_run():
     data = semantic_coverage(parse_xprt(SCRIPT_MODEL), _semantic_registry())
     assert data["objects_unknown"]["object_script_run"] == 1
