@@ -194,12 +194,28 @@ SCRIPT_MODEL = MODEL.replace(
 )
 
 
+def _with_scripts(model, scripts):
+    """Вставить слоты скриптов в первый объект модели (K)."""
+    data = "".join(
+        f"<data><name>`{slot}`</name><value>`{text}`</value></data>"
+        for slot, text in scripts)
+    return model.replace(
+        "</ports>\n  </object>\n  <object><name>`G`</name>",
+        f"</ports>\n    <custom_props>{data}</custom_props>\n"
+        "  </object>\n  <object><name>`G`</name>",
+        1,
+    )
+
+
+INIT_MODEL = _with_scripts(MODEL, [("OnInitScript", "n = 1;")])
+
+
 def test_influence_script_preserves_kind_and_reason():
     result = influence(
         ModelIndex(parse_xprt(SCRIPT_MODEL)), _semantic_registry(), "main::S:0")
     chain = _chain_to(result, "main::K@property:a")
     assert chain["hops"][-1]["kind"] == "script"
-    assert chain["hops"][-1]["evidence"]["reason"] == "object_script"
+    assert chain["hops"][-1]["evidence"]["reason"] == "object_script_run"
     assert chain["evidence"]["status"] == "not_established"
 
 
@@ -214,10 +230,72 @@ def test_influence_script_object_without_dependencies_keeps_script():
     assert len(scripts) == 1
     item = scripts[0]
     assert item["hops"][-1]["kind"] == "script"
-    assert item["hops"][-1]["evidence"]["reason"] == "object_script"
+    assert item["hops"][-1]["evidence"]["reason"] == "object_script_run"
     assert item["evidence"]["status"] == "not_established"
-    assert any(entry.endswith(": object_script") for entry in result.unknown)
+    assert any(entry.endswith(": object_script_run")
+               for entry in result.unknown)
     assert not any("script_defined_ports" in entry for entry in result.unknown)
+
+
+def test_influence_init_script_keeps_contract_dependencies():
+    result = influence(
+        ModelIndex(parse_xprt(INIT_MODEL)), _semantic_registry(), "main::S:0")
+    chain = _chain_to(result, "main::K@property:a")
+    assert [hop["kind"] for hop in chain["hops"]] == [
+        "unconditional", "unconditional"]
+    assert chain["evidence"]["status"] == "contract"
+
+
+def test_semantic_coverage_init_script_keeps_dependencies_known():
+    coverage = semantic_coverage(
+        parse_xprt(INIT_MODEL), _semantic_registry())
+    assert coverage["objects_with_init_script"] == 1
+    assert coverage["dependencies_total"] == 3
+    assert coverage["dependencies_known"] == 3
+    assert coverage["objects_unknown"]["object_script_run"] == 0
+    assert coverage["objects_unknown"]["object_script_init"] == 0
+
+
+def test_init_only_without_contract_semantics_is_object_script_init():
+    data = copy.deepcopy(_semantic_data())
+    data["Константа"]["dependencies"] = []
+    result = influence(
+        ModelIndex(parse_xprt(INIT_MODEL)), _semantic_registry(data),
+        "main::S:0")
+    assert all(item["source"]["kind"] != "script" for item in result.items)
+    assert any(entry.endswith(": object_script_init")
+               for entry in result.unknown)
+    coverage = semantic_coverage(parse_xprt(INIT_MODEL),
+                                 _semantic_registry(data))
+    assert coverage["objects_unknown"]["object_script_init"] == 1
+    assert coverage["objects_unknown"]["object_script_run"] == 0
+
+
+def test_init_and_run_prefers_run_script():
+    model = _with_scripts(MODEL, [
+        ("OnInitScript", "n = 1;"), ("Script", "y := a;")])
+    result = influence(
+        ModelIndex(parse_xprt(model)), _semantic_registry(), "main::S:0")
+    chain = _chain_to(result, "main::K@property:a")
+    assert chain["hops"][-1]["kind"] == "script"
+    assert chain["hops"][-1]["evidence"]["reason"] == "object_script_run"
+    coverage = semantic_coverage(parse_xprt(model), _semantic_registry())
+    assert coverage["objects_with_init_script"] == 1
+    assert coverage["objects_unknown"]["object_script_run"] == 1
+    assert coverage["objects_unknown"]["object_script_init"] == 0
+
+
+@pytest.mark.parametrize("slot", ["Script", "OnRunScript"])
+def test_run_script_slots_remain_unknown(slot):
+    model = _with_scripts(MODEL, [(slot, "y := a;")])
+    result = influence(
+        ModelIndex(parse_xprt(model)), _semantic_registry(), "main::S:0")
+    chain = _chain_to(result, "main::K@property:a")
+    assert chain["hops"][-1]["kind"] == "script"
+    assert chain["hops"][-1]["evidence"]["reason"] == "object_script_run"
+    coverage = semantic_coverage(parse_xprt(model), _semantic_registry())
+    assert coverage["objects_unknown"]["object_script_run"] == 1
+    assert coverage["objects_with_init_script"] == 0
 
 
 def _with_absence(status, review):
@@ -584,9 +662,9 @@ def test_semantic_coverage_separates_approved_and_unknown():
     assert data["dependencies_known"] == 3
 
 
-def test_semantic_coverage_counts_object_script():
+def test_semantic_coverage_counts_object_script_run():
     data = semantic_coverage(parse_xprt(SCRIPT_MODEL), _semantic_registry())
-    assert data["objects_unknown"]["object_script"] == 1
+    assert data["objects_unknown"]["object_script_run"] == 1
     assert data["objects_unknown"].get("script_defined", 0) == 0
 
 

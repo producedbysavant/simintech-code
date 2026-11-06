@@ -106,6 +106,7 @@ def test_manifest_has_semantics_section():
     text = build_manifest(parse_xprt(MODEL), budget_tokens=3000)
     assert "## Semantics" in text
     assert "objects_with_approved_behavior" in text
+    assert "objects_with_init_script" in text
 
 
 def test_manifest_focus_semantics():

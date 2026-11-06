@@ -209,6 +209,7 @@ def _semantics(model: ModelIR) -> list[str]:
         "objects_with_approved_behavior: "
         f"{data['objects_with_approved_behavior']}",
         f"objects_with_known_ports: {data['objects_with_known_ports']}",
+        f"objects_with_init_script: {data['objects_with_init_script']}",
         f"dependencies: {data['dependencies_known']}"
         f"/{data['dependencies_total']}",
         f"known_absences: {data['known_absences_total']}",

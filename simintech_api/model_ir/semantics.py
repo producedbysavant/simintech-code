@@ -26,7 +26,8 @@ from .graph import ModelIndex, QueryResult
 from .ir import ModelIR, ModelObject
 
 _STRUCTURAL_KINDS = frozenset({"wire", "branch", "boundary"})
-_CALC_SCRIPT_SLOTS = ("script", "Script", "OnInitScript", "OnRunScript")
+_RUN_SCRIPT_SLOTS = ("script", "Script", "OnRunScript")
+_INIT_SCRIPT_SLOTS = ("OnInitScript",)
 _INCLUDE = frozenset({"contract", "not_established"})
 _MAX_UNKNOWN = 200
 
@@ -118,8 +119,8 @@ def influence(
 
 
 _UNKNOWN_REASONS = (
-    "class_unknown", "object_script", "script_defined",
-    "external_submodel", "behavior_unknown", "unapproved",
+    "class_unknown", "object_script_run", "object_script_init",
+    "script_defined", "external_submodel", "behavior_unknown", "unapproved",
 )
 
 
@@ -137,7 +138,7 @@ def semantic_coverage(
                                ObjectKind.MEMORY_CELL, ObjectKind.UNKNOWN)]
     unknown = {reason: 0 for reason in _UNKNOWN_REASONS}
     by_class: dict[str, dict[str, Any]] = {}
-    total = with_behavior = approved = known_ports = 0
+    total = with_behavior = approved = known_ports = with_init = 0
     deps_total = deps_known = absences_total = 0
     for obj in objects:
         total += 1
@@ -146,9 +147,13 @@ def semantic_coverage(
             "objects": 0,
             "with_behavior": 0,
             "approved": 0,
+            "with_init_script": 0,
             "pilot_scope": contract.pilot_scope if contract else "",
         })
         entry["objects"] += 1
+        if _object_init_script(obj):
+            with_init += 1
+            entry["with_init_script"] += 1
         if contract is not None and not contract.ports.unknown:
             known_ports += 1
         if contract is not None and _behavior_known(contract):
@@ -184,6 +189,7 @@ def semantic_coverage(
         "objects_with_behavior": with_behavior,
         "objects_with_approved_behavior": approved,
         "objects_with_known_ports": known_ports,
+        "objects_with_init_script": with_init,
         "objects_unknown": unknown,
         "dependencies_total": deps_total,
         "dependencies_known": deps_known,
@@ -196,9 +202,7 @@ def semantic_coverage(
 def _behavior_known(contract: BlockContract) -> bool:
     if contract.behavior.operation == "unknown":
         return False
-    return bool(contract.dependencies) or any(
-        _absence_known(contract, absence)
-        for absence in contract.known_absences)
+    return _has_contract_semantics(contract)
 
 
 def _absence_known(contract: BlockContract, absence: KnownAbsence) -> bool:
@@ -218,13 +222,15 @@ def _unknown_reason(obj: ModelObject,
                     contract: BlockContract | None) -> str:
     if contract is None:
         return "class_unknown"
-    if _object_script(obj):
-        return "object_script"
+    if _object_run_script(obj):
+        return "object_script_run"
     if contract.ports.reason == "script_defined_ports":
         return "script_defined"
     if obj.kind is ObjectKind.SUBMODEL and obj.filename:
         return "external_submodel"
     if not _behavior_known(contract):
+        if _object_init_script(obj):
+            return "object_script_init"
         return "behavior_unknown"
     if contract.review.status != "approved":
         return "unapproved"
@@ -233,7 +239,7 @@ def _unknown_reason(obj: ModelObject,
 
 def _dependency_known(contract: BlockContract, dependency: Dependency,
                       obj: ModelObject) -> bool:
-    if _object_script(obj):
+    if _object_run_script(obj):
         return False
     if dependency.kind in ("script", "unknown"):
         return False
@@ -275,12 +281,29 @@ def _props(obj: ModelObject) -> dict[str, str]:
     return {name: prop.value for name, prop in obj.props.items()}
 
 
-def _object_script(obj: ModelObject) -> str:
-    for slot in _CALC_SCRIPT_SLOTS:
+def _object_run_script(obj: ModelObject) -> str:
+    """Слот поведения, исполняемого на каждом шаге."""
+    for slot in _RUN_SCRIPT_SLOTS:
         info = obj.scripts.get(slot)
         if info is not None and info.present:
             return slot
     return ""
+
+
+def _object_init_script(obj: ModelObject) -> str:
+    """Слот инициализации: начальное состояние, не поведение."""
+    for slot in _INIT_SCRIPT_SLOTS:
+        info = obj.scripts.get(slot)
+        if info is not None and info.present:
+            return slot
+    return ""
+
+
+def _has_contract_semantics(contract: BlockContract) -> bool:
+    """Контракт описывает поведение, а не только порты."""
+    return bool(contract.dependencies) or any(
+        _absence_known(contract, absence)
+        for absence in contract.known_absences)
 
 
 class _Walker:
@@ -370,7 +393,7 @@ class _Walker:
                             obj.class_name, _props(obj))
                         if dependency.output == port.index]
         if not dependencies:
-            script = _object_script(obj)
+            script = _object_run_script(obj)
             if script:
                 address = _source_address(
                     obj, {"kind": "script", "name": script})
@@ -381,11 +404,14 @@ class _Walker:
                     "condition": None,
                     "state": None,
                     "evidence": _evidence(
-                        "not_established", "", "object_script"),
+                        "not_established", "", "object_script_run"),
                 }
                 self._emit({"kind": "script", "address": address},
                            hops + [hop], path)
-                self.unknown.append(f"{name}: object_script")
+                self.unknown.append(f"{name}: object_script_run")
+            elif _object_init_script(obj) and not _has_contract_semantics(
+                    contract):
+                self.unknown.append(f"{name}: object_script_init")
             else:
                 self.unknown.append(f"{name}: behavior_unknown")
             self._detail_and_downgrade(port, start)
@@ -440,8 +466,8 @@ class _Walker:
             visited: frozenset[str]) -> None:
         status, ref, reason = _dependency_evidence(
             contract, dependency, obj)
-        object_script = _object_script(obj)
-        hop_kind = "script" if object_script else dependency.kind
+        run_script = _object_run_script(obj)
+        hop_kind = "script" if run_script else dependency.kind
         source = dependency.source
         source_port = None
         if source.get("kind") == "port":
@@ -519,8 +545,9 @@ def _source_address(obj: ModelObject, source: Mapping[str, Any]) -> str:
 def _dependency_evidence(
         contract: BlockContract, dependency: Dependency,
         obj: ModelObject) -> tuple[str, str, str]:
-    if _object_script(obj):
-        return "not_established", dependency.provenance.ref, "object_script"
+    if _object_run_script(obj):
+        return ("not_established", dependency.provenance.ref,
+                "object_script_run")
     if dependency.kind == "script":
         return ("not_established", dependency.provenance.ref,
                 dependency.reason or "script")
