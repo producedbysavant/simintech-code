@@ -65,6 +65,11 @@ from .ir import (
     ScriptInfo,
     WireEnd,
 )
+from .experiments import (
+    ExperimentRecord,
+    parse_experiment_record,
+    parse_experiment_records,
+)
 from .graph import ModelIndex, QueryResult
 from .manifest import build_manifest
 from .semantics import (
@@ -117,6 +122,7 @@ __all__ = [
     "Coverage",
     "Decoration",
     "Discrepancy",
+    "ExperimentRecord",
     "Limits",
     "MemoryLink",
     "ModelIR",
@@ -156,6 +162,8 @@ __all__ = [
     "influence",
     "load_default_contracts",
     "parse_behavior_spec",
+    "parse_experiment_record",
+    "parse_experiment_records",
     "parse_model_text",
     "parse_xprt",
     "parse_xprt_file",

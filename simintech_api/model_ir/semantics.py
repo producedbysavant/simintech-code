@@ -22,14 +22,16 @@ from .contracts import (
     load_default_contracts,
 )
 from .errors import ModelQueryError
+from .experiments import (ExperimentRecord, parse_experiment_record)
 from .graph import ModelIndex, QueryResult
 from .ir import ModelIR, ModelObject
 
 _STRUCTURAL_KINDS = frozenset({"wire", "branch", "boundary"})
 _RUN_SCRIPT_SLOTS = ("script", "Script", "OnRunScript")
 _INIT_SCRIPT_SLOTS = ("OnInitScript",)
-_INCLUDE = frozenset({"contract", "not_established"})
+_INCLUDE = frozenset({"contract", "not_established", "experiment"})
 _MAX_UNKNOWN = 200
+_MAX_LIMITATIONS = 50
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,37 +86,226 @@ def parse_behavior_spec(data: Mapping[str, Any]) -> BehaviorSpec:
         scenarios=tuple(scenarios))
 
 
+def _item_addresses(item: Mapping[str, Any]) -> set[str]:
+    values = {str(item.get("target", ""))}
+    source = item.get("source", {})
+    if isinstance(source, MappingABC):
+        values.add(str(source.get("address", "")))
+    values.update(str(value) for value in item.get("path", ()))
+    for hop in item.get("hops", ()):
+        values.add(str(hop.get("from", "")))
+        values.add(str(hop.get("to", "")))
+    return {value for value in values if value}
+
+
+def _object_address(address: str) -> bool:
+    """Адрес объекта, а не порта (`:0`) или свойства (`@name`)."""
+    if "@" in address:
+        return False
+    return not address.rsplit(":", 1)[-1].isdigit()
+
+
+def _matches_source(source: str, candidates: set[str]) -> bool:
+    if source in candidates:
+        return True
+    if not _object_address(source):
+        return False
+    return any(candidate == source
+               or candidate.startswith(source + ":")
+               or candidate.startswith(source + "@")
+               for candidate in candidates)
+
+
+def _has_branch(item: Mapping[str, Any]) -> bool:
+    return any(str(hop.get("kind", "")) in ("conditional", "control")
+               for hop in item.get("hops", ()))
+
+
+def _cap_limitations(items: list[dict[str, str]]) -> list[dict[str, str]]:
+    if len(items) <= _MAX_LIMITATIONS:
+        return items
+    extra = len(items) - _MAX_LIMITATIONS
+    return items[:_MAX_LIMITATIONS] + [{
+        "kind": "limitations_truncated",
+        "text": f"ещё {extra} ограничений не показаны",
+    }]
+
+
+class _ExperimentSet:
+    """Применимые, отрицательные и неприменимые свидетельства."""
+
+    def __init__(self, index: ModelIndex,
+                 records: Iterable[ExperimentRecord]) -> None:
+        records = tuple(records)
+        self.supplied = len(records)
+        self.applicable: list[ExperimentRecord] = []
+        self.negative: list[ExperimentRecord] = []
+        self.inapplicable: list[dict[str, str]] = []
+        self.applied: list[ExperimentRecord] = []
+        self.limitations: list[dict[str, str]] = []
+        self._notes: set[tuple[str, str, str]] = set()
+        self._by_target: dict[str, list[ExperimentRecord]] = {}
+        structure_hash = index.model.meta.structure_hash
+        content_hash = index.model.meta.content_hash
+        for record in records:
+            if record.status == "unknown":
+                self._reject(record, "status_unknown")
+            elif record.structure_hash != structure_hash:
+                self._reject(record, "structure_hash_mismatch")
+            elif record.content_hash != content_hash:
+                self._reject(record, "content_hash_mismatch")
+            elif not record.observed:
+                self.negative.append(record)
+            else:
+                self.applicable.append(record)
+                self._by_target.setdefault(record.target, []).append(record)
+
+    def _note(self, kind: str, ref: str, text: str) -> None:
+        key = (kind, ref, text)
+        if key in self._notes:
+            return
+        self._notes.add(key)
+        item = {"kind": kind, "text": text}
+        if ref:
+            item["ref"] = ref
+        self.limitations.append(item)
+
+    def _reject(self, record: ExperimentRecord, reason: str) -> None:
+        self.inapplicable.append({"id": record.id, "reason": reason})
+        self._note("experiment_inapplicable", record.id,
+                   f"свидетельство неприменимо: {reason}")
+
+    def apply(self, items: list[dict[str, Any]],
+              include: frozenset[str]) -> None:
+        used: set[str] = set()
+        for item in items:
+            target = str(item.get("target", ""))
+            candidates = _item_addresses(item)
+            for record in self._by_target.get(target, ()):
+                if not _matches_source(record.source, candidates):
+                    continue
+                used.add(record.id)
+                evidence = item["evidence"]
+                if evidence.get("status") != "contract":
+                    evidence["status"] = "experiment"
+                    evidence["ref"] = f"experiment:{record.id}"
+                    evidence.pop("reason", None)
+                evidence.setdefault("experiments", []).append(record.id)
+                self._note(
+                    "experiment_scope", record.id,
+                    "наблюдение относится к одному сценарию; вывод не "
+                    "переносится на другие входы и модели")
+                if _object_address(record.source):
+                    self._note(
+                        "experiment_object_address", record.id,
+                        "адрес источника задан объектом; совпадение шире "
+                        "конкретного порта")
+                if _has_branch(item):
+                    self._note(
+                        "experiment_branch_ambiguous", record.id,
+                        "цепочка содержит условный или управляющий хоп; "
+                        "один сценарий не фиксирует ветвь")
+                for text in record.limitations:
+                    self._note("experiment_record", record.id, text)
+        self.applied = [record for record in self.applicable
+                        if record.id in used]
+        for record in self.applicable:
+            if record.id not in used:
+                self._note("experiment_unmatched", record.id,
+                           "свидетельство не сопоставлено с цепочкой")
+        for record in self.negative:
+            self._note(
+                "experiment_negative", record.id,
+                "эффект не наблюдался; это не доказывает отсутствие влияния")
+            for text in record.limitations:
+                self._note("experiment_record", record.id, text)
+        if self.applied and "experiment" not in include:
+            self._note("experiment_filtered", "",
+                       "экспериментальные цепочки скрыты фильтром include")
+
+    def summary(self) -> dict[str, int]:
+        return {
+            "supplied": self.supplied,
+            "applied": len(self.applied),
+            "negative": len(self.negative),
+            "inapplicable": len(self.inapplicable),
+        }
+
+
 def influence(
         index: ModelIndex, registry: BlockContractRegistry, target: str,
         max_depth: int = 64,
-        include: Iterable[str] = ("contract", "not_established"),
-        max_items: int = 200) -> QueryResult:
+        include: Iterable[str] = ("contract", "not_established", "experiment"),
+        max_items: int = 200,
+        experiments: Iterable[ExperimentRecord | Mapping[str, Any]] = ()
+        ) -> QueryResult:
     """Цепочки влияния на выход `target`.
 
     `target` - порт (`объект:индекс`) или объект с одним выходом. Элемент
     ответа - цепочка от цели к терминальному источнику; `hops` хранят
     функциональные переходы, `path` - адреса пройденных узлов.
+    Экспериментальные свидетельства применяются к цепочке целиком и не
+    превращают отрицательный результат в известное отсутствие.
     """
     allowed = _include_filter(include)
+    if isinstance(experiments, (ExperimentRecord, MappingABC)):
+        experiments = (experiments,)
+    records: list[ExperimentRecord] = []
+    for item in experiments:
+        if isinstance(item, ExperimentRecord):
+            records.append(item)
+        elif isinstance(item, MappingABC):
+            records.append(parse_experiment_record(item))
+        else:
+            raise ModelQueryError(
+                "experiment: запись не ExperimentRecord и не объект")
+    experiment_set = _ExperimentSet(index, records)
+    limitations: list[dict[str, str]] = []
     items: list[dict[str, Any]] = []
     unknown: list[str] = []
     absences: list[dict[str, Any]] = []
-    walker = _Walker(index, registry, items, unknown, absences, max_depth)
+    walker = _Walker(index, registry, items, unknown, absences, max_depth,
+                     limitations)
     for port_id in _target_ports(index, target):
         walker.walk(port_id, [], [], 0, frozenset())
+    experiment_set.apply(items, allowed)
     filtered = [item for item in items
                 if item["evidence"]["status"] in allowed]
     total = len(filtered)
     unique_unknown = tuple(dict.fromkeys(unknown))
+    truncated = (total > max_items
+                 or len(unique_unknown) > _MAX_UNKNOWN)
+    if not records:
+        limitations.append({
+            "kind": "experiments_absent",
+            "text": "эксперименты не переданы: ответ основан только "
+                    "на контрактах",
+        })
+    if unique_unknown:
+        limitations.append({
+            "kind": "unknown_present",
+            "text": f"неизвестных участков: {len(unique_unknown)}",
+        })
+    if truncated:
+        limitations.append({
+            "kind": "truncated",
+            "text": f"ответ усечён: показано {min(total, max_items)} "
+                    f"из {total} цепочек",
+        })
     return QueryResult(
         query="influence",
         scope="influence",
         model_hash=index.model.meta.structure_hash,
         items=tuple(filtered[:max_items]),
         unknown=unique_unknown[:_MAX_UNKNOWN],
-        truncated=(total > max_items
-                   or len(unique_unknown) > _MAX_UNKNOWN),
-        evidence={"known_absences": absences, "items_total": total},
+        truncated=truncated,
+        evidence={
+            "known_absences": absences,
+            "items_total": total,
+            "limitations": _cap_limitations(
+                limitations + experiment_set.limitations),
+            "experiments": experiment_set.summary(),
+        },
     )
 
 
@@ -283,8 +474,8 @@ def _include_filter(include: Iterable[str]) -> frozenset[str]:
     values = frozenset(include)
     if not values or values - _INCLUDE:
         raise ModelQueryError(
-            f"include={sorted(values)}: допустимы contract и "
-            f"not_established")
+            f"include={sorted(values)}: допустимы contract, experiment "
+            f"и not_established")
     return values
 
 
@@ -348,13 +539,31 @@ def _has_contract_semantics(contract: BlockContract) -> bool:
 class _Walker:
     def __init__(self, index: ModelIndex, registry: BlockContractRegistry,
                  items: list[dict[str, Any]], unknown: list[str],
-                 absences: list[dict[str, Any]], max_depth: int) -> None:
+                 absences: list[dict[str, Any]], max_depth: int,
+                 limitations: list[dict[str, str]] | None = None) -> None:
         self.index = index
         self.registry = registry
         self.items = items
         self.unknown = unknown
         self.absences = absences
         self.max_depth = max_depth
+        self.limitations = limitations if limitations is not None else []
+        self._init_seen: set[str] = set()
+
+    def _note_init(self, obj: ModelObject) -> None:
+        slot = _object_init_script(obj)
+        if not slot:
+            return
+        ref = f"{obj.address}@script:{slot}"
+        if ref in self._init_seen:
+            return
+        self._init_seen.add(ref)
+        self.limitations.append({
+            "kind": "init_script",
+            "ref": ref,
+            "text": "начальное состояние задано OnInitScript; зависимости "
+                    "контракта не понижены",
+        })
 
     def walk(self, port_id: str, hops: list[dict[str, Any]],
              path: list[str], depth: int,
@@ -407,6 +616,7 @@ class _Walker:
     def _walk_output(self, port: Any, obj: ModelObject, name: str,
                      hops: list[dict[str, Any]], path: list[str],
                      depth: int, visited: frozenset[str]) -> None:
+        self._note_init(obj)
         self._collect_absences(obj, port.index, name)
         memory = [edge for edge in self.index.reverse.get(port.id, ())
                   if edge.kind == "memory"]
@@ -496,7 +706,7 @@ class _Walker:
             if edge.kind != "boundary":
                 continue
             walker = _Walker(self.index, self.registry, [], details, [],
-                             self.max_depth)
+                             self.max_depth, self.limitations)
             walker.walk(edge.src, [], [], 0, frozenset())
         return details
 
