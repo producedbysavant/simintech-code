@@ -680,7 +680,8 @@ class ModelIndex:
                         "subject": f"{obj.address}:{port.index}",
                         "detail": "выход без потребителя",
                     })
-                if incoming > 1:
+                if (port.direction is PortDirection.IN
+                        and incoming > 1):
                     violations.append({
                         "code": "multiple_drivers",
                         "severity": "warning",

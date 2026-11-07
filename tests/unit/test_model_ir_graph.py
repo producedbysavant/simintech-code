@@ -131,6 +131,44 @@ UNCONNECTED = """<Header><project><page>
   </object>
 </page></project></Header>"""
 
+SUM_TWO_INPUTS = """<Header><project><page>
+  <object><name>`S`</name><class_name>`Сумматор`</class_name><obj_type>`100`</obj_type>
+    <ports><port><name></name><mode>`1`</mode></port>
+      <port><name>`+`</name><mode>`0`</mode></port>
+      <port><name>`+`</name><mode>`0`</mode></port></ports>
+  </object>
+</page></project></Header>"""
+
+SUM_TWO_DRIVERS = """<Header><project><page>
+  <object><name>`A`</name><class_name>`Константа`</class_name><obj_type>`100`</obj_type>
+    <ports><port><name>`y`</name><mode>`1`</mode></port></ports>
+  </object>
+  <object><name>`B`</name><class_name>`Константа`</class_name><obj_type>`100`</obj_type>
+    <ports><port><name>`y`</name><mode>`1`</mode></port></ports>
+  </object>
+  <object><name>`S`</name><class_name>`Сумматор`</class_name><obj_type>`100`</obj_type>
+    <ports><port><name></name><mode>`1`</mode></port>
+      <port><name>`+`</name><mode>`0`</mode></port>
+      <port><name>`+`</name><mode>`0`</mode></port></ports>
+  </object>
+  <object>
+    <name>`W1`</name><class_name>`Математическая связь`</class_name>
+    <obj_type>`101`</obj_type>
+    <start_bl_index>`0`</start_bl_index><start_bl_name>`A`</start_bl_name>
+    <start_port_index>`0`</start_port_index>
+    <end_bl_index>`2`</end_bl_index><end_bl_name>`S`</end_bl_name>
+    <end_port_index>`1`</end_port_index>
+  </object>
+  <object>
+    <name>`W2`</name><class_name>`Математическая связь`</class_name>
+    <obj_type>`101`</obj_type>
+    <start_bl_index>`1`</start_bl_index><start_bl_name>`B`</start_bl_name>
+    <start_port_index>`0`</start_port_index>
+    <end_bl_index>`2`</end_bl_index><end_bl_name>`S`</end_bl_name>
+    <end_port_index>`1`</end_port_index>
+  </object>
+</page></project></Header>"""
+
 
 def test_inspect_trace_path_and_ancestors():
     index = ModelIndex(parse_xprt(MODEL))
@@ -185,6 +223,33 @@ def test_check_connections_and_invariants():
         {"id": "fanout", "kind": "max_fanout", "max": 0},
     ])
     assert fanout.items[0]["status"] == "failed"
+
+
+def test_multiple_drivers_not_reported_on_output_of_two_input_block():
+    """Два входа «Сумматора» не делают его выход многодрайверным.
+
+    Внутренние рёбра блока идут из входов в выход и без фильтра по
+    направлению дают выходу incoming=2. При нуле проводов это выглядело
+    как multiple_drivers (issue #266).
+    """
+    index = ModelIndex(parse_xprt(SUM_TWO_INPUTS))
+    check = index.check_connections()
+    subjects = {(item["code"], item["subject"]) for item in check.items}
+    assert ("multiple_drivers", "main::S:0") not in subjects
+    assert ("unconnected_input", "main::S:1") in subjects
+    assert ("unconnected_input", "main::S:2") in subjects
+    assert check.evidence["checked_connections"] == 0
+
+
+def test_multiple_drivers_still_reported_on_real_input():
+    """Настоящие два провода в один вход остаются нарушением."""
+    index = ModelIndex(parse_xprt(SUM_TWO_DRIVERS))
+    check = index.check_connections()
+    drivers = [item for item in check.items
+               if item["code"] == "multiple_drivers"]
+    assert [(item["subject"], item["detail"]) for item in drivers] == [
+        ("main::S:1", "вход принимает 2 источников")]
+    assert check.evidence["checked_connections"] == 2
 
 
 def test_trace_both_returns_unique_nodes():
