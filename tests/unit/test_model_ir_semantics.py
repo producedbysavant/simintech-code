@@ -178,6 +178,116 @@ def test_influence_preliminary_row_is_not_contract():
     assert chain["evidence"]["reason"] == "unapproved"
 
 
+def test_influence_rejected_dependency_is_rejected():
+    data = copy.deepcopy(_semantic_data())
+    data["Усилитель"]["review"] = {
+        "status": "rejected", "reviewer": "инженер",
+        "date": "2026-11-06", "ref": "pilot_blocks.yaml:Усилитель",
+    }
+    result = influence(
+        ModelIndex(parse_xprt(MODEL)), _semantic_registry(data), "main::S:0")
+    chain = _chain_to(result, "main::K@property:a")
+    assert chain["evidence"]["status"] == "not_established"
+    assert chain["evidence"]["reason"] == "rejected"
+    assert chain["evidence"]["review_ref"] == "pilot_blocks.yaml:Усилитель"
+
+
+def test_influence_rejected_measured_is_still_rejected():
+    data = copy.deepcopy(_semantic_data())
+    data["Усилитель"]["review"] = {
+        "status": "rejected", "reviewer": "инженер",
+        "date": "2026-11-06",
+    }
+    data["Усилитель"]["dependencies"][0]["provenance"]["status"] = "measured"
+    result = influence(
+        ModelIndex(parse_xprt(MODEL)), _semantic_registry(data), "main::S:0")
+    chain = _chain_to(result, "main::K@property:a")
+    assert chain["evidence"]["reason"] == "rejected"
+
+
+def test_influence_approved_without_signature_is_unapproved():
+    data = copy.deepcopy(_semantic_data())
+    data["Усилитель"]["review"] = {
+        "status": "approved", "reviewer": "", "date": "",
+    }
+    result = influence(
+        ModelIndex(parse_xprt(MODEL)), _semantic_registry(data), "main::S:0")
+    chain = _chain_to(result, "main::K@property:a")
+    assert chain["evidence"]["reason"] == "unapproved"
+
+
+def test_influence_unapproved_evidence_carries_review_ref():
+    data = copy.deepcopy(_semantic_data())
+    data["Усилитель"]["review"] = {
+        "status": "preliminary", "reviewer": "", "date": "",
+        "ref": "pilot_blocks.yaml:Усилитель",
+    }
+    result = influence(
+        ModelIndex(parse_xprt(MODEL)), _semantic_registry(data), "main::S:0")
+    chain = _chain_to(result, "main::K@property:a")
+    assert chain["evidence"]["reason"] == "unapproved"
+    assert chain["evidence"]["review_ref"] == "pilot_blocks.yaml:Усилитель"
+
+
+def test_semantic_coverage_review_counts_and_preliminary_list():
+    data = copy.deepcopy(_semantic_data())
+    data["Константа"]["pilot_scope"] = "live_acceptance"
+    data["Усилитель"]["pilot_scope"] = "live_acceptance"
+    data["Усилитель"]["review"] = {
+        "status": "rejected", "reviewer": "инженер",
+        "date": "2026-11-06", "ref": "pilot_blocks.yaml:Усилитель",
+    }
+    coverage = semantic_coverage(parse_xprt(MODEL), _semantic_registry(data))
+    assert coverage["review_counts"] == {
+        "approved": 1, "preliminary": 0, "rejected": 1}
+    assert coverage["preliminary_classes"] == []
+    assert coverage["review_refs"] == {
+        "Усилитель": "pilot_blocks.yaml:Усилитель"}
+    assert coverage["by_class"]["Усилитель"]["review_status"] == "rejected"
+    assert (coverage["by_class"]["Усилитель"]["review_ref"]
+            == "pilot_blocks.yaml:Усилитель")
+    assert coverage["objects_unknown"]["rejected"] == 1
+
+
+def test_review_ref_does_not_fall_back_to_provenance():
+    data = copy.deepcopy(_semantic_data())
+    data["Усилитель"]["review"] = {
+        "status": "preliminary", "reviewer": "", "date": "",
+    }
+    coverage = semantic_coverage(parse_xprt(MODEL), _semantic_registry(data))
+    assert coverage["by_class"]["Усилитель"]["review_ref"] == ""
+    result = influence(
+        ModelIndex(parse_xprt(MODEL)), _semantic_registry(data), "main::S:0")
+    chain = _chain_to(result, "main::K@property:a")
+    assert "review_ref" not in chain["evidence"]
+
+
+def test_semantic_coverage_rejected_is_not_approved():
+    data = copy.deepcopy(_semantic_data())
+    data["Усилитель"]["review"] = {
+        "status": "rejected", "reviewer": "инженер",
+        "date": "2026-11-06",
+    }
+    coverage = semantic_coverage(parse_xprt(MODEL), _semantic_registry(data))
+    assert coverage["objects_with_behavior"] == 1
+    assert coverage["objects_with_approved_behavior"] == 1
+    assert coverage["dependencies_known"] == 1
+    assert coverage["objects_unknown"]["rejected"] == 1
+
+
+def test_semantic_coverage_unsigned_approved_counts_as_preliminary():
+    data = copy.deepcopy(_semantic_data())
+    data["Константа"]["pilot_scope"] = "live_acceptance"
+    data["Константа"]["review"] = {
+        "status": "approved", "reviewer": "", "date": "",
+    }
+    coverage = semantic_coverage(parse_xprt(MODEL), _semantic_registry(data))
+    assert coverage["review_counts"] == {
+        "approved": 0, "preliminary": 1, "rejected": 0}
+    assert coverage["preliminary_classes"] == ["Константа"]
+    assert coverage["by_class"]["Константа"]["review_status"] == "preliminary"
+
+
 def test_influence_structural_measured_does_not_upgrade_functional():
     registry = _with_dependency_provenance(
         _semantic_registry(), "Усилитель", "derived", review="preliminary")
@@ -194,12 +304,28 @@ SCRIPT_MODEL = MODEL.replace(
 )
 
 
+def _with_scripts(model, scripts):
+    """Вставить слоты скриптов в первый объект модели (K)."""
+    data = "".join(
+        f"<data><name>`{slot}`</name><value>`{text}`</value></data>"
+        for slot, text in scripts)
+    return model.replace(
+        "</ports>\n  </object>\n  <object><name>`G`</name>",
+        f"</ports>\n    <custom_props>{data}</custom_props>\n"
+        "  </object>\n  <object><name>`G`</name>",
+        1,
+    )
+
+
+INIT_MODEL = _with_scripts(MODEL, [("OnInitScript", "n = 1;")])
+
+
 def test_influence_script_preserves_kind_and_reason():
     result = influence(
         ModelIndex(parse_xprt(SCRIPT_MODEL)), _semantic_registry(), "main::S:0")
     chain = _chain_to(result, "main::K@property:a")
     assert chain["hops"][-1]["kind"] == "script"
-    assert chain["hops"][-1]["evidence"]["reason"] == "object_script"
+    assert chain["hops"][-1]["evidence"]["reason"] == "object_script_run"
     assert chain["evidence"]["status"] == "not_established"
 
 
@@ -214,10 +340,72 @@ def test_influence_script_object_without_dependencies_keeps_script():
     assert len(scripts) == 1
     item = scripts[0]
     assert item["hops"][-1]["kind"] == "script"
-    assert item["hops"][-1]["evidence"]["reason"] == "object_script"
+    assert item["hops"][-1]["evidence"]["reason"] == "object_script_run"
     assert item["evidence"]["status"] == "not_established"
-    assert any(entry.endswith(": object_script") for entry in result.unknown)
+    assert any(entry.endswith(": object_script_run")
+               for entry in result.unknown)
     assert not any("script_defined_ports" in entry for entry in result.unknown)
+
+
+def test_influence_init_script_keeps_contract_dependencies():
+    result = influence(
+        ModelIndex(parse_xprt(INIT_MODEL)), _semantic_registry(), "main::S:0")
+    chain = _chain_to(result, "main::K@property:a")
+    assert [hop["kind"] for hop in chain["hops"]] == [
+        "unconditional", "unconditional"]
+    assert chain["evidence"]["status"] == "contract"
+
+
+def test_semantic_coverage_init_script_keeps_dependencies_known():
+    coverage = semantic_coverage(
+        parse_xprt(INIT_MODEL), _semantic_registry())
+    assert coverage["objects_with_init_script"] == 1
+    assert coverage["dependencies_total"] == 3
+    assert coverage["dependencies_known"] == 3
+    assert coverage["objects_unknown"]["object_script_run"] == 0
+    assert coverage["objects_unknown"]["object_script_init"] == 0
+
+
+def test_init_only_without_contract_semantics_is_object_script_init():
+    data = copy.deepcopy(_semantic_data())
+    data["Константа"]["dependencies"] = []
+    result = influence(
+        ModelIndex(parse_xprt(INIT_MODEL)), _semantic_registry(data),
+        "main::S:0")
+    assert all(item["source"]["kind"] != "script" for item in result.items)
+    assert any(entry.endswith(": object_script_init")
+               for entry in result.unknown)
+    coverage = semantic_coverage(parse_xprt(INIT_MODEL),
+                                 _semantic_registry(data))
+    assert coverage["objects_unknown"]["object_script_init"] == 1
+    assert coverage["objects_unknown"]["object_script_run"] == 0
+
+
+def test_init_and_run_prefers_run_script():
+    model = _with_scripts(MODEL, [
+        ("OnInitScript", "n = 1;"), ("Script", "y := a;")])
+    result = influence(
+        ModelIndex(parse_xprt(model)), _semantic_registry(), "main::S:0")
+    chain = _chain_to(result, "main::K@property:a")
+    assert chain["hops"][-1]["kind"] == "script"
+    assert chain["hops"][-1]["evidence"]["reason"] == "object_script_run"
+    coverage = semantic_coverage(parse_xprt(model), _semantic_registry())
+    assert coverage["objects_with_init_script"] == 1
+    assert coverage["objects_unknown"]["object_script_run"] == 1
+    assert coverage["objects_unknown"]["object_script_init"] == 0
+
+
+@pytest.mark.parametrize("slot", ["Script", "OnRunScript"])
+def test_run_script_slots_remain_unknown(slot):
+    model = _with_scripts(MODEL, [(slot, "y := a;")])
+    result = influence(
+        ModelIndex(parse_xprt(model)), _semantic_registry(), "main::S:0")
+    chain = _chain_to(result, "main::K@property:a")
+    assert chain["hops"][-1]["kind"] == "script"
+    assert chain["hops"][-1]["evidence"]["reason"] == "object_script_run"
+    coverage = semantic_coverage(parse_xprt(model), _semantic_registry())
+    assert coverage["objects_unknown"]["object_script_run"] == 1
+    assert coverage["objects_with_init_script"] == 0
 
 
 def _with_absence(status, review):
@@ -238,6 +426,8 @@ def _with_absence(status, review):
     ("claim", "approved", 1),
     ("derived", "approved", 1),
     ("measured", "preliminary", 1),
+    ("measured", "rejected", 0),
+    ("claim", "rejected", 0),
 ])
 def test_influence_known_absence_requires_evidence(status, review, expected):
     result = influence(
@@ -268,6 +458,23 @@ def test_semantic_coverage_known_absences_counts_only_known():
     coverage = semantic_coverage(
         parse_xprt(MODEL), _semantic_registry(data))
     assert coverage["known_absences_total"] == 1
+
+
+def test_semantic_coverage_rejected_measured_absence_not_counted():
+    data = copy.deepcopy(_semantic_data())
+    data["Усилитель"]["dependencies"] = []
+    data["Усилитель"]["known_absences"] = [{
+        "output": 1,
+        "source": {"kind": "port", "index": 0},
+        "provenance": {"status": "measured", "ref": "test"},
+    }]
+    data["Усилитель"]["review"] = {
+        "status": "rejected", "reviewer": "инженер",
+        "date": "2026-11-06",
+    }
+    coverage = semantic_coverage(parse_xprt(MODEL), _semantic_registry(data))
+    assert coverage["known_absences_total"] == 0
+    assert coverage["objects_unknown"]["rejected"] == 1
 
 
 def test_semantic_coverage_unapproved_absence_is_not_behavior_known():
@@ -336,6 +543,56 @@ def test_influence_known_absence_is_separate():
         ModelIndex(parse_xprt(MODEL)), _semantic_registry(data), "main::S:0")
     assert result.items == ()
     assert result.evidence["known_absences"][0]["source"]["index"] == 0
+
+
+def test_known_absence_keeps_script_defined_reason():
+    data = copy.deepcopy(_semantic_data())
+    data["Константа"]["ports"] = {
+        "model": "unknown", "reason": "script_defined_ports"}
+    data["Константа"]["dependencies"] = []
+    data["Константа"]["known_absences"] = [{
+        "output": 0,
+        "source": {"kind": "property", "name": "a"},
+        "provenance": {"status": "claim", "ref": "test"},
+    }]
+    data["Константа"]["review"] = {
+        "status": "approved", "reviewer": "test", "date": "2026-10-31",
+    }
+    result = influence(
+        ModelIndex(parse_xprt(MODEL)), _semantic_registry(data), "main::S:0")
+    assert any(entry.endswith(": script_defined")
+               for entry in result.unknown)
+    assert result.evidence["known_absences"]
+
+
+def test_run_script_wins_over_known_absence():
+    data = copy.deepcopy(_semantic_data())
+    data["Константа"]["dependencies"] = []
+    data["Константа"]["known_absences"] = [{
+        "output": 0,
+        "source": {"kind": "property", "name": "a"},
+        "provenance": {"status": "claim", "ref": "test"},
+    }]
+    data["Константа"]["review"] = {
+        "status": "approved", "reviewer": "test", "date": "2026-10-31",
+    }
+    result = influence(
+        ModelIndex(parse_xprt(SCRIPT_MODEL)), _semantic_registry(data),
+        "main::S:0")
+    scripts = [item for item in result.items
+               if item["source"]["kind"] == "script"]
+    assert len(scripts) == 1
+    assert scripts[0]["hops"][-1]["evidence"]["reason"] == "object_script_run"
+    assert result.evidence["known_absences"]
+
+
+def test_influence_known_absence_does_not_add_behavior_unknown():
+    result = influence(
+        ModelIndex(parse_xprt(MODEL)), _with_absence("claim", "approved"),
+        "main::S:0")
+    assert result.items == ()
+    assert result.evidence["known_absences"]
+    assert not any("behavior_unknown" in item for item in result.unknown)
 
 
 SUB_MODEL = GRAPH_MODEL.replace("`Усилитель`", "`Неизвестный`")
@@ -584,9 +841,40 @@ def test_semantic_coverage_separates_approved_and_unknown():
     assert data["dependencies_known"] == 3
 
 
-def test_semantic_coverage_counts_object_script():
+def test_influence_script_defined_reason_matches_coverage():
+    data = copy.deepcopy(_semantic_data())
+    data["Константа"]["ports"] = {
+        "model": "unknown", "reason": "script_defined_ports"}
+    data["Константа"]["dependencies"] = []
+    data["Константа"]["behavior"] = {"operation": "unknown"}
+    result = influence(
+        ModelIndex(parse_xprt(MODEL)), _semantic_registry(data), "main::S:0")
+    assert any(entry.endswith(": script_defined")
+               for entry in result.unknown)
+    coverage = semantic_coverage(parse_xprt(MODEL),
+                                 _semantic_registry(data))
+    assert coverage["objects_unknown"]["script_defined"] == 1
+
+
+def test_init_does_not_override_script_defined():
+    data = copy.deepcopy(_semantic_data())
+    data["Константа"]["ports"] = {
+        "model": "unknown", "reason": "script_defined_ports"}
+    data["Константа"]["dependencies"] = []
+    data["Константа"]["behavior"] = {"operation": "unknown"}
+    model = _with_scripts(MODEL, [("OnInitScript", "n = 1;")])
+    result = influence(
+        ModelIndex(parse_xprt(model)), _semantic_registry(data), "main::S:0")
+    assert any(entry.endswith(": script_defined")
+               for entry in result.unknown)
+    coverage = semantic_coverage(parse_xprt(model), _semantic_registry(data))
+    assert coverage["objects_unknown"]["script_defined"] == 1
+    assert coverage["objects_unknown"]["object_script_init"] == 0
+
+
+def test_semantic_coverage_counts_object_script_run():
     data = semantic_coverage(parse_xprt(SCRIPT_MODEL), _semantic_registry())
-    assert data["objects_unknown"]["object_script"] == 1
+    assert data["objects_unknown"]["object_script_run"] == 1
     assert data["objects_unknown"].get("script_defined", 0) == 0
 
 

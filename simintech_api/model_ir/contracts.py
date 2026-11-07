@@ -89,6 +89,29 @@ class Review:
     status: str = "preliminary"
     reviewer: str = ""
     date: str = ""
+    #: Ссылка на строку эталонной таблицы, например
+    #: `pilot_blocks.yaml:Усилитель`.
+    ref: str = ""
+
+    @property
+    def approved(self) -> bool:
+        """Утверждено только при непустых подписи и дате."""
+        return (self.status == "approved"
+                and isinstance(self.reviewer, str)
+                and bool(self.reviewer.strip())
+                and isinstance(self.date, str)
+                and bool(self.date.strip()))
+
+    @property
+    def rejected(self) -> bool:
+        return self.status == "rejected"
+
+    @property
+    def effective_status(self) -> str:
+        """Статус с учётом подписи: unsigned approved не утверждён."""
+        if self.rejected:
+            return "rejected"
+        return "approved" if self.approved else "preliminary"
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,11 +216,16 @@ def _behavior(data: Mapping[str, Any]) -> Behavior:
         provenance=_provenance(data.get("provenance", {})))
 
 
+def _review_text(value: Any) -> str:
+    return value.strip() if isinstance(value, str) else ""
+
+
 def _review(data: Mapping[str, Any]) -> Review:
     return Review(
         status=str(data.get("status", "preliminary")),
-        reviewer=str(data.get("reviewer", "")),
-        date=str(data.get("date", "")))
+        reviewer=_review_text(data.get("reviewer")),
+        date=_review_text(data.get("date")),
+        ref=_review_text(data.get("ref")))
 
 
 def _dependency(data: Mapping[str, Any]) -> Dependency:
@@ -590,7 +618,7 @@ _ALLOWED_NAME_STATUS = {"measured", "missing", "unknown",
                         "instance_defined", "weights"}
 _ALLOWED_CREATION = {"derived", "blocked", "unknown"}
 _ALLOWED_PILOT_SCOPE = {"", "live_acceptance", "synthetic_only", "auxiliary"}
-_ALLOWED_REVIEW = {"preliminary", "approved"}
+_ALLOWED_REVIEW = {"preliminary", "approved", "rejected"}
 _ALLOWED_BEHAVIOR = {
     "identity", "constant", "gain", "sum", "product", "integrate",
     "select", "vector", "split", "script", "unknown",
@@ -866,6 +894,16 @@ def validate_contract_data(data: Mapping[str, Any],
                 problems.append(
                     f"{name}: недопустимый review.status "
                     f"{review.get('status')!r}")
+            else:
+                if "ref" in review and not isinstance(review.get("ref"), str):
+                    problems.append(f"{name}: review.ref не строка")
+                reviewer = review.get("reviewer")
+                date = review.get("date")
+                if review.get("status") == "approved" and not (
+                        isinstance(reviewer, str) and reviewer.strip()
+                        and isinstance(date, str) and date.strip()):
+                    problems.append(
+                        f"{name}: approved без reviewer/date")
         if "dependencies" in item:
             dependencies = item.get("dependencies")
             if not isinstance(dependencies, list):

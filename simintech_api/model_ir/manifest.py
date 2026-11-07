@@ -14,18 +14,25 @@ from .contracts import load_default_contracts
 from .errors import ModelQueryError
 from .graph import ModelIndex, coverage_dict
 from .ir import Container, ModelIR
-from .semantics import semantic_coverage
+from .semantics import review_summary, semantic_coverage
+from .tokens import estimate_tokens, fits_budget
 
 _FOCUS = frozenset({
     "containers", "classes", "signals", "contracts", "semantics",
-    "discrepancies", "geometry",
+    "review", "discrepancies", "geometry",
 })
 
 
-def _header(model: ModelIR) -> str:
+_ESTIMATE_PLACEHOLDER = 9999
+
+
+def _header(model: ModelIR, budget_tokens: int = 3000,
+            estimated_tokens: int = _ESTIMATE_PLACEHOLDER) -> str:
     meta = model.meta
     return "\n".join([
         "# Model IR",
+        f"estimated_tokens: {estimated_tokens}",
+        f"budget_tokens: {budget_tokens}",
         f"model_hash: {meta.structure_hash}",
         f"content_hash: {meta.content_hash}",
         f"ir_schema: {meta.ir_schema}",
@@ -54,6 +61,30 @@ def _coverage(model: ModelIR) -> str:
             f"{key}={value}"
             for key, value in sorted(data["discrepancy_counts"].items())))
     return "\n".join(lines)
+
+
+def _review() -> list[str]:
+    """Состояние инженерной проверки эталонных строк."""
+    try:
+        registry = load_default_contracts()
+    except ModelQueryError as exc:
+        return ["## Review", f"review: unavailable ({exc})"]
+    summary = review_summary(registry)
+    counts = summary["counts"]
+    lines = ["## Review", f"rows: {sum(counts.values())}"]
+    for status in ("approved", "preliminary", "rejected"):
+        lines.append(f"{status}: {counts[status]}")
+    lines.append(f"invalid: {summary['invalid']}")
+    preliminary = summary["preliminary"]
+    if preliminary:
+        lines.append("preliminary:")
+        refs = summary["refs"]
+        for name in preliminary[:10]:
+            ref = refs.get(name, "")
+            lines.append(f"- {name}" + (f" [{ref}]" if ref else ""))
+        if len(preliminary) > 10:
+            lines.append(f"... ещё {len(preliminary) - 10}")
+    return lines
 
 
 def _container_lines(index: ModelIndex, depth: int = 0,
@@ -209,10 +240,15 @@ def _semantics(model: ModelIR) -> list[str]:
         "objects_with_approved_behavior: "
         f"{data['objects_with_approved_behavior']}",
         f"objects_with_known_ports: {data['objects_with_known_ports']}",
+        f"objects_with_init_script: {data['objects_with_init_script']}",
         f"dependencies: {data['dependencies_known']}"
         f"/{data['dependencies_total']}",
         f"known_absences: {data['known_absences_total']}",
     ]
+    review = data.get("review_counts", {})
+    if review:
+        lines.append("review: " + ", ".join(
+            f"{name}={count}" for name, count in review.items()))
     unknown = ", ".join(
         f"{name}={count}"
         for name, count in data["objects_unknown"].items() if count)
@@ -230,6 +266,40 @@ def _join(blocks: list[list[str]]) -> str:
     return "\n".join(line for lines in blocks for line in lines)
 
 
+def _fits(blocks: list[list[str]], budget_tokens: int) -> bool:
+    return fits_budget(_join(blocks), budget_tokens)
+
+
+def _replace_estimate(text: str, value: int) -> str:
+    lines = text.splitlines()
+    found = False
+    for pos, line in enumerate(lines):
+        if line.startswith("estimated_tokens: "):
+            lines[pos] = f"estimated_tokens: {value}"
+            found = True
+            break
+    if not found:
+        raise ModelQueryError("паспорт без строки estimated_tokens")
+    return "\n".join(lines)
+
+
+def _finalize_estimate(text: str, budget_tokens: int) -> str:
+    """Свести оценку и её строку к неподвижной точке."""
+    for _ in range(8):
+        value = estimate_tokens(text)
+        updated = _replace_estimate(text, value)
+        if updated == text:
+            text = updated
+            break
+        text = updated
+    actual = estimate_tokens(text)
+    if actual > budget_tokens:
+        raise ModelQueryError(
+            f"паспорт не помещается в бюджет: оценка {actual} "
+            f"токенов при бюджете {budget_tokens}")
+    return text
+
+
 def build_manifest(model: ModelIR, budget_tokens: int = 3000,
                    focus: str = "") -> str:
     """Собрать Markdown-паспорт в жёстком бюджете токенов."""
@@ -238,11 +308,11 @@ def build_manifest(model: ModelIR, budget_tokens: int = 3000,
             f"budget_tokens={budget_tokens}: допустимо 2000..5000")
     if focus and focus not in _FOCUS:
         raise ModelQueryError(f"неизвестный focus {focus!r}")
-    limit = budget_tokens * 3
     index = ModelIndex(model)
     sections: list[tuple[str, list[str]]] = [
-        ("header", _header(model).splitlines()),
+        ("header", _header(model, budget_tokens).splitlines()),
         ("coverage", _coverage(model).splitlines()),
+        ("review", _review()),
     ]
     optional: list[tuple[str, list[str]]] = [
         ("containers", _container_lines(index)),
@@ -259,12 +329,12 @@ def build_manifest(model: ModelIR, budget_tokens: int = 3000,
                 if not focus or item[0] == focus or (
                     focus in ("containers", "geometry")
                     and item[0] == "containers")]
-    base = [sections[0][1], sections[1][1]]
+    base = [sections[0][1], sections[1][1], sections[2][1]]
     extra: list[list[str]] = []
     included: list[str] = []
     omitted: list[str] = []
     for name, lines in selected:
-        if len(_join(base + extra + [lines])) <= limit:
+        if _fits(base + extra + [lines], budget_tokens):
             extra.append(lines)
             included.append(name)
         else:
@@ -274,13 +344,16 @@ def build_manifest(model: ModelIR, budget_tokens: int = 3000,
     while omitted:
         block = ("## Omitted\n" + ", ".join(omitted) +
                  "\nПолные данные: query_model.").splitlines()
-        if len(_join(base + extra + [block])) <= limit:
+        if _fits(base + extra + [block], budget_tokens):
             extra.append(block)
             break
         if not extra:
+            required = estimate_tokens(_join(base))
+            omitted_tokens = estimate_tokens(_join([block]))
             raise ModelQueryError(
-                "паспорт не помещается в бюджет: заголовок и покрытие "
-                "занимают весь лимит")
+                f"паспорт не помещается в бюджет: обязательная часть "
+                f"~{required} токенов и Omitted ~{omitted_tokens} токенов "
+                f"при бюджете {budget_tokens}")
         extra.pop()
         omitted.append(included.pop())
-    return _join(base + extra)
+    return _finalize_estimate(_join(base + extra), budget_tokens)

@@ -1576,18 +1576,78 @@
     id: test_inspect_trace_path_and_ancestors
     kind: unit-pure
 - id: model-ir-manifest-budget
-  statement: 'Паспорт Model IR ограничен budget_tokens 2000..5000, содержит заголовок, покрытие, структуру, классы, сигналы и блок Omitted; Omitted резервирует место, вытесняя последнюю секцию, чтобы потеря не стала молчаливой; XML, скрипты и полные значения свойств в него не попадают'
+  statement: 'Паспорт Model IR ограничен budget_tokens 2000..5000; токены считает консервативная оценка estimate_tokens, в заголовке стоят estimated_tokens и budget_tokens; обязательные Coverage и Review не усекаются, остальные секции и Omitted подчиняются бюджету; при непомещающейся обязательной части паспорт отказывает, а не усекает её молча; XML, скрипты и полные значения свойств в него не попадают'
   status: code-confirmed
   source:
     type: source-code
-    ref: simintech_api/model_ir/manifest.py
-  reproduction: 'test_manifest_has_header_coverage_and_no_xml, test_manifest_omits_what_does_not_fit и test_manifest_omitted_is_reserved: бюджет 2000 держится, лишние секции названы в Omitted'
+    ref: simintech_api/model_ir/manifest.py; simintech_api/model_ir/tokens.py
+  reproduction: 'test_manifest_estimated_tokens_matches_text, test_manifest_long_russian_names_stay_in_budget и test_manifest_omits_what_does_not_fit: оценка совпадает с текстом, кириллица укладывается в бюджет, лишние секции названы в Omitted'
   tests:
+  - file: tests/unit/test_model_ir_manifest.py
+    id: test_manifest_estimated_tokens_matches_text
+    kind: unit-pure
+  - file: tests/unit/test_model_ir_manifest.py
+    id: test_manifest_long_russian_names_stay_in_budget
+    kind: unit-pure
   - file: tests/unit/test_model_ir_manifest.py
     id: test_manifest_omits_what_does_not_fit
     kind: unit-pure
+  - file: tests/unit/test_model_ir_tokens.py
+    id: test_estimate_tokens_cyrillic_is_more_expensive
+    kind: unit-pure
   - file: tests/unit/test_model_ir_scale.py
     id: test_manifest_omitted_is_reserved
+    kind: unit-pure
+- id: model-ir-init-script-state
+  statement: 'OnInitScript считается начальным состоянием и не понижает контрактные зависимости; run-слоты script, Script и OnRunScript дают object_script_run; object_script_init возникает только без зависимостей и известных отсутствий и после rejected, script_defined и external_submodel; objects_with_init_script считает init отдельно'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/semantics.py
+  reproduction: 'test_influence_init_script_keeps_contract_dependencies, test_init_only_without_contract_semantics_is_object_script_init и test_run_script_slots_remain_unknown: init сохраняет contract, run понижает, причины разделены'
+  tests:
+  - file: tests/unit/test_model_ir_semantics.py
+    id: test_influence_init_script_keeps_contract_dependencies
+    kind: unit-pure
+  - file: tests/unit/test_model_ir_semantics.py
+    id: test_init_only_without_contract_semantics_is_object_script_init
+    kind: unit-pure
+  - file: tests/unit/test_model_ir_semantics.py
+    id: test_run_script_slots_remain_unknown
+    kind: unit-pure
+- id: model-ir-review-gate
+  statement: 'Review принимает preliminary, approved и rejected; approved действителен только с непустыми reviewer и date, иначе считается preliminary; rejected не участвует в семантике даже при measured; review_counts, preliminary_classes и review_refs считают строки эталонной таблицы, by_class называет review_status и review_ref'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/contracts.py; simintech_api/model_ir/semantics.py
+  reproduction: 'test_validator_requires_signature_for_approved, test_influence_rejected_dependency_is_rejected и test_semantic_coverage_review_counts_and_preliminary_list: подпись обязательна, rejected не даёт contract, счётчики совпадают с таблицей'
+  tests:
+  - file: tests/unit/test_model_ir_contracts.py
+    id: test_validator_requires_signature_for_approved
+    kind: unit-pure
+  - file: tests/unit/test_model_ir_semantics.py
+    id: test_influence_rejected_dependency_is_rejected
+    kind: unit-pure
+  - file: tests/unit/test_model_ir_semantics.py
+    id: test_semantic_coverage_review_counts_and_preliminary_list
+    kind: unit-pure
+- id: model-ir-experiment-evidence
+  statement: 'ExperimentRecord привязан к снимку структуры и содержимого; положительное наблюдение переводит цепочку из unapproved в experiment, не понижая contract и не отменяя rejected/unknown; отрицательное наблюдение не создаёт known_absences; limitations присутствует всегда, набор ограничен 100 записями'
+  status: code-confirmed
+  source:
+    type: source-code
+    ref: simintech_api/model_ir/experiments.py; simintech_api/model_ir/semantics.py
+  reproduction: 'test_influence_experiment_marks_chain, test_influence_negative_experiment_does_not_create_absence и test_influence_rejected_chain_is_not_upgraded: experiment виден, отсутствие не подменяется, denied-причины сохраняются'
+  tests:
+  - file: tests/unit/test_model_ir_experiments.py
+    id: test_influence_experiment_marks_chain
+    kind: unit-pure
+  - file: tests/unit/test_model_ir_experiments.py
+    id: test_influence_negative_experiment_does_not_create_absence
+    kind: unit-pure
+  - file: tests/unit/test_model_ir_experiments.py
+    id: test_influence_rejected_chain_is_not_upgraded
     kind: unit-pure
 - id: model-ir-manifest-contracts
   statement: 'Секция Contracts паспорта берёт покрытие реестра C4 (число классов, measured/derived/unknown, портовые модели) и контракты классов модели; при недоступном реестре называет причину, а паспорт строится'

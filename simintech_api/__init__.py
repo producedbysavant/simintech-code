@@ -101,6 +101,18 @@ __all__ = [
 #: Источник истины для версии: `pyproject.toml` объявляет её динамической и
 #: читает отсюда. Прописывать её ещё и там — значит однажды снова разойтись.
 #:
+#: 0.20.0: минорный - init-скрипт как состояние, строгий review gate,
+#: experiment evidence в `influence` и токенный бюджет паспорта. Причина
+#: `object_script` переименована в `object_script_run`, добавлены
+#: `object_script_init`, `objects_with_init_script`, `review_counts`,
+#: `preliminary_classes`, `review_refs` и `estimated_tokens`.
+#:
+#: 0.19.1: patch - скрипт без зависимостей сохраняет терминальный script-узел,
+#: `known_absences` учитывают утверждение строки.
+#:
+#: 0.19.0: минорный - функциональная семантика: `behavior`, `dependencies`,
+#: `known_absences`, запрос `influence` и `semantic_coverage`.
+#:
 #: 0.11.0: минорный — ownership COM-сессии и managed shutdown: `SessionOwnership`,
 #: `COMClient.session_pid`, автоматическая очистка только OWNED PID с ожиданием
 #: и exact-PID fallback. `SetShutdownOnLastRelease` намеренно не используется:
@@ -292,4 +304,4 @@ __all__ = [
 #: instance_defined, пины «Языка программирования» помечены
 #: script_defined_ports. Синтетический выход nport убран: у «Временного
 #: графика» его нет, и «портов 0 против 1» было ложным отказом.
-__version__ = "0.19.1"
+__version__ = "0.20.0"

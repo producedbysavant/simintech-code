@@ -22,13 +22,19 @@ from .contracts import (
     load_default_contracts,
 )
 from .errors import ModelQueryError
+from .experiments import (
+    ExperimentRecord,
+    coerce_experiment_records,
+)
 from .graph import ModelIndex, QueryResult
 from .ir import ModelIR, ModelObject
 
 _STRUCTURAL_KINDS = frozenset({"wire", "branch", "boundary"})
-_CALC_SCRIPT_SLOTS = ("script", "Script", "OnInitScript", "OnRunScript")
-_INCLUDE = frozenset({"contract", "not_established"})
+_RUN_SCRIPT_SLOTS = ("script", "Script", "OnRunScript")
+_INIT_SCRIPT_SLOTS = ("OnInitScript",)
+_INCLUDE = frozenset({"contract", "not_established", "experiment"})
 _MAX_UNKNOWN = 200
+_MAX_LIMITATIONS = 50
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,44 +89,291 @@ def parse_behavior_spec(data: Mapping[str, Any]) -> BehaviorSpec:
         scenarios=tuple(scenarios))
 
 
+def _item_addresses(item: Mapping[str, Any]) -> set[str]:
+    values = {str(item.get("target", ""))}
+    source = item.get("source", {})
+    if isinstance(source, MappingABC):
+        values.add(str(source.get("address", "")))
+    values.update(str(value) for value in item.get("path", ()))
+    for hop in item.get("hops", ()):
+        values.add(str(hop.get("from", "")))
+        values.add(str(hop.get("to", "")))
+    return {value for value in values if value}
+
+
+def _object_address(address: str) -> bool:
+    """Адрес объекта, а не порта (`:0`) или свойства (`@name`)."""
+    if "@" in address:
+        return False
+    return not address.rsplit(":", 1)[-1].isdigit()
+
+
+def _matches_source(source: str, candidates: set[str]) -> bool:
+    if source in candidates:
+        return True
+    if not _object_address(source):
+        return False
+    return any(candidate == source
+               or candidate.startswith(source + ":")
+               or candidate.startswith(source + "@")
+               for candidate in candidates)
+
+
+def _matches_target(target: str, item_target: str) -> bool:
+    if target == item_target:
+        return True
+    if not _object_address(target):
+        return False
+    return (item_target.startswith(target + ":")
+            or item_target.startswith(target + "@"))
+
+
+def _has_branch(item: Mapping[str, Any]) -> bool:
+    return any(str(hop.get("kind", "")) in ("conditional", "control")
+               for hop in item.get("hops", ()))
+
+
+def _hop_denial(item: Mapping[str, Any]) -> str:
+    """Причина хопа, которую эксперимент не имеет права отменить."""
+    for hop in item.get("hops", ()):
+        reason = str(hop.get("evidence", {}).get("reason", ""))
+        if reason and reason != "unapproved":
+            return reason
+    return ""
+
+
+def _cap_limitations(items: list[dict[str, str]]) -> list[dict[str, str]]:
+    if len(items) <= _MAX_LIMITATIONS:
+        return items
+    extra = len(items) - _MAX_LIMITATIONS
+    return items[:_MAX_LIMITATIONS] + [{
+        "kind": "limitations_truncated",
+        "text": f"ещё {extra} ограничений не показаны",
+    }]
+
+
+class _ExperimentSet:
+    """Применимые, отрицательные и неприменимые свидетельства."""
+
+    def __init__(self, index: ModelIndex,
+                 records: Iterable[ExperimentRecord]) -> None:
+        records = tuple(records)
+        self.supplied = len(records)
+        self.applicable: list[ExperimentRecord] = []
+        self.negative: list[ExperimentRecord] = []
+        self.inapplicable: list[dict[str, str]] = []
+        self.applied: list[ExperimentRecord] = []
+        self.blocked: dict[str, ExperimentRecord] = {}
+        self.limitations: list[dict[str, str]] = []
+        self._notes: set[tuple[str, str, str]] = set()
+        structure_hash = index.model.meta.structure_hash
+        content_hash = index.model.meta.content_hash
+        for record in records:
+            if record.status == "unknown":
+                self._reject(record, "status_unknown")
+            elif record.structure_hash != structure_hash:
+                self._reject(record, "structure_hash_mismatch")
+            elif record.content_hash != content_hash:
+                self._reject(record, "content_hash_mismatch")
+            elif not record.observed:
+                self.negative.append(record)
+            else:
+                self.applicable.append(record)
+
+    def _note(self, kind: str, ref: str, text: str) -> None:
+        key = (kind, ref, text)
+        if key in self._notes:
+            return
+        self._notes.add(key)
+        item = {"kind": kind, "text": text}
+        if ref:
+            item["ref"] = ref
+        self.limitations.append(item)
+
+    def _reject(self, record: ExperimentRecord, reason: str) -> None:
+        self.inapplicable.append({"id": record.id, "reason": reason})
+        self._note("experiment_inapplicable", record.id,
+                   f"свидетельство неприменимо: {reason}")
+
+    def apply(self, items: list[dict[str, Any]],
+              include: frozenset[str]) -> None:
+        used: set[str] = set()
+        supported: set[str] = set()
+        for item in items:
+            target = str(item.get("target", ""))
+            candidates = _item_addresses(item)
+            for record in self.applicable:
+                if not _matches_target(record.target, target):
+                    continue
+                if not _matches_source(record.source, candidates):
+                    continue
+                used.add(record.id)
+                evidence = item["evidence"]
+                status = str(evidence.get("status", ""))
+                reason = str(evidence.get("reason", ""))
+                denial = _hop_denial(item)
+                if status in ("contract", "experiment"):
+                    supported.add(record.id)
+                elif reason == "unapproved" and not denial:
+                    evidence["status"] = "experiment"
+                    evidence["ref"] = f"experiment:{record.id}"
+                    evidence["contract_status"] = status
+                    evidence["contract_reason"] = reason
+                    evidence.pop("reason", None)
+                    supported.add(record.id)
+                else:
+                    self.blocked[record.id] = record
+                    self._note(
+                        "experiment_not_applicable", record.id,
+                        f"свидетельство не отменяет причину "
+                        f"{denial or reason or status}")
+                    continue
+                evidence.setdefault("experiments", []).append(record.id)
+                self._note(
+                    "experiment_scope", record.id,
+                    "наблюдение относится к одному сценарию; вывод не "
+                    "переносится на другие входы и модели")
+                if _object_address(record.target):
+                    self._note(
+                        "experiment_object_target", record.id,
+                        "адрес цели задан объектом; совпадение шире "
+                        "конкретного порта")
+                if _object_address(record.source):
+                    self._note(
+                        "experiment_object_address", record.id,
+                        "адрес источника задан объектом; совпадение шире "
+                        "конкретного порта")
+                if _has_branch(item):
+                    self._note(
+                        "experiment_branch_ambiguous", record.id,
+                        "цепочка содержит условный или управляющий хоп; "
+                        "один сценарий не фиксирует ветвь")
+                for text in record.limitations:
+                    self._note("experiment_record", record.id, text)
+        self.applied = [record for record in self.applicable
+                        if record.id in supported]
+        for record in self.applicable:
+            if record.id not in used:
+                self._note("experiment_unmatched", record.id,
+                           "свидетельство не сопоставлено с цепочкой")
+        for record in self.negative:
+            self._note(
+                "experiment_negative", record.id,
+                "эффект не наблюдался; это не доказывает отсутствие влияния")
+            for text in record.limitations:
+                self._note("experiment_record", record.id, text)
+        if self.applied and "experiment" not in include:
+            self._note("experiment_filtered", "",
+                       "экспериментальные цепочки скрыты фильтром include")
+
+    def summary(self) -> dict[str, int]:
+        return {
+            "supplied": self.supplied,
+            "applied": len(self.applied),
+            "blocked": len(self.blocked),
+            "negative": len(self.negative),
+            "inapplicable": len(self.inapplicable),
+        }
+
+
 def influence(
         index: ModelIndex, registry: BlockContractRegistry, target: str,
         max_depth: int = 64,
-        include: Iterable[str] = ("contract", "not_established"),
-        max_items: int = 200) -> QueryResult:
+        include: Iterable[str] = ("contract", "not_established", "experiment"),
+        max_items: int = 200,
+        experiments: Iterable[ExperimentRecord | Mapping[str, Any]] = ()
+        ) -> QueryResult:
     """Цепочки влияния на выход `target`.
 
     `target` - порт (`объект:индекс`) или объект с одним выходом. Элемент
     ответа - цепочка от цели к терминальному источнику; `hops` хранят
     функциональные переходы, `path` - адреса пройденных узлов.
+    Экспериментальные свидетельства применяются к цепочке целиком и не
+    превращают отрицательный результат в известное отсутствие.
     """
     allowed = _include_filter(include)
+    records = coerce_experiment_records(experiments)
+    experiment_set = _ExperimentSet(index, records)
+    limitations: list[dict[str, str]] = []
     items: list[dict[str, Any]] = []
     unknown: list[str] = []
     absences: list[dict[str, Any]] = []
-    walker = _Walker(index, registry, items, unknown, absences, max_depth)
+    walker = _Walker(index, registry, items, unknown, absences, max_depth,
+                     limitations)
     for port_id in _target_ports(index, target):
         walker.walk(port_id, [], [], 0, frozenset())
+    experiment_set.apply(items, allowed)
     filtered = [item for item in items
                 if item["evidence"]["status"] in allowed]
     total = len(filtered)
     unique_unknown = tuple(dict.fromkeys(unknown))
+    truncated = (total > max_items
+                 or len(unique_unknown) > _MAX_UNKNOWN)
+    if not records:
+        limitations.append({
+            "kind": "experiments_absent",
+            "text": "эксперименты не переданы: ответ основан только "
+                    "на контрактах",
+        })
+    if unique_unknown:
+        limitations.append({
+            "kind": "unknown_present",
+            "text": f"неизвестных участков: {len(unique_unknown)}",
+        })
+    if truncated:
+        limitations.append({
+            "kind": "truncated",
+            "text": f"ответ усечён: показано {min(total, max_items)} "
+                    f"из {total} цепочек",
+        })
     return QueryResult(
         query="influence",
         scope="influence",
         model_hash=index.model.meta.structure_hash,
         items=tuple(filtered[:max_items]),
         unknown=unique_unknown[:_MAX_UNKNOWN],
-        truncated=(total > max_items
-                   or len(unique_unknown) > _MAX_UNKNOWN),
-        evidence={"known_absences": absences, "items_total": total},
+        truncated=truncated,
+        evidence={
+            "known_absences": absences,
+            "items_total": total,
+            "limitations": _cap_limitations(
+                limitations + experiment_set.limitations),
+            "experiments": experiment_set.summary(),
+        },
     )
 
 
 _UNKNOWN_REASONS = (
-    "class_unknown", "object_script", "script_defined",
-    "external_submodel", "behavior_unknown", "unapproved",
+    "class_unknown", "object_script_run", "rejected", "script_defined",
+    "external_submodel", "object_script_init", "behavior_unknown",
+    "unapproved",
 )
+
+
+def review_summary(registry: BlockContractRegistry) -> dict[str, Any]:
+    """Состояние проверки строк эталонной таблицы."""
+    counts = {"approved": 0, "preliminary": 0, "rejected": 0}
+    preliminary: list[str] = []
+    refs: dict[str, str] = {}
+    invalid = 0
+    for name in registry.classes():
+        contract = registry.get(name)
+        if contract is None or not contract.pilot_scope:
+            continue
+        status = contract.review.effective_status
+        counts[status] = counts.get(status, 0) + 1
+        if contract.review.status == "approved" and not contract.review.approved:
+            invalid += 1
+        if status == "preliminary":
+            preliminary.append(name)
+        if contract.review.ref:
+            refs[name] = contract.review.ref
+    return {
+        "counts": counts,
+        "preliminary": preliminary,
+        "refs": refs,
+        "invalid": invalid,
+    }
 
 
 def semantic_coverage(
@@ -137,7 +390,7 @@ def semantic_coverage(
                                ObjectKind.MEMORY_CELL, ObjectKind.UNKNOWN)]
     unknown = {reason: 0 for reason in _UNKNOWN_REASONS}
     by_class: dict[str, dict[str, Any]] = {}
-    total = with_behavior = approved = known_ports = 0
+    total = with_behavior = approved = known_ports = with_init = 0
     deps_total = deps_known = absences_total = 0
     for obj in objects:
         total += 1
@@ -146,20 +399,27 @@ def semantic_coverage(
             "objects": 0,
             "with_behavior": 0,
             "approved": 0,
+            "with_init_script": 0,
             "pilot_scope": contract.pilot_scope if contract else "",
+            "review_status": (contract.review.effective_status
+                              if contract else ""),
+            "review_ref": _review_ref(contract) if contract else "",
         })
         entry["objects"] += 1
+        if _object_init_script(obj):
+            with_init += 1
+            entry["with_init_script"] += 1
         if contract is not None and not contract.ports.unknown:
             known_ports += 1
         if contract is not None and _behavior_known(contract):
             with_behavior += 1
             entry["with_behavior"] += 1
-            if contract.review.status == "approved":
+            if contract.review.approved:
                 approved += 1
                 entry["approved"] += 1
         reason = _unknown_reason(obj, contract)
         if reason:
-            unknown[reason] += 1
+            unknown[reason] = unknown.get(reason, 0) + 1
         if contract is not None:
             try:
                 dependencies = registry.dependencies_for(
@@ -179,26 +439,40 @@ def semantic_coverage(
         scope = item.pilot_scope if item is not None else ""
         if scope:
             scopes[scope] = scopes.get(scope, 0) + 1
+    review = review_summary(registry)
     return {
         "objects_total": total,
         "objects_with_behavior": with_behavior,
         "objects_with_approved_behavior": approved,
         "objects_with_known_ports": known_ports,
+        "objects_with_init_script": with_init,
         "objects_unknown": unknown,
         "dependencies_total": deps_total,
         "dependencies_known": deps_known,
         "known_absences_total": absences_total,
         "pilot_scope_counts": scopes,
+        "review_counts": review["counts"],
+        "preliminary_classes": review["preliminary"],
+        "review_refs": review["refs"],
         "by_class": by_class,
     }
 
 
 def _behavior_known(contract: BlockContract) -> bool:
+    if contract.review.rejected:
+        return False
     if contract.behavior.operation == "unknown":
         return False
-    return bool(contract.dependencies) or any(
-        _absence_known(contract, absence)
-        for absence in contract.known_absences)
+    return _has_contract_semantics(contract)
+
+
+def _provenance_holds(contract: BlockContract, status: str) -> bool:
+    """Правило допуска утверждения контракта."""
+    if contract.review.rejected:
+        return False
+    if status == "measured":
+        return True
+    return status in ("claim", "derived") and contract.review.approved
 
 
 def _absence_known(contract: BlockContract, absence: KnownAbsence) -> bool:
@@ -206,43 +480,60 @@ def _absence_known(contract: BlockContract, absence: KnownAbsence) -> bool:
 
     Claim/derived из предварительной строки не становится известным
     отсутствием: иначе предварительная таблица выдала бы утверждение.
+    Отвергнутая строка не участвует в семантике даже при `measured`.
     """
-    status = absence.provenance.status
-    if status == "measured":
-        return True
-    return (status in ("claim", "derived")
-            and contract.review.status == "approved")
+    return _provenance_holds(contract, absence.provenance.status)
 
 
 def _unknown_reason(obj: ModelObject,
                     contract: BlockContract | None) -> str:
     if contract is None:
         return "class_unknown"
-    if _object_script(obj):
-        return "object_script"
+    if _object_run_script(obj):
+        return "object_script_run"
+    if contract.review.rejected:
+        return "rejected"
     if contract.ports.reason == "script_defined_ports":
         return "script_defined"
     if obj.kind is ObjectKind.SUBMODEL and obj.filename:
         return "external_submodel"
     if not _behavior_known(contract):
+        if _object_init_script(obj) and not _has_contract_semantics(contract):
+            return "object_script_init"
         return "behavior_unknown"
-    if contract.review.status != "approved":
+    if not contract.review.approved:
         return "unapproved"
     return ""
 
 
+def _has_known_absence(contract: BlockContract, output: int) -> bool:
+    return any(absence.output == output
+               and _absence_known(contract, absence)
+               for absence in contract.known_absences)
+
+
+def _no_dependency_reason(obj: ModelObject, contract: BlockContract) -> str:
+    """Причина для выхода без объявленных зависимостей."""
+    if contract.review.rejected:
+        return "rejected"
+    if contract.ports.reason == "script_defined_ports":
+        return "script_defined"
+    if obj.kind is ObjectKind.SUBMODEL and obj.filename:
+        return "external_submodel"
+    if _object_init_script(obj) and not _has_contract_semantics(contract):
+        return "object_script_init"
+    return "behavior_unknown"
+
+
 def _dependency_known(contract: BlockContract, dependency: Dependency,
                       obj: ModelObject) -> bool:
-    if _object_script(obj):
+    if _object_run_script(obj):
         return False
     if dependency.kind in ("script", "unknown"):
         return False
     if dependency.kind == "conditional" and dependency.condition is None:
         return False
-    if dependency.provenance.status == "measured":
-        return True
-    return (dependency.provenance.status in ("claim", "derived")
-            and contract.review.status == "approved")
+    return _provenance_holds(contract, dependency.provenance.status)
 
 
 def _include_filter(include: Iterable[str]) -> frozenset[str]:
@@ -251,8 +542,8 @@ def _include_filter(include: Iterable[str]) -> frozenset[str]:
     values = frozenset(include)
     if not values or values - _INCLUDE:
         raise ModelQueryError(
-            f"include={sorted(values)}: допустимы contract и "
-            f"not_established")
+            f"include={sorted(values)}: допустимы contract, experiment "
+            f"и not_established")
     return values
 
 
@@ -275,24 +566,64 @@ def _props(obj: ModelObject) -> dict[str, str]:
     return {name: prop.value for name, prop in obj.props.items()}
 
 
-def _object_script(obj: ModelObject) -> str:
-    for slot in _CALC_SCRIPT_SLOTS:
+def _review_ref(contract: BlockContract) -> str:
+    """Ссылка на строку эталона; провенанс зависимости сюда не подмешивается."""
+    return contract.review.ref
+
+
+def _object_run_script(obj: ModelObject) -> str:
+    """Слот поведения, исполняемого на каждом шаге."""
+    for slot in _RUN_SCRIPT_SLOTS:
         info = obj.scripts.get(slot)
         if info is not None and info.present:
             return slot
     return ""
 
 
+def _object_init_script(obj: ModelObject) -> str:
+    """Слот инициализации: начальное состояние, не поведение."""
+    for slot in _INIT_SCRIPT_SLOTS:
+        info = obj.scripts.get(slot)
+        if info is not None and info.present:
+            return slot
+    return ""
+
+
+def _has_contract_semantics(contract: BlockContract) -> bool:
+    """Контракт описывает поведение, а не только порты."""
+    return bool(contract.dependencies) or any(
+        _absence_known(contract, absence)
+        for absence in contract.known_absences)
+
+
 class _Walker:
     def __init__(self, index: ModelIndex, registry: BlockContractRegistry,
                  items: list[dict[str, Any]], unknown: list[str],
-                 absences: list[dict[str, Any]], max_depth: int) -> None:
+                 absences: list[dict[str, Any]], max_depth: int,
+                 limitations: list[dict[str, str]] | None = None) -> None:
         self.index = index
         self.registry = registry
         self.items = items
         self.unknown = unknown
         self.absences = absences
         self.max_depth = max_depth
+        self.limitations = limitations if limitations is not None else []
+        self._init_seen: set[str] = set()
+
+    def _note_init(self, obj: ModelObject) -> None:
+        slot = _object_init_script(obj)
+        if not slot:
+            return
+        ref = f"{obj.address}@script:{slot}"
+        if ref in self._init_seen:
+            return
+        self._init_seen.add(ref)
+        self.limitations.append({
+            "kind": "init_script",
+            "ref": ref,
+            "text": "начальное состояние задано OnInitScript; зависимости "
+                    "контракта не понижены",
+        })
 
     def walk(self, port_id: str, hops: list[dict[str, Any]],
              path: list[str], depth: int,
@@ -345,6 +676,7 @@ class _Walker:
     def _walk_output(self, port: Any, obj: ModelObject, name: str,
                      hops: list[dict[str, Any]], path: list[str],
                      depth: int, visited: frozenset[str]) -> None:
+        self._note_init(obj)
         self._collect_absences(obj, port.index, name)
         memory = [edge for edge in self.index.reverse.get(port.id, ())
                   if edge.kind == "memory"]
@@ -370,7 +702,7 @@ class _Walker:
                             obj.class_name, _props(obj))
                         if dependency.output == port.index]
         if not dependencies:
-            script = _object_script(obj)
+            script = _object_run_script(obj)
             if script:
                 address = _source_address(
                     obj, {"kind": "script", "name": script})
@@ -381,13 +713,18 @@ class _Walker:
                     "condition": None,
                     "state": None,
                     "evidence": _evidence(
-                        "not_established", "", "object_script"),
+                        "not_established", "", "object_script_run"),
                 }
                 self._emit({"kind": "script", "address": address},
                            hops + [hop], path)
-                self.unknown.append(f"{name}: object_script")
+                self.unknown.append(f"{name}: object_script_run")
             else:
-                self.unknown.append(f"{name}: behavior_unknown")
+                reason = _no_dependency_reason(obj, contract)
+                if reason == "behavior_unknown" and _has_known_absence(
+                        contract, port.index):
+                    self._detail_and_downgrade(port, start)
+                    return
+                self.unknown.append(f"{name}: {reason}")
             self._detail_and_downgrade(port, start)
             return
         for dependency in dependencies:
@@ -429,7 +766,7 @@ class _Walker:
             if edge.kind != "boundary":
                 continue
             walker = _Walker(self.index, self.registry, [], details, [],
-                             self.max_depth)
+                             self.max_depth, self.limitations)
             walker.walk(edge.src, [], [], 0, frozenset())
         return details
 
@@ -438,10 +775,10 @@ class _Walker:
             obj: ModelObject, name: str, port: Any,
             hops: list[dict[str, Any]], path: list[str], depth: int,
             visited: frozenset[str]) -> None:
-        status, ref, reason = _dependency_evidence(
+        status, ref, reason, review_ref = _dependency_evidence(
             contract, dependency, obj)
-        object_script = _object_script(obj)
-        hop_kind = "script" if object_script else dependency.kind
+        run_script = _object_run_script(obj)
+        hop_kind = "script" if run_script else dependency.kind
         source = dependency.source
         source_port = None
         if source.get("kind") == "port":
@@ -460,7 +797,7 @@ class _Walker:
                           if dependency.condition is not None else None),
             "state": (dict(dependency.state)
                       if dependency.state is not None else None),
-            "evidence": _evidence(status, ref, reason),
+            "evidence": _evidence(status, ref, reason, review_ref),
         }
         if source.get("kind") in ("property", "state"):
             self._emit(
@@ -492,18 +829,19 @@ class _Walker:
                 "target": target,
                 "source": dict(absence.source),
                 "provenance": _evidence(
-                    absence.provenance.status, absence.provenance.ref, ""),
+                    absence.provenance.status, absence.provenance.ref, "",
+                    _review_ref(contract)),
             })
 
     def _emit(self, source: Mapping[str, Any],
               hops: list[dict[str, Any]], path: list[str]) -> None:
-        status, reason = _chain_status(hops)
+        status, reason, review_ref = _chain_status(hops)
         self.items.append({
             "target": path[0] if path else "",
             "source": dict(source),
             "path": list(path),
             "hops": list(hops),
-            "evidence": _evidence(status, "chain", reason),
+            "evidence": _evidence(status, "chain", reason, review_ref),
             "unknown": None,
         })
 
@@ -518,41 +856,45 @@ def _source_address(obj: ModelObject, source: Mapping[str, Any]) -> str:
 
 def _dependency_evidence(
         contract: BlockContract, dependency: Dependency,
-        obj: ModelObject) -> tuple[str, str, str]:
-    if _object_script(obj):
-        return "not_established", dependency.provenance.ref, "object_script"
+        obj: ModelObject) -> tuple[str, str, str, str]:
+    ref = dependency.provenance.ref
+    review_ref = _review_ref(contract)
+    if _object_run_script(obj):
+        return "not_established", ref, "object_script_run", review_ref
+    if contract.review.rejected:
+        return "not_established", ref, "rejected", review_ref
     if dependency.kind == "script":
-        return ("not_established", dependency.provenance.ref,
-                dependency.reason or "script")
+        return ("not_established", ref, dependency.reason or "script",
+                review_ref)
     if dependency.kind == "unknown":
-        return ("not_established", dependency.provenance.ref,
-                dependency.reason or "unknown")
+        return ("not_established", ref, dependency.reason or "unknown",
+                review_ref)
     if dependency.kind == "conditional" and dependency.condition is None:
-        return ("not_established", dependency.provenance.ref,
-                dependency.reason or "condition_unknown")
-    status = dependency.provenance.status
-    if status == "measured":
-        return "contract", dependency.provenance.ref, ""
-    if status in ("claim", "derived") and \
-            contract.review.status == "approved":
-        return "contract", dependency.provenance.ref, ""
-    return "not_established", dependency.provenance.ref, "unapproved"
+        return ("not_established", ref,
+                dependency.reason or "condition_unknown", review_ref)
+    if _provenance_holds(contract, dependency.provenance.status):
+        return "contract", ref, "", review_ref
+    return "not_established", ref, "unapproved", review_ref
 
 
-def _chain_status(hops: list[dict[str, Any]]) -> tuple[str, str]:
+def _chain_status(hops: list[dict[str, Any]]) -> tuple[str, str, str]:
     if not hops:
-        return "not_established", "no_hops"
+        return "not_established", "no_hops", ""
     for hop in hops:
         evidence = hop["evidence"]
         if evidence["status"] != "contract":
-            return "not_established", str(evidence.get("reason", ""))
-    return "contract", ""
+            return ("not_established", str(evidence.get("reason", "")),
+                    str(evidence.get("review_ref", "")))
+    return "contract", "", ""
 
 
-def _evidence(status: str, ref: str, reason: str) -> dict[str, str]:
+def _evidence(status: str, ref: str, reason: str,
+              review_ref: str = "") -> dict[str, str]:
     result = {"status": status}
     if ref:
         result["ref"] = ref
     if reason:
         result["reason"] = reason
+    if review_ref:
+        result["review_ref"] = review_ref
     return result

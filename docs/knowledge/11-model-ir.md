@@ -26,7 +26,10 @@ XML-выгрузка и текст модели велики, не нормал�
 | `model-ir-merge-primary-xprt` | `.xprt` остаётся первичным; текст и топология дают `Discrepancy`, `strict` превращает структурные ошибки в `ModelIRConflictError` | code-confirmed |
 | `model-ir-topology-edge-only` | `topology` даёт объекты, порты и неориентированные рёбра `topology_edge` без геометрии, ветвей, свойств и скриптов | code-confirmed |
 | `model-ir-signal-graph-block-edges` | Граф связывает входы и выходы обычного блока, границы субмоделей и ячейки памяти отдельными рёбрами; `trace_signal` проходит всю цепочку | code-confirmed |
-| `model-ir-manifest-budget` | Паспорт ограничен 2000..5000 токенами, содержит заголовок, покрытие, структуру, классы и `Omitted`; `Omitted` резервирует место, при необходимости вытесняя секцию; XML, скрипты и полные значения не выводит | code-confirmed |
+| `model-ir-manifest-budget` | Паспорт ограничен 2000..5000 токенами; оценка `estimate_tokens` консервативна, `estimated_tokens` и `budget_tokens` стоят в заголовке, обязательные Coverage и Review не усекаются, `Omitted` резервирует место; XML, скрипты и полные значения не выводит | code-confirmed |
+| `model-ir-init-script-state` | `OnInitScript` не понижает контрактные зависимости, run-слоты дают `object_script_run`; `object_script_init` возникает только без зависимостей и известных отсутствий и после `rejected`/`script_defined`/`external_submodel`; `objects_with_init_script` считает init отдельно | code-confirmed |
+| `model-ir-review-gate` | `approved` действителен только с подписью, `rejected` не участвует в семантике, `review_counts`/`preliminary_classes`/`review_refs` называют состояние строк эталонной таблицы | code-confirmed |
+| `model-ir-experiment-evidence` | Валидная запись с обоими хешами даёт `experiment`, не понижая `contract` и не отменяя `rejected`/`unknown`; отрицательное наблюдение не создаёт `known_absences`; `limitations` присутствует всегда | code-confirmed |
 | `model-ir-query-evidence` | Ответ запроса несёт `scope`, `model_hash`, покрытие, `unknown` и `truncated`; `items` и `unknown` ограничены 200 элементами, `items_total`/`unknown_total` считаются до среза, пусто и неизвестно различаются | code-confirmed |
 | `model-ir-query-ordering` | `check_connections` отдаёт `error` раньше `warning` и `info`, а счётчики и `status` считаются по полному списку | code-confirmed |
 | `model-ir-cycles-not-self-edges` | `find_cycles` не считает внутреннее ребро блока вход-выход петлёй, обходит граф итеративно и не падает `RecursionError` на цепочке 1200 объектов; ациклическая цепочка даёт пустой результат | code-confirmed |
@@ -137,12 +140,16 @@ XML-выгрузка и текст модели велики, не нормал�
 обработчика: пропуск даёт `ModelQueryError` с именем запроса и
 недостающих аргументов, а не голый `KeyError`.
 
-`build_manifest` собирает Markdown-паспорт в бюджете 2000..5000 токенов:
-заголовок, покрытие, дерево контейнеров до глубины 3, топ классов, сигналы,
-секция контрактов, горячие узлы, расхождения и обязательный `Omitted` при
-усечении. `Omitted` резервирует место: если он не влезает, последняя секция
-вытесняется, но потеря остаётся названной. XML, скрипты и полные значения
-свойств в паспорт не попадают.
+`build_manifest` собирает Markdown-паспорт в бюджете 2000..5000 токенов.
+Токены считает консервативная эвристика `estimate_tokens` из
+`model_ir/tokens.py`: кириллица дороже ASCII, разметка и переводы строк
+добавляют запас, токенизатор не нужен. В заголовке стоят `estimated_tokens` и
+`budget_tokens`; обязательные секции `## Coverage` и `## Review` не
+усекаются, остальные секции и `Omitted` подчиняются тому же бюджету.
+`Omitted` резервирует место: если он не влезает, последняя секция
+вытесняется, но потеря остаётся названной. Если обязательная часть не
+помещается, паспорт отказывает, а не усекает её молча. XML, скрипты и полные
+значения свойств в паспорт не попадают.
 
 Секция `## Contracts` берёт покрытие реестра C4: число классов,
 `measured`/`derived`/`unknown`, распределение портовых моделей и строки
@@ -152,7 +159,7 @@ XML-выгрузка и текст модели велики, не нормал�
 ## Контракты блоков
 
 `BlockContractRegistry` читает `simintech_api/data/block_contracts.json`
-(схема `block-contract/1`, версия 1). На каждый класс каталога есть запись:
+(схема `block-contract/2`, версия 2). На каждый класс каталога есть запись:
 свойства и умолчания из `block_catalog.json`, проверка `readonly`, портовая
 модель, пути создания, ограничения и провенанс. Портовая модель принимает
 значения `fixed`, `nport`, `portnames`, `submodel`, `weights`, `unknown`.
@@ -256,16 +263,30 @@ U+2014 в авторских описаниях. Генератор детерм
 
 `influence` отвечает не «достижим ли объект», а «какие источники влияют на
 выход»: структурные рёбра ведут к блоку, функциональные зависимости берутся
-из контракта. `contract` выдаётся только для утверждённой строки или
-измеренного отношения; `preliminary`, `derived` без утверждения и скрипт
-объекта дают `not_established`. `known_absences` возвращаются отдельным
-списком и не входят в цепочки. Граница субмодели детализирует объяснение, но
-сама причинность не подтверждает.
+из контракта. `contract` выдаётся только для подписанной утверждённой строки
+или измеренного отношения; `preliminary`, `approved` без подписи,
+`rejected` и run-скрипт объекта дают `not_established`. `OnInitScript`
+считается начальным состоянием: он не понижает контрактные зависимости,
+попадает в `objects_with_init_script` и в ограничение `init_script`.
+`known_absences` возвращаются отдельным списком и не входят в цепочки.
+Граница субмодели детализирует объяснение, но сама причинность не
+подтверждает.
+
+`influence` принимает необязательные записи `experiment-record/1` с обоими
+хешами модели. Положительное наблюдение переводит цепочку из `unapproved` в
+`experiment`, не понижая `contract` и не отменяя `rejected`/`unknown`.
+Отрицательное наблюдение не создаёт `known_absences`. В
+`evidence.limitations` всегда перечислены сценарий, неполнота, неизвестность
+и усечение.
 
 `semantic_coverage` отделяет разобранную структуру от известной семантики:
-причины `class_unknown`, `object_script`, `script_defined`,
-`external_submodel`, `behavior_unknown`, `unapproved`; `pilot_scope`
-отделяет живую, синтетическую и вспомогательную области.
+причины `class_unknown`, `object_script_run`, `rejected`, `script_defined`,
+`external_submodel`, `object_script_init`, `behavior_unknown`,
+`unapproved`; `pilot_scope` отделяет живую,
+синтетическую и вспомогательную области. `review_counts`,
+`preliminary_classes` и `review_refs` считают строки эталонной таблицы и
+называют состояние проверки; `by_class` добавляет `review_status` и
+`review_ref` для классов модели.
 
 `BehaviorSpec` ссылается на `model_hash` и адреса IR; `checks` в пилоте не
 исполняются.
@@ -298,7 +319,11 @@ U+2014 в авторских описаниях. Генератор детерм
 - `tests/unit/model_ir_synth.py` - детерминированные генераторы плоской,
   глубокой, разветвлённой и широкой синтетики без файлов в репозитории;
 - `tests/unit/test_model_ir_semantics.py` - influence: цепочки, статусы,
-  скрипты, условия, границы, память, semantic_coverage и BehaviorSpec;
+  init/run-скрипты, review gate, условия, границы, память, semantic_coverage
+  и BehaviorSpec;
+- `tests/unit/test_model_ir_experiments.py` - разбор experiment-record/1,
+  хеши, matching, отрицательные наблюдения и limitations;
+- `tests/unit/test_model_ir_tokens.py` - консервативная оценка токенов;
 - `tests/unit/test_model_ir_commutator.py` - nport_named и синтетический
   коммутатор;
 - `tests/unit/test_pilot_semantics_table.py` - эталонная таблица и её
